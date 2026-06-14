@@ -28,6 +28,8 @@ def dl(url, target):
 
 def run():
     print("=== SAVE EXTRAS (mo ta + resources) ===")
+    if C.DRY_RUN:
+        print("DRY_RUN: bo qua tai mo ta/resources (che do test)\n"); return
     chapters = K.load_best(C.META_PATTERN, score)
     if not chapters: print("Khong co meta_*.json -> bo qua\n"); return
     desc_n = fdl = fskip = lnk = fail = miss = 0
