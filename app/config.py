@@ -11,9 +11,9 @@ import os
 from pathlib import Path
 
 # ===================== DUONG DAN =====================
-# Mac dinh = thu muc CHA cua Archiver (vd Archiver o E:\SkoolProject\Archiver -> BASE=E:\SkoolProject).
+# config.py o ...\Archiver\app  ->  BASE = ...\SkoolProject  (len 2 cap: app -> Archiver -> SkoolProject).
 # Khong hardcode o cung -> chay duoc tren may khac. Override bang bien moi truong SKOOL_BASE.
-BASE = Path(os.environ.get("SKOOL_BASE") or Path(__file__).resolve().parent.parent)
+BASE = Path(os.environ.get("SKOOL_BASE") or Path(__file__).resolve().parents[2])
 
 # Mac dinh = khoa cu (1 thu muc SkoolCourse). set_course()/set_root() se doi cac gia tri nay.
 COURSE    = None

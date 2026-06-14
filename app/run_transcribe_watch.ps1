@@ -1,9 +1,10 @@
 # Runner cho watcher transcribe (duoc Task Scheduler goi, hoac chay tay).
 # Vi du:  .\run_transcribe_watch.ps1 --all
 $ErrorActionPreference = "Stop"
-$here = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$here = Split-Path -Parent $MyInvocation.MyCommand.Definition   # ...\Archiver\app
 Set-Location $here
-$base = Split-Path -Parent $here
+$archiver = Split-Path -Parent $here                            # ...\Archiver
+$base = Split-Path -Parent $archiver                            # ...\SkoolProject
 
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new()
 $env:PYTHONUTF8 = "1"; $env:PYTHONIOENCODING = "utf-8"
@@ -24,7 +25,7 @@ if (-not $py) {
     exit 1
 }
 
-$logDir = "$here\logs"
+$logDir = "$archiver\logs"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $log = "$logDir\transcribe_$stamp.log"

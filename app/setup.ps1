@@ -1,6 +1,6 @@
 # === Setup moi truong cho Skool Archiver (may moi) ===
-# Chay 1 lan:  mo PowerShell tai thu muc Archiver  ->  .\setup.ps1
-# Luu y: may da co san ..\whisper\venv day du thi KHONG can chay setup -
+# Chay 1 lan:  double-click setup.cmd o thu muc Archiver  (no goi file nay trong app\).
+# Luu y: may da co san ..\..\whisper\venv day du thi KHONG can chay setup -
 #        run.ps1 se tu dung venv do.
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -38,7 +38,7 @@ Write-Host "==> Kiem tra moi truong (preflight)..." -ForegroundColor Cyan
 & .\venv\Scripts\python.exe preflight.py
 
 Write-Host ""
-Write-Host "XONG. Tu gio chay:" -ForegroundColor Green
-Write-Host '    .\run.ps1 --course "Ten khoa"            (hoac run.cmd)'
-Write-Host '    .\run.ps1 --list-courses'
-Write-Host '    .\install_transcribe_task.ps1 -All        (transcribe ngam)'
+Write-Host "XONG. Tu gio (o thu muc Archiver) chay:" -ForegroundColor Green
+Write-Host '    .\run.cmd --course "Ten khoa"'
+Write-Host '    .\run.cmd --list-courses'
+Write-Host '    .\install_transcribe_task.cmd -All        (transcribe ngam)'

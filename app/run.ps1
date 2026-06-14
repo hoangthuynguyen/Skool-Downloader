@@ -7,9 +7,10 @@
 # Moi tham so deu chuyen thang sang main.py (xem: .\run.ps1 --help)
 
 $ErrorActionPreference = "Stop"
-$here = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$here = Split-Path -Parent $MyInvocation.MyCommand.Definition   # ...\Archiver\app
 Set-Location $here
-$base = Split-Path -Parent $here
+$archiver = Split-Path -Parent $here                            # ...\Archiver
+$base = Split-Path -Parent $archiver                            # ...\SkoolProject
 
 # UTF-8 cho ca console lan file log (tranh crash ten folder co ky tu la nhu '▶')
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new()
@@ -33,7 +34,7 @@ foreach ($c in $candidates) {
     if ($resolved -and (Test-YtDlp $resolved)) { $py = $resolved; break }
 }
 if (-not $py) {
-    Write-Host "[LOI] Khong tim thay Python co yt-dlp. Chay .\setup.ps1 truoc." -ForegroundColor Red
+    Write-Host "[LOI] Khong tim thay Python co yt-dlp. Chay setup.cmd truoc." -ForegroundColor Red
     exit 1
 }
 Write-Host "Python: $py" -ForegroundColor DarkGray
@@ -47,7 +48,7 @@ if (-not $hasNode -and -not $hasDeno) {
 }
 
 # --- Log co dau thoi gian ---
-$logDir = "$here\logs"
+$logDir = "$archiver\logs"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $log = "$logDir\run_$stamp.log"
