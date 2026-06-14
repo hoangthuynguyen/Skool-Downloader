@@ -391,7 +391,14 @@ class App:
 
     # ---------- vong lap su kien ----------
     def poll(self):
-        # subprocess output
+        # su kien trinh duyet truoc (uu tien phan hoi tuong tac)
+        if self.sb:
+            try:
+                while True:
+                    self.on_browser_event(self.sb.evt_q.get_nowait())
+            except queue.Empty:
+                pass
+        # output cua tien trinh (tai/cai dat)
         try:
             while True:
                 tag, s = self.q.get_nowait()
@@ -404,14 +411,6 @@ class App:
                     self.write(s.rstrip("\n"))
         except queue.Empty:
             pass
-        # playwright events
-        if self.sb:
-            try:
-                while True:
-                    e = self.sb.evt_q.get_nowait()
-                    self.on_browser_event(e)
-            except queue.Empty:
-                pass
         if hasattr(self, "status4") and self.proc:
             self.refresh4()
         self.root.after(150, self.poll)

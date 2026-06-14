@@ -111,12 +111,15 @@ class SkoolBrowser:
                 pages = [pg for pg in ctx.pages if not pg.is_closed()]
                 if not pages:
                     return ctx.new_page()
+                # uu tien trang dang o classroom, roi trang skool bat ky, roi trang cuoi
                 for pg in pages:
                     try:
-                        if "skool.com" in (pg.url or ""):
-                            return pg
-                    except Exception:
-                        pass
+                        if "/classroom" in (pg.url or ""): return pg
+                    except Exception: pass
+                for pg in pages:
+                    try:
+                        if "skool.com" in (pg.url or ""): return pg
+                    except Exception: pass
                 return pages[-1]
             except Exception:
                 self._ctx = None   # browser da dong -> tao lai vong sau
@@ -133,10 +136,25 @@ class SkoolBrowser:
             except Exception: pass
             self.emit(type="opened")
         elif t == "list":
+            # __NEXT_DATA__ chi co allCourses khi trang classroom-index duoc render tu server.
+            # SPA nav (bam dropdown) KHONG cap nhat no -> phai dieu huong THUC SU toi /classroom.
+            cur = page.url or ""
+            m = re.search(r"skool\.com/([^/?#]+)", cur)
+            if m and m.group(1) not in ("", "settings", "@me"):
+                grp = m.group(1)
+                self.emit(type="log", msg=f"Dang mo Classroom cua '{grp}'...")
+                page.goto(f"https://www.skool.com/{grp}/classroom",
+                          wait_until="domcontentloaded", timeout=30000)
+                try:
+                    page.wait_for_function(
+                        "() => { try { const d=JSON.parse(document.getElementById('__NEXT_DATA__').textContent);"
+                        " return !!(d.props.pageProps.allCourses);} catch(e){return false;} }", timeout=15000)
+                except Exception:
+                    pass
             data = page.evaluate(JS_LIST)
             if not data:
                 self.emit(type="need_classroom",
-                          msg="Chua thay danh sach chuong. Hay mo trang Classroom cua khoa (URL .../classroom) roi thu lai.")
+                          msg="Chua thay danh sach chuong. Hay mo trang cua khoa (vao 1 community ban da tham gia) roi bam lai nut 2.")
                 return
             self.group = data["group"]
             self.emit(type="chapters", group=data["group"], chapters=data["chapters"])
@@ -161,12 +179,16 @@ class SkoolBrowser:
                     res = page.evaluate(JS_DUMP)
                     if not res or not res.get("ok"):
                         self.emit(type="log", msg=f"  [bo qua] {c['title']}: {res.get('err') if res else 'loi'}"); continue
-                    safe = san_file(res["chapter"])
+                    safe = f"{idx:02d}_{san_file(res['chapter'])}"   # so thu tu -> ten file khong trung
                     (out / f"vid__{safe}.json").write_text(res["vid"], encoding="utf-8")
                     (out / f"meta__{safe}.json").write_text(res["meta"], encoding="utf-8")
                     ok += 1
                     self.emit(type="log",
                               msg=f"  [OK] {res['chapter']}: {res['total']} bai (native={res['native']} ext={res['ext']} text={res['none']})")
                 except Exception as e:
-                    self.emit(type="log", msg=f"  [LOI] {c['title']}: {e}")
+                    s = str(e).lower()
+                    if "timeout" in s or "exceeded" in s:
+                        self.emit(type="log", msg=f"  [bo qua] {c['title']}: khong tai duoc (co the chuong khoa/tra phi hoac rong)")
+                    else:
+                        self.emit(type="log", msg=f"  [LOI] {c['title']}: {e}")
             self.emit(type="dumped", ok=ok, total=len(chapters), out_dir=str(out))
