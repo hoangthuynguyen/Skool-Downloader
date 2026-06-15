@@ -56,12 +56,12 @@ class App:
         self.admin = False; self._dumping = False; self._prog = []; self._lastref = 0.0
         self.step = 1; self.chap_widgets = {}
 
-        root.title("Skool Archiver"); root.geometry("960x760"); root.minsize(880, 680)
+        root.title("Skool Archiver"); root.geometry("800x600"); root.minsize(760, 560)
         root.configure(fg_color=BG)
         root.grid_columnconfigure(1, weight=1); root.grid_rowconfigure(0, weight=1)
 
         # ---------- sidebar ----------
-        side = ctk.CTkFrame(root, width=232, corner_radius=0, fg_color=SIDE)
+        side = ctk.CTkFrame(root, width=206, corner_radius=0, fg_color=SIDE)
         side.grid(row=0, column=0, sticky="nsw"); side.grid_propagate(False)
         ctk.CTkLabel(side, text="📦  Skool Archiver", font=(FT, 18, "bold"), text_color="white").pack(anchor="w", padx=22, pady=(26, 4))
         ctk.CTkLabel(side, text="Lưu trữ khóa học Skool", font=(FT, 11), text_color=ON_SIDE).pack(anchor="w", padx=22, pady=(0, 22))
@@ -72,11 +72,10 @@ class App:
         # ---------- main ----------
         main = ctk.CTkFrame(root, corner_radius=0, fg_color=BG); main.grid(row=0, column=1, sticky="nsew")
         main.grid_rowconfigure(0, weight=1); main.grid_columnconfigure(0, weight=1)
-        self.content = ctk.CTkScrollableFrame(main, fg_color="transparent"); self.content.grid(row=0, column=0, sticky="nsew", padx=24, pady=(20, 6))
-        self.content.grid_columnconfigure(0, weight=1)
-        logwrap = ctk.CTkFrame(main, fg_color="transparent"); logwrap.grid(row=1, column=0, sticky="ew", padx=24, pady=(0, 16))
+        self.content = ctk.CTkFrame(main, fg_color="transparent"); self.content.grid(row=0, column=0, sticky="nsew", padx=20, pady=(16, 4))
+        logwrap = ctk.CTkFrame(main, fg_color="transparent"); logwrap.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 12))
         ctk.CTkLabel(logwrap, text="Nhật ký", font=(FT, 11, "bold"), text_color=TEXT2).pack(anchor="w")
-        self.log = ctk.CTkTextbox(logwrap, height=120, font=("Consolas", 11), fg_color=CARD, text_color=TEXT, corner_radius=10)
+        self.log = ctk.CTkTextbox(logwrap, height=80, font=("Consolas", 11), fg_color=CARD, text_color=TEXT, corner_radius=10)
         self.log.pack(fill="x"); self.log.configure(state="disabled")
 
         root.bind_all("<Control-Alt-t>", self.toggle_admin); root.bind_all("<Control-Alt-T>", self.toggle_admin)
@@ -113,7 +112,7 @@ class App:
     def head(self, text, sub=""):
         ctk.CTkLabel(self.content, text=text, font=(FT, 22, "bold"), text_color=TEXT).pack(anchor="w", pady=(0, 2))
         if sub:
-            ctk.CTkLabel(self.content, text=sub, font=(FT, 13), text_color=TEXT2, justify="left", wraplength=640).pack(anchor="w", pady=(0, 14))
+            ctk.CTkLabel(self.content, text=sub, font=(FT, 13), text_color=TEXT2, justify="left", wraplength=520).pack(anchor="w", pady=(0, 12))
 
     def card(self):
         c = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=14, border_width=1, border_color=BORDER)
@@ -286,7 +285,7 @@ class App:
         f = ctk.CTkFrame(self.content, fg_color="transparent"); f.pack(fill="x")
         self.b_open = btn(f, "1.   Mở Skool & đăng nhập", self.do_open, height=44); self.b_open.pack(fill="x", pady=5)
         self.b_list = btn(f, "2.   Lấy danh sách chương", self.do_list, kind="secondary", height=44, state="disabled"); self.b_list.pack(fill="x", pady=5)
-        self.chap_box = ctk.CTkScrollableFrame(self.content, fg_color=CARD, corner_radius=14, height=210, label_text="")
+        self.chap_box = ctk.CTkScrollableFrame(self.content, fg_color=CARD, corner_radius=14, height=170, label_text="")
         self.dump_row = ctk.CTkFrame(self.content, fg_color="transparent")
         btn(self.content, "←  Quay lại", self.show_step1, kind="ghost", width=110).pack(anchor="w", pady=8)
 
@@ -360,7 +359,7 @@ class App:
         self.pb4 = ctk.CTkProgressBar(r, height=16, corner_radius=8, progress_color=PRIMARY); self.pb4.pack(fill="x", pady=(16, 6)); self.pb4.set(0)
         self.status4 = ctk.CTkLabel(r, text="", font=("Consolas", 12), text_color=TEXT2); self.status4.pack(anchor="w")
         self.chap_hdr = ctk.CTkLabel(self.content, text="Chương", font=(FT, 14, "bold"), text_color=TEXT); self.chap_hdr.pack(anchor="w", pady=(8, 2))
-        self.chap_scroll = ctk.CTkScrollableFrame(self.content, fg_color=CARD, corner_radius=14, height=230); self.chap_scroll.pack(fill="x", pady=(0, 6))
+        self.chap_scroll = ctk.CTkScrollableFrame(self.content, fg_color=CARD, corner_radius=14, height=168); self.chap_scroll.pack(fill="x", pady=(0, 6))
         self.run_lbl = ctk.CTkLabel(self.content, text="⏳  Đang chạy…", font=(FT, 13, "bold"), text_color=WARNING); self.run_lbl.pack(anchor="w", pady=(8, 4))
         self.done_row = ctk.CTkFrame(self.content, fg_color="transparent"); self.done_row.pack(fill="x", pady=6)
         btn(self.done_row, "📁  Mở thư mục dự án", self.open_folder, kind="secondary", width=210).pack(side="left", padx=(0, 8))
