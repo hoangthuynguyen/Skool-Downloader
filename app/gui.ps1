@@ -5,7 +5,7 @@ $base = Split-Path -Parent (Split-Path -Parent $here)           # ...\SkoolProje
 
 function Test-Tk($py) {
     if (-not (Test-Path $py)) { return $false }
-    & $py -c "import tkinter" 2>$null
+    & $py -c "import customtkinter" 2>$null
     return $LASTEXITCODE -eq 0
 }
 $cands = @("$here\venv\Scripts\python.exe", "$base\whisper\venv\Scripts\python.exe", "python")
