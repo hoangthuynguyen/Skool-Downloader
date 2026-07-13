@@ -1,6 +1,6 @@
 """Phien ban Skool Archiver (Phase ship)."""
-__version__ = "1.9.1"
-__codename__ = "ops-polish"
+__version__ = "2.0.0"
+__codename__ = "ui-v2"
 
 # Phase milestones (gan dung commit history)
 HISTORY = (
@@ -14,6 +14,7 @@ HISTORY = (
     "1.8 fail UX+cleanup",
     "1.9 version+selftest+dash fails",
     "1.9.1 health fails count + dash fail button",
+    "2.0.0 UI v2 — sidebar, stat cards, accent theme",
 )
 
 
