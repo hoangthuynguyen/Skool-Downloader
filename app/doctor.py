@@ -152,10 +152,21 @@ def main():
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--fix-base", help="Thu BASE khac (khong ghi settings)")
     ap.add_argument("--set-base", help="Dat va luu BASE vao settings.json")
+    ap.add_argument("--fix", action="store_true",
+                    help="Sprint S: one-click fix (yt-dlp -U + pip goi thieu)")
+    ap.add_argument("--fix-ytdlp", action="store_true", help="Chi cap nhat yt-dlp")
     a = ap.parse_args()
     if a.set_base:
         p = C.set_base(a.set_base, persist=True)
         print(f"Da luu skool_base = {p}")
+    if a.fix or a.fix_ytdlp:
+        import tools_fix as TF
+        if a.fix_ytdlp:
+            print(TF.update_ytdlp())
+        else:
+            r = TF.fix_all(yt_dlp=True, from_doctor=True)
+            print(f"fix ok={r.get('ok')}")
+        # re-run doctor after fix
     rep = run_doctor(fix_base=a.fix_base)
     if a.json:
         print(json.dumps(rep, ensure_ascii=False, indent=2))

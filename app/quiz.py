@@ -176,6 +176,14 @@ def play_cli(quiz):
     for d in r["detail"]:
         if not d["correct"]:
             print(f"  ✗ {d['id']}: đúng = {d['answer']}")
+    # Sprint P: luu diem de playlist
+    try:
+        import learn_playlist as LP
+        LP.record_quiz_score(quiz.get("course") or "SkoolCourse",
+                             r["score"], r["total"])
+        print("(đã lưu điểm quiz cho playlist Học tiếp)")
+    except Exception:
+        pass
     return r
 
 

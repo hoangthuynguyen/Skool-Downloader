@@ -798,9 +798,18 @@ class App:
         r5 = ctk.CTkFrame(act, fg_color="transparent"); r5.pack(fill="x", padx=14, pady=4)
         btn(r5, "🃏  Anki flashcards", self.do_anki_export, kind="secondary", width=210).pack(side="left", padx=(0, 8))
         ctk.CTkLabel(r5, text="TSV import Anki — blank / cloze từ transcript", font=(FT, 11), text_color=TEXT2).pack(side="left")
-        r6 = ctk.CTkFrame(act, fg_color="transparent"); r6.pack(fill="x", padx=14, pady=(4, 12))
+        r6 = ctk.CTkFrame(act, fg_color="transparent"); r6.pack(fill="x", padx=14, pady=4)
         btn(r6, "❓  Offline quiz", self.do_quiz_build, kind="secondary", width=210).pack(side="left", padx=(0, 8))
         ctk.CTkLabel(r6, text="MCQ offline từ knowledge (không cần API)", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r7 = ctk.CTkFrame(act, fg_color="transparent"); r7.pack(fill="x", padx=14, pady=4)
+        btn(r7, "📓  Obsidian vault", self.do_vault_obsidian, kind="secondary", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r7, text="Export vault wikilinks cho Obsidian", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r8 = ctk.CTkFrame(act, fg_color="transparent"); r8.pack(fill="x", padx=14, pady=4)
+        btn(r8, "📋  Notion MD", self.do_vault_notion, kind="secondary", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r8, text="Markdown import vào Notion", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r9 = ctk.CTkFrame(act, fg_color="transparent"); r9.pack(fill="x", padx=14, pady=(4, 12))
+        btn(r9, "Δ  Content diff", self.do_content_diff, kind="secondary", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r9, text="Phát hiện description/transcript đổi sau re-dump", font=(FT, 11), text_color=TEXT2).pack(side="left")
 
         row = ctk.CTkFrame(self.content, fg_color="transparent"); row.pack(fill="x", pady=12)
         btn(row, "←  Dashboard", self.show_dashboard, kind="ghost", width=120).pack(side="left")
@@ -956,6 +965,67 @@ class App:
             self.write(f"❓ {n} câu → {path}")
         self.run_async(work, cb)
 
+    def do_vault_obsidian(self):
+        self._do_vault_export("obsidian")
+
+    def do_vault_notion(self):
+        self._do_vault_export("notion")
+
+    def _do_vault_export(self, fmt):
+        v = self.rep_var.get().strip() if hasattr(self, "rep_var") else ""
+        if not v:
+            messagebox.showinfo("Chưa chọn", "Hãy chọn một khóa."); return
+        course = self.item_course(v)
+        root = self.item_root(v)
+        self.write(f"📓 Vault {fmt}: {v}…")
+        def work():
+            try:
+                import vault_export as VE
+                return VE.export_course(root, course_name=course or v, fmt=fmt,
+                                       log=lambda s: self.ui_q.put(lambda m=s: self.write(m)))
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("Vault", str(r)); return
+            if messagebox.askyesno("Vault", f"{r.get('lessons')} bài →\n{r.get('path')}\n\nMở thư mục?"):
+                self._open_path(Path(r["path"]))
+        self.run_async(work, cb)
+
+    def do_content_diff(self):
+        """Sprint Q: so sanh content vs snapshot."""
+        v = self.rep_var.get().strip() if hasattr(self, "rep_var") else ""
+        course = self.item_course(v) if v else self.course_name
+        root = self.item_root(v) if v else self.course_root(self.course_name)
+        self.write("Δ Content diff…")
+        def work():
+            try:
+                import content_diff as CD
+                r = CD.compare(root)
+                p, _ = CD.write_diff(root, r)
+                return r, str(p)
+            except Exception as e:
+                return e
+        def cb(res):
+            if isinstance(res, Exception):
+                messagebox.showerror("Diff", str(res)); return
+            r, path = res
+            msg = r.get("summary") or ""
+            ch = r.get("changed") or []
+            if ch:
+                msg += "\n\n" + "\n".join(f"~ {c['path']}" for c in ch[:12])
+            if not r.get("had_snapshot"):
+                if messagebox.askyesno("Diff", msg + "\n\nChưa có snapshot. Lưu baseline ngay?"):
+                    try:
+                        import content_diff as CD
+                        CD.save_snapshot(root)
+                        messagebox.showinfo("Snapshot", "Đã lưu _content_snapshot.json")
+                    except Exception as e:
+                        messagebox.showerror("Snapshot", str(e))
+                return
+            messagebox.showinfo("Content diff", f"{msg}\n\n{path}")
+        self.run_async(work, cb)
+
     # ====================== DASHBOARD (S1) ======================
     def show_step1(self):
         """Alias — màn hình chính là Dashboard."""
@@ -1036,6 +1106,7 @@ class App:
         btn(bar, "↻  Làm mới", self._dash_refresh, kind="secondary", width=110).pack(side="left", padx=6)
         btn(bar, "🔄  Quét cập nhật", self.batch_local_health, kind="secondary", width=140).pack(side="left", padx=2)
         btn(bar, "★ BM", self.show_bookmarks, kind="soft", width=70).pack(side="left", padx=2)
+        btn(bar, "▶ Học", self.dash_learn_next, kind="success", width=80).pack(side="left", padx=2)
         btn(bar, "⚡ Batch", self.dash_smart_batch, kind="accent", width=90).pack(side="left", padx=2)
         btn(bar, "+ Hàng đợi", self.dash_enqueue_selected, kind="primary", width=130).pack(side="right")
 
@@ -1347,6 +1418,49 @@ class App:
         if not target:
             messagebox.showinfo("Resume", f"Không tìm thấy khóa gần nhất: {lc or 'SkoolCourse'}"); return
         self._dash_open(target)
+
+    def dash_learn_next(self):
+        """Sprint P: playlist hoc tiep tu bookmarks + quiz."""
+        self.write("▶ Đang xếp playlist Học tiếp…")
+        def work():
+            try:
+                import learn_playlist as LP
+                pl = LP.build_playlist(course=None, include_done=False)
+                path = LP.save_playlist(pl, course="all")
+                return pl, str(path)
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("Học tiếp", str(r)); return
+            pl, path = r
+            nxt = pl.get("next")
+            if not nxt:
+                messagebox.showinfo(
+                    "Học tiếp",
+                    "Chưa có bookmark.\nMở trình tải → ★ gắn bài, làm quiz để ưu tiên ôn.",
+                )
+                return
+            msg = (
+                f"Tiếp theo ({pl.get('n')} mục):\n\n"
+                f"[{nxt.get('course')}] {nxt.get('title')}\n"
+                f"{nxt.get('path')}\n"
+                f"({nxt.get('reason')})\n\n"
+                f"Playlist: {path}"
+            )
+            if nxt.get("path") and Path(nxt["path"]).exists():
+                if messagebox.askyesno("▶ Học tiếp", msg + "\n\nMở folder bài?"):
+                    self._open_path(Path(nxt["path"]))
+                    try:
+                        import learn_playlist as LP
+                        if nxt.get("id"):
+                            LP.mark_bookmark_done(nxt["id"], done=True)
+                    except Exception:
+                        pass
+            else:
+                messagebox.showinfo("▶ Học tiếp", msg)
+            self.write(f"▶ NEXT: {nxt.get('title')}")
+        self.run_async(work, cb)
 
     def dash_smart_batch(self):
         """Sprint L: enqueue smart-update moi khoa con thieu."""
@@ -2630,12 +2744,49 @@ class App:
                     self._lastref = time.time(); self.refresh_manager()
                 elif self.proc and hasattr(self, "trans_lbl") and self.trans_lbl.winfo_exists():
                     self._lastref = time.time(); self._trans_scan_async()
+            # Sprint O: live ETA tu _download_progress.json
+            if self.proc and time.time() - getattr(self, "_last_eta", 0) > 1.2:
+                self._last_eta = time.time()
+                self._refresh_live_eta()
         except Exception as e:
             try: self.write(f"[lỗi vòng lặp] {e}")
             except Exception: pass
         finally:
             try: self.root.after(200, self.poll)   # luon lap lai; bo qua neu app dang dong
             except Exception: pass
+
+    def _refresh_live_eta(self):
+        """Doc progress file + cap nhat run_lbl / status4 / mgr_status."""
+        try:
+            import progress_live as PL
+            root = self.course_root(self.course_name)
+            data = PL.read_download_progress(root)
+            if not data or data.get("status") == "done":
+                return
+            line = PL.format_eta_line(data)
+            frac = PL.progress_fraction(data)
+            if not line:
+                return
+            if hasattr(self, "run_lbl") and self.run_lbl.winfo_exists():
+                self.run_lbl.configure(text=f"⏳  {line}", text_color=WARNING)
+            if hasattr(self, "status4") and self.status4.winfo_exists():
+                self.status4.configure(text=line)
+            if hasattr(self, "pb4") and self.pb4.winfo_exists() and frac > 0:
+                # uu tien video scan, nhung neu progress file chi tiet hon thi mix
+                try:
+                    self.pb4.set(max(self.pb4.get(), frac * 0.95))
+                except Exception:
+                    self.pb4.set(frac)
+            if hasattr(self, "pct_lbl") and self.pct_lbl.winfo_exists() and data.get("total"):
+                pct = int(100 * frac)
+                self.pct_lbl.configure(text=f"{pct}%")
+            if hasattr(self, "mgr_status") and self.mgr_status.winfo_exists() and self.proc:
+                self.mgr_status.configure(
+                    text=f"⏳  {self.mgr_busy or 'đang tải'} · {line}",
+                    text_color=WARNING,
+                )
+        except Exception:
+            pass
 
     def on_browser_event(self, e):
         t = e.get("type")
@@ -2661,6 +2812,19 @@ class App:
             if hasattr(self, "dump_status") and self.dump_status.winfo_exists():
                 self.dump_status.configure(text=f"✓ Đã lấy {e['ok']}/{e['total']} chương")
             if hasattr(self, "dump_pb") and self.dump_pb.winfo_exists(): self.dump_pb.set(1)
+            # Sprint Q: content diff / snapshot sau dump
+            try:
+                import content_diff as CD
+                root = Path(e.get("out_dir") or self.course_root(self.course_name))
+                if self.purpose == "update" and CD.load_snapshot(root):
+                    diff = CD.compare(root)
+                    CD.write_diff(root, diff)
+                    if diff.get("has_changes"):
+                        self.write(f"Δ Content: {diff.get('summary')}")
+                # luon cap nhat snapshot sau dump de baseline lan sau
+                CD.save_snapshot(root)
+            except Exception as ex:
+                self.write(f"[content-diff] {ex}")
             if self.purpose == "rescue":
                 self.write("Token mới đã sẵn sàng — bắt đầu tải lại native…"); self.start_native_download(); return
             if self.purpose == "update":
@@ -3257,10 +3421,12 @@ class App:
 
         brow = ctk.CTkFrame(self.content, fg_color="transparent")
         brow.pack(fill="x", pady=8)
-        btn(brow, "▶  Chạy Doctor", self.doctor_run, kind="success", width=140).pack(side="left")
-        btn(brow, "Self-test", self.run_selftest, kind="secondary", width=110).pack(side="left", padx=6)
-        btn(brow, "Preflight", self.show_check, kind="secondary", width=110).pack(side="left", padx=6)
-        btn(brow, "Mở BASE", lambda: self._open_path(C.BASE), kind="soft", width=100).pack(side="left", padx=6)
+        btn(brow, "▶  Chạy Doctor", self.doctor_run, kind="success", width=130).pack(side="left")
+        btn(brow, "🔧 Fix 1-click", self.doctor_fix_all, kind="accent", width=120).pack(side="left", padx=6)
+        btn(brow, "↑ yt-dlp", self.doctor_update_ytdlp, kind="secondary", width=90).pack(side="left", padx=4)
+        btn(brow, "Self-test", self.run_selftest, kind="secondary", width=100).pack(side="left", padx=4)
+        btn(brow, "Preflight", self.show_check, kind="secondary", width=100).pack(side="left", padx=4)
+        btn(brow, "Mở BASE", lambda: self._open_path(C.BASE), kind="soft", width=90).pack(side="left", padx=4)
 
         out = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=dens("card_r", 16),
                            border_width=1, border_color=BORDER)
@@ -3287,6 +3453,52 @@ class App:
             self.show_doctor()
         except Exception as e:
             messagebox.showerror("BASE", str(e))
+
+    def doctor_fix_all(self):
+        """Sprint S: yt-dlp -U + pip goi thieu theo doctor."""
+        if not messagebox.askyesno(
+            "Fix 1-click",
+            "Cập nhật yt-dlp và cài các gói thiếu (pip)?\nCó thể mất vài phút.",
+        ):
+            return
+        self.write("🔧 Doctor fix…")
+        def work():
+            try:
+                import tools_fix as TF
+                lines = []
+                def log(s):
+                    lines.append(str(s))
+                    self.ui_q.put(lambda m=s: self.write(m))
+                r = TF.fix_all(yt_dlp=True, from_doctor=True, log=log)
+                return r, "\n".join(lines[-40:])
+            except Exception as e:
+                return e
+        def cb(res):
+            if isinstance(res, Exception):
+                messagebox.showerror("Fix", str(res)); return
+            r, text = res
+            if hasattr(self, "doctor_box") and self.doctor_box.winfo_exists():
+                self.doctor_box.configure(state="normal")
+                self.doctor_box.delete("1.0", "end")
+                self.doctor_box.insert("end", text + f"\n\nok={r.get('ok')}\n")
+                self.doctor_box.configure(state="disabled")
+            messagebox.showinfo("Fix", f"Xong. ok={r.get('ok')}\nChạy lại Doctor để xác nhận.")
+            self.doctor_run()
+        self.run_async(work, cb)
+
+    def doctor_update_ytdlp(self):
+        self.write("↑ yt-dlp -U…")
+        def work():
+            try:
+                import tools_fix as TF
+                return TF.update_ytdlp(log=lambda s: self.ui_q.put(lambda m=s: self.write(m)))
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("yt-dlp", str(r)); return
+            messagebox.showinfo("yt-dlp", f"ok={r.get('ok')} · version={r.get('version')}")
+        self.run_async(work, cb)
 
     def doctor_run(self):
         self.write("🩺 Doctor…")

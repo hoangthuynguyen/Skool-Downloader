@@ -433,6 +433,43 @@ def test_sprint_jklmn():
     print("  PASS  sprint J–N anki/quiz/batch/adaptive")
 
 
+def test_sprint_opqrs():
+    """Sprint O–S: progress live, playlist, content diff, vault, tools_fix map."""
+    import progress_live as PL
+    import learn_playlist as LP
+    import content_diff as CD
+    import vault_export as VE
+    import tools_fix as TF
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "_download_progress.json").write_text(json.dumps({
+            "status": "running", "done": 3, "total": 10, "eta": "ETA~2m",
+            "workers": 2, "tai": 2, "loi": 0,
+        }), encoding="utf-8")
+        data = PL.read_download_progress(root)
+        assert data and data["done"] == 3
+        assert "3/10" in PL.format_eta_line(data)
+        assert 0.2 < PL.progress_fraction(data) < 0.4
+        lesson = root / "01 - C" / "01 - L"
+        lesson.mkdir(parents=True)
+        (lesson / "description.md").write_text("hello v1", encoding="utf-8")
+        (lesson / "video.txt").write_text("transcript alpha", encoding="utf-8")
+        p, snap = CD.save_snapshot(root)
+        assert p.exists() and snap["n_files"] >= 2
+        (lesson / "video.txt").write_text("transcript BETA changed", encoding="utf-8")
+        d = CD.compare(root)
+        assert d["has_changes"] and len(d["changed"]) >= 1
+        r = VE.export_obsidian(root, course_name="T", out_dir=str(root / "vault"))
+        assert r["lessons"] >= 1 and Path(r["path"]).exists()
+        r2 = VE.export_notion(root, course_name="T", out_dir=str(root / "notion"))
+        assert r2["lessons"] >= 1
+    LP.record_quiz_score("CourseZ", 3, 10)
+    scores = LP.get_quiz_scores()
+    assert scores.get("CourseZ", {}).get("pct") == 30.0
+    assert TF.PKG_MAP.get("yt_dlp") == "yt-dlp"
+    print("  PASS  sprint O–S progress/playlist/diff/vault/fix")
+
+
 def test_warehouse_fails_field():
     import progress as P
     st = P.warehouse_stats([])
@@ -527,7 +564,7 @@ def test_config_base_and_doctor_requeue():
 
 
 def main():
-    print("Phase 1–10 + Sprint A–N smoke tests")
+    print("Phase 1–10 + Sprint A–S smoke tests")
     fails = 0
     for fn in (test_progress_badge, test_queue_persist, test_cloud_policy,
                test_updates_diff, test_rag_score, test_tfidf_and_multi,
@@ -539,7 +576,7 @@ def main():
                test_retry_failed_and_knowledge_pack,
                test_smart_update_and_chapters, test_search_snippet_highlight,
                test_pack_backup_restore, test_notify_session_workers_digest,
-               test_sprint_jklmn):
+               test_sprint_jklmn, test_sprint_opqrs):
         try:
             fn()
         except Exception as e:

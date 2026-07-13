@@ -2,7 +2,7 @@
 
 Công cụ lưu trữ **toàn bộ một khóa học Skool** về máy: cây thư mục theo chương/bài, video (native Skool + Loom + YouTube), mô tả bài, tài liệu (resources) và **phụ đề tiếng Anh (Whisper)** — chạy bằng **một lệnh**, có **kiểm tra môi trường trước khi chạy** và **báo lỗi kèm cách xử lý**.
 
-> Phiên bản hiện tại: **2.7.0** — adaptive workers · ETA · smart-batch · Anki · offline quiz (`python app/main.py --version`).  
+> Phiên bản hiện tại: **2.8.0** — live ETA · học tiếp · content diff · Obsidian/Notion · fix 1-click (`python app/main.py --version`).  
 > Đã kiểm chứng trên khóa *AI Automations by Jack* (584 bài, ~170 GB).
 
 ---
@@ -216,6 +216,13 @@ python app\anki_export.py --course "X"                      # Anki TSV
 python app\anki_export.py --course "X" --cloze
 python app\quiz.py --course "X" --build
 python app\quiz.py --course "X" --play
+python app\learn_playlist.py --all --write                  # playlist Hoc tiep
+python app\content_diff.py --course "X" --snapshot
+python app\content_diff.py --course "X" --write
+python app\vault_export.py --course "X"                     # Obsidian
+python app\vault_export.py --course "X" --format notion
+python app\doctor.py --fix                                 # yt-dlp -U + pip thieu
+python app\tools_fix.py --yt-dlp-only
 python app\main.py --course "X" --only transcribe           # phu de chi thieu
 python app\main.py --course "X" --index        # build RAG index sau pipeline
 python app\export.py   --course "X" --docx     # gộp & xuất Word (Nhóm A)
