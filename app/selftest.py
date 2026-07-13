@@ -18,7 +18,7 @@ def main():
     import common as K
     import version as V
     K.setup_console()
-    ap = argparse.ArgumentParser(description="Skool Archiver self-test")
+    ap = argparse.ArgumentParser(description="Skool Downloader self-test")
     ap.add_argument("--quick", action="store_true", help="Chi doctor, bo unit tests")
     a = ap.parse_args()
 

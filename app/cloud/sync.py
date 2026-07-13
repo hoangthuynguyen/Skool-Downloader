@@ -126,7 +126,7 @@ def sync_course(root, course_name=None, mode=None, dry_run=False, log=print, for
             elif provider == "gdrive":
                 dest = f"gdrive:courses/{course_name}/{rel_s}"
             else:
-                dest = f"onedrive:{(odcfg or {}).get('folder') or 'SkoolArchiver'}/courses/{course_name}/{rel_s}"
+                dest = f"onedrive:{(odcfg or {}).get('folder') or 'SkoolDownloader'}/courses/{course_name}/{rel_s}"
             log(f"   [dry] {rel_s} -> {dest}")
             stats["uploaded"] += 1
             continue

@@ -61,7 +61,7 @@ def run_doctor(fix_base=None):
     # --- Paths ---
     info = C.base_info()
     add("path", "BASE", OK, f"{info['base']}  ({info['source']})")
-    add("path", "Archiver", INFO, info["archiver"])
+    add("path", "Downloader", INFO, info["archiver"])
     add("path", "courses/", OK if info["courses_exists"] else WARN,
         info["courses"],
         "Chua co — se tao khi import khoa, hoac dat SKOOL_BASE / settings skool_base")
@@ -134,7 +134,7 @@ def run_doctor(fix_base=None):
 
 
 def print_report(rep):
-    print("\n===== SKOOL ARCHIVER DOCTOR =====")
+    print("\n===== SKOOL DOWNLOADER DOCTOR =====")
     print(f"BASE: {rep['base']['base']}  [{rep['base']['source']}]")
     print(f"Khóa: {rep['courses']}")
     cur = None

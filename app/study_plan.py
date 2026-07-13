@@ -39,7 +39,7 @@ def build_ics(playlist, start=None, per_day=1, hour=19, duration_min=45, calenda
     lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
-        "PRODID:-//Skool Archiver//Study Plan//EN",
+        "PRODID:-//Skool Downloader//Study Plan//EN",
         "CALSCALE:GREGORIAN",
         "METHOD:PUBLISH",
         f"X-WR-CALNAME:{_ics_escape(calendar_name)}",
@@ -56,7 +56,7 @@ def build_ics(playlist, start=None, per_day=1, hour=19, duration_min=45, calenda
         # stagger same day by duration
         event_start = event_start + timedelta(minutes=slot * (duration_min + 15))
         event_end = event_start + timedelta(minutes=duration_min)
-        uid = f"{it.get('id') or uuid.uuid4().hex}@skool-archiver"
+        uid = f"{it.get('id') or uuid.uuid4().hex}@skool-downloader"
         title = f"[Skool] {it.get('title') or 'Lesson'}"
         desc = f"Course: {it.get('course')}\nPath: {it.get('path')}\n{it.get('reason') or ''}"
         loc = it.get("path") or ""

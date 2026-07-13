@@ -7,7 +7,7 @@ Can: pip install msal requests
 Cau hinh cloud.onedrive:
   client_id   — Azure app (public client, personal/work)
   tenant      — "consumers" (ca nhan) | "common" | "organizations" | tenant id
-  folder      — ten folder goc tren OneDrive (mac dinh SkoolArchiver)
+  folder      — ten folder goc tren OneDrive (mac dinh SkoolDownloader)
 """
 from __future__ import annotations
 
@@ -100,7 +100,7 @@ def test_connection(cfg, log=print):
         if r.status_code != 200:
             return False, f"{r.status_code}: {r.text[:200]}"
         name = (r.json().get("displayName") or r.json().get("userPrincipalName") or "?")
-        folder = (cfg.get("folder") or "SkoolArchiver").strip()
+        folder = (cfg.get("folder") or "SkoolDownloader").strip()
         return True, f"OK — OneDrive user «{name}» · folder root «{folder}»"
     except Exception as e:
         return False, str(e)
@@ -160,7 +160,7 @@ def upload_file(cfg, local_path, rel_path, course_name="course", log=print):
     import requests
     local_path = Path(local_path)
     token = get_access_token(cfg, interactive=False, log=log)
-    root_folder = (cfg.get("folder") or "SkoolArchiver").strip() or "SkoolArchiver"
+    root_folder = (cfg.get("folder") or "SkoolDownloader").strip() or "SkoolDownloader"
     rel = Path(str(rel_path).replace("\\", "/"))
     folder_parts = [root_folder, "courses", course_name or "SkoolCourse"] + list(rel.parent.parts)
     if str(rel.parent) in (".", ""):

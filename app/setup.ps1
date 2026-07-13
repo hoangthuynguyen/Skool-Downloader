@@ -1,5 +1,5 @@
-# === Setup moi truong cho Skool Archiver (may moi) ===
-# Chay 1 lan:  double-click setup.cmd o thu muc Archiver  (no goi file nay trong app\).
+# === Setup moi truong cho Skool Downloader (may moi) ===
+# Chay 1 lan:  double-click setup.cmd o thu muc Skool-Downloader  (no goi file nay trong app\).
 # Luu y: may da co san ..\..\whisper\venv day du thi KHONG can chay setup -
 #        run.ps1 se tu dung venv do.
 $ErrorActionPreference = "Stop"
@@ -38,7 +38,7 @@ Write-Host "==> Kiem tra moi truong (preflight)..." -ForegroundColor Cyan
 & .\venv\Scripts\python.exe preflight.py
 
 Write-Host ""
-Write-Host "XONG. Tu gio (o thu muc Archiver) chay:" -ForegroundColor Green
+Write-Host "XONG. Tu gio (o thu muc Skool-Downloader) chay:" -ForegroundColor Green
 Write-Host '    .\run.cmd --course "Ten khoa"'
 Write-Host '    .\run.cmd --list-courses'
 Write-Host '    .\install_transcribe_task.cmd -All        (transcribe ngam)'

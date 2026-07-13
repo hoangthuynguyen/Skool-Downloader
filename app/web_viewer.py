@@ -34,7 +34,7 @@ def _layout(title, body, q=""):
     return f"""<!DOCTYPE html>
 <html lang="vi"><head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>{_esc(title)} · Skool Archiver</title>
+<title>{_esc(title)} · Skool Downloader</title>
 <style>
 :root {{ --bg:#f4f4f5; --card:#fff; --text:#18181b; --muted:#71717a; --line:#e4e4e7; --pri:#111114; }}
 * {{ box-sizing:border-box; }}
@@ -76,7 +76,7 @@ a.link:hover {{ text-decoration:underline; }}
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 </head><body>
 <header>
-  <a class="brand" href="/">📦 Skool Archiver</a>
+  <a class="brand" href="/">📦 Skool Downloader</a>
   <a href="/">Khóa học</a>
   <a href="/health">Health</a>
   <a href="/api/health">API</a>
@@ -125,7 +125,7 @@ def course_root_by_key(key):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "SkoolArchiverWeb/1.0"
+    server_version = "SkoolDownloaderWeb/1.0"
 
     def log_message(self, fmt, *args):
         sys.stderr.write("[%s] %s\n" % (self.log_date_time_string(), fmt % args))
@@ -167,7 +167,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(S.search_all(q, top_k=int(qs.get("top", ["20"])[0] or 20)))
             if path == "/manifest.webmanifest":
                 return self._send(200, json.dumps({
-                    "name": "Skool Archiver",
+                    "name": "Skool Downloader",
                     "short_name": "Skool",
                     "start_url": "/",
                     "display": "standalone",
@@ -286,7 +286,7 @@ class Handler(BaseHTTPRequestHandler):
 def serve(host=HOST_DEFAULT, port=PORT_DEFAULT, open_browser=True):
     httpd = ThreadingHTTPServer((host, port), Handler)
     url = f"http://{host}:{port}/"
-    print(f"Skool Archiver Web Viewer → {url}")
+    print(f"Skool Downloader Web Viewer → {url}")
     print("Ctrl+C để dừng.")
     if open_browser and host in ("127.0.0.1", "localhost"):
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()

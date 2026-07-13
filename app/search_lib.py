@@ -239,7 +239,7 @@ def warehouse_report(base=None):
     entries = P.scan_all(base)
     st = P.warehouse_stats(entries)
     lines = [
-        "# Skool Archiver — Báo cáo kho khóa",
+        "# Skool Downloader — Báo cáo kho khóa",
         "",
         f"- Số khóa: **{st['courses']}**",
         f"- Bài: **{st['done']}/{st['total']}**",

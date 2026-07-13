@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Giao dien Skool Archiver - CustomTkinter (UI v2).
-Mo bang: double-click SkoolArchiver.cmd
+Giao dien Skool Downloader - CustomTkinter (UI v2).
+Mo bang: double-click SkoolDownloader.cmd
 """
 import os, sys, time, queue, threading, subprocess
 from pathlib import Path
@@ -14,7 +14,7 @@ import progress as P
 import common as K
 
 HERE = Path(__file__).resolve().parent
-ARCHIVER = HERE.parent
+REPO = HERE.parent
 PY = sys.executable.replace("pythonw.exe", "python.exe")
 NO_WIN = 0x08000000 if os.name == "nt" else 0
 SENTINEL = "\x00DONE\x00"
@@ -239,7 +239,7 @@ class App:
         self.nav_page = "dashboard"
         self._nav_btns = {}
         self._web_proc = None
-        root.title(f"Skool Archiver {_ver}".strip())
+        root.title(f"Skool Downloader {_ver}".strip())
         root.geometry("980x720")
         root.minsize(720, 520)
         root.configure(fg_color=BG)
@@ -258,10 +258,10 @@ class App:
         logo = ctk.CTkFrame(brand, width=36, height=36, corner_radius=10, fg_color=ACCENT)
         logo.pack(side="left")
         logo.pack_propagate(False)
-        ctk.CTkLabel(logo, text="SA", font=(FT, 13, "bold"), text_color="white").place(relx=0.5, rely=0.5, anchor="center")
+        ctk.CTkLabel(logo, text="SD", font=(FT, 13, "bold"), text_color="white").place(relx=0.5, rely=0.5, anchor="center")
         bt = ctk.CTkFrame(brand, fg_color="transparent")
         bt.pack(side="left", padx=(10, 0))
-        ctk.CTkLabel(bt, text="Skool Archiver", font=(FT, 15, "bold"), text_color="white").pack(anchor="w")
+        ctk.CTkLabel(bt, text="Skool Downloader", font=(FT, 15, "bold"), text_color="white").pack(anchor="w")
         ctk.CTkLabel(bt, text=f"v{_ver}" if _ver else "Local archive",
                      font=(FT, 11), text_color=ON_SIDE).pack(anchor="w")
 
@@ -427,8 +427,8 @@ class App:
         import traceback
         full = "".join(traceback.format_exception(exc, val, tb))
         try:
-            (ARCHIVER / "logs").mkdir(parents=True, exist_ok=True)
-            with (ARCHIVER / "logs" / "gui_error.log").open("a", encoding="utf-8") as f:
+            (REPO / "logs").mkdir(parents=True, exist_ok=True)
+            with (REPO / "logs" / "gui_error.log").open("a", encoding="utf-8") as f:
                 f.write(full + "\n")
         except Exception: pass
         try: self.write("[LỖI GIAO DIỆN] " + (str(val) or exc.__name__))
@@ -450,7 +450,7 @@ class App:
         box.pack(fill="x", padx=12, pady=(2, 12)); box.insert("end", full[-2500:]); box.configure(state="disabled")
         row = ctk.CTkFrame(self.content, fg_color="transparent"); row.pack(fill="x", pady=10)
         btn(row, "←  Về Dashboard", self.show_dashboard, kind="ghost", width=150).pack(side="left")
-        btn(row, "📁  Mở thư mục log", lambda: self._open_path(ARCHIVER / "logs"),
+        btn(row, "📁  Mở thư mục log", lambda: self._open_path(REPO / "logs"),
             kind="secondary", width=170).pack(side="left", padx=8)
 
     def _open_path(self, p):
@@ -3836,7 +3836,7 @@ class App:
         od_fields = [
             ("Client ID", "od_client", od.get("client_id") or ""),
             ("Tenant (consumers/common)", "od_tenant", od.get("tenant") or "consumers"),
-            ("Folder name", "od_folder", od.get("folder") or "SkoolArchiver"),
+            ("Folder name", "od_folder", od.get("folder") or "SkoolDownloader"),
         ]
         for label, key, val in od_fields:
             row = ctk.CTkFrame(card, fg_color="transparent"); row.pack(fill="x", padx=14, pady=2)
@@ -3916,7 +3916,7 @@ class App:
             if "od_tenant" in self.cloud_vars:
                 od["tenant"] = self.cloud_vars["od_tenant"].get().strip() or "consumers"
             if "od_folder" in self.cloud_vars:
-                od["folder"] = self.cloud_vars["od_folder"].get().strip() or "SkoolArchiver"
+                od["folder"] = self.cloud_vars["od_folder"].get().strip() or "SkoolDownloader"
             cfg["provider"] = (self.cloud_provider.get() if hasattr(self, "cloud_provider") else "r2") or "r2"
             cfg["r2"] = r2
             cfg["gdrive"] = gd
@@ -4466,7 +4466,7 @@ class App:
                     creationflags=NO_WIN,
                 )
                 self.write("❤ Đã gọi cài Scheduled Task (Health hàng ngày 09:00)")
-                messagebox.showinfo("Lịch", "Đã đăng ký task Windows: SkoolArchiver-Health (09:00 hàng ngày).")
+                messagebox.showinfo("Lịch", "Đã đăng ký task Windows: SkoolDownloader-Health (09:00 hàng ngày).")
             except Exception as e:
                 messagebox.showerror("Lịch", str(e))
         else:
@@ -4475,7 +4475,7 @@ class App:
                 os.chmod(sh, 0o755)
                 subprocess.check_call(["/bin/bash", str(sh)])
                 self.write("❤ Đã cài LaunchAgent health (macOS 09:00)")
-                messagebox.showinfo("Lịch", "Đã load LaunchAgent com.skoolarchiver.health (09:00).")
+                messagebox.showinfo("Lịch", "Đã load LaunchAgent com.skooldownloader.health (09:00).")
             except Exception as e:
                 messagebox.showerror(
                     "Lịch",
@@ -4491,15 +4491,16 @@ class App:
                     ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ps)],
                     creationflags=NO_WIN,
                 )
-                messagebox.showinfo("Lịch", "Đã gỡ task SkoolArchiver-Health (nếu có).")
+                messagebox.showinfo("Lịch", "Đã gỡ task SkoolDownloader-Health (nếu có).")
             except Exception as e:
                 messagebox.showerror("Lịch", str(e))
         else:
             try:
-                plist = Path.home() / "Library/LaunchAgents/com.skoolarchiver.health.plist"
-                subprocess.call(["launchctl", "unload", str(plist)])
-                if plist.exists():
-                    plist.unlink()
+                for label in ("com.skooldownloader.health", "com.skoolarchiver.health"):
+                    plist = Path.home() / "Library/LaunchAgents" / f"{label}.plist"
+                    subprocess.call(["launchctl", "unload", str(plist)])
+                    if plist.exists():
+                        plist.unlink()
                 messagebox.showinfo("Lịch", "Đã unload LaunchAgent (nếu có).")
             except Exception as e:
                 messagebox.showerror("Lịch", str(e))
@@ -4580,7 +4581,7 @@ class App:
         if not (hasattr(self, "chat_box") and self.chat_box.winfo_exists()):
             return
         self.chat_box.configure(state="normal")
-        prefix = "Bạn: " if role == "user" else "Archiver: "
+        prefix = "Bạn: " if role == "user" else "Downloader: "
         self.chat_box.insert("end", prefix + text.strip() + "\n\n")
         self.chat_box.see("end")
         self.chat_box.configure(state="disabled")

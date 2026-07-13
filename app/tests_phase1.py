@@ -139,7 +139,7 @@ def test_search_and_report():
     import search_lib as S
     # empty warehouse still returns structure
     md, entries = S.warehouse_report()
-    assert "Skool Archiver" in md
+    assert "Skool Downloader" in md
     assert isinstance(entries, list)
     hits = S.search_all("zzz_nonexistent_term_xyz", top_k=3)
     assert hits == [] or isinstance(hits, list)

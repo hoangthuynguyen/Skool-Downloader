@@ -1,5 +1,5 @@
 @echo off
-title Skool Archiver - Selftest
+title Skool Downloader - Selftest
 cd /d "%~dp0..\app"
 python selftest.py %*
 echo.

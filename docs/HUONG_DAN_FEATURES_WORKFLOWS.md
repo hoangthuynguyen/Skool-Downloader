@@ -1,7 +1,7 @@
-# Skool Archiver — Hướng dẫn Features & Workflows
+# Skool Downloader — Hướng dẫn Features & Workflows
 
-> Phiên bản app: **2.14.0+** · Cập nhật: 2026-07  
-> Launcher: `SkoolArchiver.cmd` (Win) · `SkoolArchiver.command` (macOS) · CLI: `app/main.py` · LLM: `app/llm_prompt.py`
+> Phiên bản app: **2.14.2+** · Cập nhật: 2026-07  
+> Launcher: `SkoolDownloader.cmd` (Win) · `SkoolDownloader.command` (macOS) · CLI: `app/main.py` · LLM: `app/llm_prompt.py`
 
 Tài liệu này mô tả **tính năng**, **luồng làm việc** và **cách cấu hình LLM** (Claude, OpenAI, **Grok**, Gemini, OpenRouter, Qwen, GLM, Kimi, …).
 
@@ -13,9 +13,9 @@ Tài liệu này mô tả **tính năng**, **luồng làm việc** và **cách c
 
 | OS | Bước |
 |----|------|
-| **Windows** | Double-click **`SkoolArchiver.cmd`**. Tạo icon Desktop: chạy **`Nâng cao\Tao shortcut Desktop.cmd`** một lần. |
-| **macOS** | Double-click **`SkoolArchiver.command`**. Tạo icon Desktop + App: double-click **`Tao shortcut.command`** (hoặc `bash app/install_shortcut.sh`). Sau đó mở từ **Desktop → Skool Archiver** hoặc **`~/Applications/Skool Archiver.app`**. |
-| **Linux** | `bash SkoolArchiver.command` hoặc sau `install_shortcut.sh` dùng menu ứng dụng. |
+| **Windows** | Double-click **`SkoolDownloader.cmd`**. Tạo icon Desktop: chạy **`Nâng cao\Tao shortcut Desktop.cmd`** một lần. |
+| **macOS** | Double-click **`SkoolDownloader.command`**. Tạo icon Desktop + App: double-click **`Tao shortcut.command`** (hoặc `bash app/install_shortcut.sh`). Sau đó mở từ **Desktop → Skool Downloader** hoặc **`~/Applications/Skool Downloader.app`**. |
+| **Linux** | `bash SkoolDownloader.command` hoặc sau `install_shortcut.sh` dùng menu ứng dụng. |
 
 Lần đầu: tự tạo `app/venv` + `pip install -r requirements.txt` (cần mạng).  
 macOS nếu báo “không mở được”: **chuột phải → Open** (lần đầu).
@@ -379,4 +379,4 @@ Helpers Windows: folder **`Nâng cao/`** (`LLM Prompt.cmd`, `Doctor.cmd`, …).
 
 ---
 
-*Skool Archiver — local-first archive + knowledge + multi-LLM prompts.*
+*Skool Downloader — local-first archive + knowledge + multi-LLM prompts.*

@@ -6,7 +6,7 @@
   Go: .\uninstall_health_task.ps1
 #>
 param(
-    [string]$TaskName = "SkoolArchiver-Health",
+    [string]$TaskName = "SkoolDownloader-Health",
     [int]$Hour = 9,
     [int]$Minute = 0
 )

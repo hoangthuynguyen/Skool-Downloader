@@ -1,6 +1,6 @@
-"""Phien ban Skool Archiver (Phase ship)."""
-__version__ = "2.14.0"
-__codename__ = "easy-launch"
+"""Phien ban Skool Downloader (Phase ship)."""
+__version__ = "2.14.2"
+__codename__ = "skool-downloader"
 
 # Phase milestones (gan dung commit history)
 HISTORY = (
@@ -29,8 +29,10 @@ HISTORY = (
     "2.12.0 multi-LLM: Gemini/OpenRouter/GLM/Qwen/Kimi/… + fallback chain",
     "2.13.0 Grok (xAI) provider + features/workflows user guide",
     "2.14.0 one-click launchers + Desktop shortcuts (macOS/Win/Linux)",
+    "2.14.1 rename display name to Skool Downloader",
+    "2.14.2 fix macOS GUI hang (CLT Tk) + full SkoolDownloader rename",
 )
 
 
 def version_string():
-    return f"Skool Archiver {__version__} ({__codename__})"
+    return f"Skool Downloader {__version__} ({__codename__})"

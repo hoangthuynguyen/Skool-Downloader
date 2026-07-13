@@ -1,4 +1,6 @@
-param([string]$TaskName = "SkoolArchiver-Health")
+param([string]$TaskName = "SkoolDownloader-Health")
 $ErrorActionPreference = "SilentlyContinue"
-Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-Write-Host "Da go task '$TaskName' (neu co)."
+foreach ($n in @($TaskName, "SkoolArchiver-Health")) {
+    Unregister-ScheduledTask -TaskName $n -Confirm:$false
+    Write-Host "Da go task '$n' (neu co)."
+}

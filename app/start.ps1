@@ -1,7 +1,7 @@
-# === Skool Archiver - MOT FILE DUY NHAT: tu cai (lan dau) roi mo giao dien ===
-# Duoc SkoolArchiver.cmd goi. Nguoi dung CHI CAN bam SkoolArchiver.cmd.
+# === Skool Downloader - MOT FILE DUY NHAT: tu cai (lan dau) roi mo giao dien ===
+# Duoc SkoolDownloader.cmd goi. Nguoi dung CHI CAN bam SkoolDownloader.cmd.
 $ErrorActionPreference = "Stop"
-$here = Split-Path -Parent $MyInvocation.MyCommand.Definition          # ...\Archiver\app
+$here = Split-Path -Parent $MyInvocation.MyCommand.Definition          # ...\Skool-Downloader\app
 $base = Split-Path -Parent (Split-Path -Parent $here)                 # ...\SkoolProject
 
 function Has-Gui($py) {
@@ -11,7 +11,7 @@ function Has-Gui($py) {
 }
 
 Write-Host ""
-Write-Host "  ===== Skool Archiver =====" -ForegroundColor Cyan
+Write-Host "  ===== Skool Downloader =====" -ForegroundColor Cyan
 Write-Host "  Dang kiem tra moi truong..." -ForegroundColor DarkGray
 
 # 1) Tim Python da san sang (uu tien venv co san cua du an)
@@ -32,8 +32,8 @@ if (-not $py) {
         if (-not $sys) {
             Add-Type -AssemblyName System.Windows.Forms
             [System.Windows.Forms.MessageBox]::Show(
-                "Chua cai Python tren may nay.`n`nTai Python 3.11+ tai https://www.python.org/downloads/`n(nho tick 'Add Python to PATH' khi cai), roi bam lai SkoolArchiver.cmd.",
-                "Skool Archiver") | Out-Null
+                "Chua cai Python tren may nay.`n`nTai Python 3.11+ tai https://www.python.org/downloads/`n(nho tick 'Add Python to PATH' khi cai), roi bam lai SkoolDownloader.cmd.",
+                "Skool Downloader") | Out-Null
             throw "Thieu Python"
         }
         Write-Host "  Tao moi truong ao..." -ForegroundColor DarkGray

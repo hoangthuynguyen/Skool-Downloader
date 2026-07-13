@@ -482,7 +482,7 @@ def _openai_compatible_call(cfg: dict, system: str, user_text: str, max_tokens=8
     # OpenRouter optional headers
     if cfg.get("id") == "openrouter":
         headers["HTTP-Referer"] = "https://github.com/hoangthuynguyen/Skool-Downloader"
-        headers["X-Title"] = "Skool Archiver"
+        headers["X-Title"] = "Skool Downloader"
     last = ""
     for a in range(3):
         try:

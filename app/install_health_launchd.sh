@@ -3,7 +3,7 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PY="${PYTHON:-python3}"
-LABEL="com.skoolarchiver.health"
+LABEL="com.skooldownloader.health"
 PLIST="$HOME/Library/LaunchAgents/${LABEL}.plist"
 mkdir -p "$HOME/Library/LaunchAgents" "$HERE/../logs" 2>/dev/null || true
 

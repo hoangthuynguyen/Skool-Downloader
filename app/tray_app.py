@@ -83,7 +83,7 @@ def main():
         pystray.MenuItem("Mở GUI", open_gui),
         pystray.MenuItem("Thoát", quit_app),
     )
-    icon = pystray.Icon("skool_archiver", img, "Skool Archiver", menu)
+    icon = pystray.Icon("skool_downloader", img, "Skool Downloader", menu)
     icon.run()
 
 

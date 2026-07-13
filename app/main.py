@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Skool Archiver - pipeline luu tru khoa hoc Skool bang 1 lenh.
+Skool Downloader - pipeline luu tru khoa hoc Skool bang 1 lenh.
 
   python main.py --course "AI Automations by Jack"            # folders->extras->video->audit
   python main.py --course "AI Automations by Jack" --transcribe   # + Whisper o cuoi
@@ -72,7 +72,7 @@ def list_courses():
 
 def main():
     K.setup_console()
-    ap = argparse.ArgumentParser(description="Skool course archiver")
+    ap = argparse.ArgumentParser(description="Skool course downloader")
     ap.add_argument("--version", action="store_true", help="In phien ban roi thoat.")
     ap.add_argument("--course", help="Ten khoa duoi BASE/courses/. Bo trong = dung BASE/SkoolCourse (cu).")
     ap.add_argument("--root", help="Override truc tiep thu muc lam viec (thay cho --course).")
@@ -126,7 +126,7 @@ def main():
             import version as V
             print(V.version_string())
         except Exception:
-            print("Skool Archiver")
+            print("Skool Downloader")
         return
 
     if a.list_courses:

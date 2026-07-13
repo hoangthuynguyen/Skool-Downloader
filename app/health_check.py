@@ -281,7 +281,7 @@ def write_digest(report, base=None, prev=None):
 def main():
     import common as K
     K.setup_console()
-    ap = argparse.ArgumentParser(description="Skool Archiver warehouse health check")
+    ap = argparse.ArgumentParser(description="Skool Downloader warehouse health check")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--write", action="store_true", help="Ghi _health.json + _health.md")
     ap.add_argument("--digest", action="store_true",
@@ -328,9 +328,9 @@ def main():
         )
         try:
             import notify as N
-            N.notify("Skool Archiver — Health", msg, level="warn")
+            N.notify("Skool Downloader — Health", msg, level="warn")
         except Exception:
-            notify_windows("Skool Archiver", msg)
+            notify_windows("Skool Downloader", msg)
         print("  (đã gửi thông báo)")
 
     if a.fail_on_issue and sm["needs_attention"] > 0:

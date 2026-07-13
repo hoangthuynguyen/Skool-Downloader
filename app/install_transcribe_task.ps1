@@ -13,7 +13,7 @@
 param(
     [string]$Course = "",
     [switch]$All,
-    [string]$TaskName = "SkoolArchiver-Transcribe"
+    [string]$TaskName = "SkoolDownloader-Transcribe"
 )
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Definition

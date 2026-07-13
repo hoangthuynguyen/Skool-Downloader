@@ -1,10 +1,12 @@
-param([string]$TaskName = "SkoolArchiver-Transcribe")
+param([string]$TaskName = "SkoolDownloader-Transcribe")
 $ErrorActionPreference = "SilentlyContinue"
-$t = Get-ScheduledTask -TaskName $TaskName
-if ($t) {
-    Stop-ScheduledTask -TaskName $TaskName
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-    Write-Host "Da go task '$TaskName'." -ForegroundColor Green
-} else {
-    Write-Host "Khong thay task '$TaskName'."
+foreach ($n in @($TaskName, "SkoolArchiver-Transcribe")) {
+    $t = Get-ScheduledTask -TaskName $n
+    if ($t) {
+        Stop-ScheduledTask -TaskName $n
+        Unregister-ScheduledTask -TaskName $n -Confirm:$false
+        Write-Host "Da go task '$n'." -ForegroundColor Green
+    } else {
+        Write-Host "Khong thay task '$n'."
+    }
 }

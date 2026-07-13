@@ -1,6 +1,6 @@
-# Mo giao dien (GUI) Skool Archiver. Duoc GiaoDien.cmd goi.
+# Mo giao dien (GUI) Skool Downloader. Duoc GiaoDien.cmd goi.
 $ErrorActionPreference = "Stop"
-$here = Split-Path -Parent $MyInvocation.MyCommand.Definition   # ...\Archiver\app
+$here = Split-Path -Parent $MyInvocation.MyCommand.Definition   # ...\Skool-Downloader\app
 $base = Split-Path -Parent (Split-Path -Parent $here)           # ...\SkoolProject
 
 function Test-Tk($py) {

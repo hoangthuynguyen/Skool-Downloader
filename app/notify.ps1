@@ -1,5 +1,5 @@
 param(
-    [string]$Title = "Skool Archiver",
+    [string]$Title = "Skool Downloader",
     [string]$Message = "",
     [ValidateSet("info","error")] [string]$Level = "info"
 )

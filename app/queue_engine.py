@@ -470,7 +470,7 @@ def print_status(path=None):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Skool Archiver multi-course queue")
+    ap = argparse.ArgumentParser(description="Skool Downloader multi-course queue")
     ap.add_argument("--add", action="append", default=[], help="Them khoa vao queue (ten duoi courses/). Co the lap.")
     ap.add_argument("--add-legacy", action="store_true", help="Them SkoolCourse (layout cu).")
     ap.add_argument("--kind", default="full", choices=list(KINDS.keys()), help="Loai job.")

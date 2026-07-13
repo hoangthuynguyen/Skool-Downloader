@@ -3,7 +3,7 @@
 Sprint F — thong bao he thong da-nen (Windows / macOS / Linux).
 
   from notify import notify
-  notify("Skool Archiver", "Da tai xong — 0 fail", level="info")
+  notify("Skool Downloader", "Da tai xong — 0 fail", level="info")
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def _log(title, message, level="info"):
 
 def notify(title: str, message: str, level: str = "info") -> bool:
     """Gui thong bao he thong. Tra ve True neu co kenh nao thanh cong."""
-    title = (title or "Skool Archiver")[:80]
+    title = (title or "Skool Downloader")[:80]
     message = (message or "")[:240]
     level = level if level in ("info", "error", "warn") else "info"
     _log(title, message, level)
@@ -97,22 +97,22 @@ def notify_pipeline_result(course_name, fails=None, downloaded=None, extra=""):
             msg += f" · tải mới {downloaded}"
         if extra:
             msg += f" · {extra}"
-        return notify("Skool Archiver — Xong", msg, level="info")
+        return notify("Skool Downloader — Xong", msg, level="info")
     if n_fail and n_fail > 0:
         msg = f"«{name}»: {n_fail} bài fail"
         if extra:
             msg += f" · {extra}"
-        return notify("Skool Archiver — Còn fail", msg, level="warn")
+        return notify("Skool Downloader — Còn fail", msg, level="warn")
     msg = f"«{name}» hoàn tất pipeline"
     if extra:
         msg += f" · {extra}"
-    return notify("Skool Archiver", msg, level="info")
+    return notify("Skool Downloader", msg, level="info")
 
 
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument("title", nargs="?", default="Skool Archiver")
+    ap.add_argument("title", nargs="?", default="Skool Downloader")
     ap.add_argument("message", nargs="?", default="Test notification")
     ap.add_argument("--level", default="info")
     a = ap.parse_args()

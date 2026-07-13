@@ -119,7 +119,7 @@ def main():
             print(f"  - {vp}\n      {d}")
     # Chi bao khi THUC SU co lam viec (tranh lam phien moi lan logon sau khi da xong het)
     if not a.no_notify and (total_done or total_skip or total_retry):
-        notify("Skool Archiver - Transcribe", msg,
+        notify("Skool Downloader - Transcribe", msg,
                level=("error" if total_retry else "info"))
     return 0 if not total_retry else 1
 

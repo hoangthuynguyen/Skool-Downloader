@@ -1,5 +1,5 @@
 @echo off
-title Skool Archiver - Disk report
+title Skool Downloader - Disk report
 cd /d "%~dp0..\app"
 python disk_report.py --write %*
 echo.

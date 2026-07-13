@@ -1,4 +1,4 @@
-# === Skool Archiver - chay bang 1 lenh ===
+# === Skool Downloader - chay bang 1 lenh ===
 # Vi du:
 #   .\run.ps1 --course "AI Automations by Jack"
 #   .\run.ps1 --course "AI Automations by Jack" --transcribe
@@ -7,17 +7,17 @@
 # Moi tham so deu chuyen thang sang main.py (xem: .\run.ps1 --help)
 
 $ErrorActionPreference = "Stop"
-$here = Split-Path -Parent $MyInvocation.MyCommand.Definition   # ...\Archiver\app
+$here = Split-Path -Parent $MyInvocation.MyCommand.Definition   # ...\Skool-Downloader\app
 Set-Location $here
-$archiver = Split-Path -Parent $here                            # ...\Archiver
-$base = Split-Path -Parent $archiver                            # ...\SkoolProject
+$repo = Split-Path -Parent $here                            # ...\Skool-Downloader
+$base = Split-Path -Parent $repo                            # ...\SkoolProject
 
 # UTF-8 cho ca console lan file log (tranh crash ten folder co ky tu la nhu '▶')
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new()
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
 
-# --- Tim python co yt_dlp: uu tien venv cua Archiver, roi whisper/venv, roi PATH ---
+# --- Tim python co yt_dlp: uu tien venv cua Skool-Downloader, roi whisper/venv, roi PATH ---
 function Test-YtDlp($py) {
     if (-not (Test-Path $py)) { return $false }
     & $py -c "import yt_dlp" 2>$null
@@ -48,7 +48,7 @@ if (-not $hasNode -and -not $hasDeno) {
 }
 
 # --- Log co dau thoi gian ---
-$logDir = "$archiver\logs"
+$logDir = "$repo\logs"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $log = "$logDir\run_$stamp.log"
