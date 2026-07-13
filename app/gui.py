@@ -3,7 +3,7 @@
 Giao dien Skool Downloader - CustomTkinter (UI v2).
 Mo bang: double-click SkoolDownloader.cmd
 """
-import os, sys, time, queue, threading, subprocess
+import os, sys, re, time, queue, threading, subprocess
 from pathlib import Path
 import customtkinter as ctk
 from tkinter import messagebox
@@ -686,18 +686,27 @@ class App:
         if cdir.exists():
             # bo thu muc he thong
             skip = {"_backups", "_site"}
-            items += sorted(
+            names = [
                 p.name for p in cdir.iterdir()
                 if p.is_dir() and not p.name.startswith("_") and p.name not in skip
-            )
-        # Sprint AA: favorites len dau
+            ]
+            # sap xep tu nhien: 1,2,10... (khong alphabet 1,10,2)
+            def _nat(n):
+                m = re.match(r"^(\d+)", n.strip())
+                if m:
+                    return (0, int(m.group(1)), n.lower())
+                return (1, 10**9, n.lower())
+            items += sorted(names, key=_nat)
+        # Sprint AA: favorites len dau, giu thu tu so trong cung nhom
         try:
             import session_state as SS
             fav = set(SS.list_favorites())
             def key(it):
                 ck = self.item_course(it)
                 fk = "SkoolCourse" if ck is None else str(ck)
-                return (0 if fk in fav or it in fav else 1, it.lower())
+                m = re.match(r"^(\d+)", (it or "").strip())
+                num = int(m.group(1)) if m else 10**9
+                return (0 if fk in fav or it in fav else 1, 0 if m else 1, num, it.lower())
             items.sort(key=key)
         except Exception:
             pass
@@ -757,7 +766,8 @@ class App:
             if isinstance(d, dict): d = [d]
             course = K.one_chapter(d); ct = K.san(course["title"]); sc = cu(course.get("children") or [])
             if ct not in best or sc > best[ct][0]: best[ct] = (sc, course)
-        for ct, (sc, course) in sorted(best.items()):
+        om = K.chapter_order_map(root)
+        for ct, (sc, course) in sorted(best.items(), key=lambda it: K.chapter_sort_key(it[0], om)):
             chap = chap_folder(ct)
             if not chap: continue
             lessons = [fd for fd, n in K.walk(course.get("children") or [], chap) if n.get("url")]
@@ -2711,18 +2721,23 @@ class App:
             self.pill(hdr, f"{len(chapters)} chương", "muted").pack(side="right")
 
         self.chapters = []
-        for c in chapters:
+        # giu thu tu Skool (i) — 1,2,3...
+        ordered = list(chapters)
+        if ordered and any(c.get("i") is not None for c in ordered):
+            ordered.sort(key=lambda c: (c.get("i") is None, c.get("i") or 10**9))
+        for idx, c in enumerate(ordered, 1):
             is_new = (not upd) or (K.san(c["title"]) not in self.known_titles)
             var = ctk.BooleanVar(value=is_new)
             row = ctk.CTkFrame(self.chap_box, fg_color=(ACCENT_SOFT if (upd and is_new) else "transparent"),
                                corner_radius=8)
             row.pack(fill="x", padx=10, pady=2)
-            label = c["title"] + ("   · MỚI" if (upd and is_new) else "")
+            num = c.get("i") or idx
+            label = f"{int(num):02d}. {c['title']}" + ("   · MỚI" if (upd and is_new) else "")
             tc = ACCENT if (upd and is_new) else TEXT
             ctk.CTkCheckBox(row, text=label, variable=var, font=(FT, 13), text_color=tc,
                             fg_color=ACCENT, hover_color=ACCENT_H, border_color=BORDER).pack(
                 anchor="w", padx=8, pady=6)
-            self.chapters.append({"id": c["id"], "title": c["title"], "var": var})
+            self.chapters.append({"id": c["id"], "title": c["title"], "var": var, "i": num})
 
         dump_card = ctk.CTkFrame(self.dump_row, fg_color=CARD, corner_radius=16,
                                  border_width=1, border_color=BORDER)

@@ -105,9 +105,76 @@ def find_chapter_folder(ctitle):
         if nm == ctitle: return d
     return None
 
+def chapter_order_map(root=None):
+    """{ten_chuong_san: stt 1-based} tu _chapters.json / folder 'NN - ...' / ten file meta__NN_."""
+    root = Path(root) if root is not None else Path(C.DUMP_ROOT or C.ROOT or ".")
+    order = {}
+    # 1) _chapters.json (thu tu chuan Skool dump)
+    for nm in ("_chapters.json", "_chapters.txt"):
+        p = root / nm
+        if not p.exists():
+            continue
+        try:
+            if nm.endswith(".json"):
+                arr = json.loads(p.read_bytes().decode("utf-8-sig"))
+                titles = [san(x["title"] if isinstance(x, dict) else x) for x in arr]
+            else:
+                titles = [san(t) for t in p.read_text(encoding="utf-8-sig").splitlines() if t.strip()]
+            for i, t in enumerate(titles, 1):
+                order.setdefault(t, i)
+            if order:
+                return order
+        except Exception:
+            pass
+    # 2) folder "01 - Ten"
+    try:
+        for d in root.iterdir():
+            if not d.is_dir() or d.name.startswith(("_", ".")):
+                continue
+            m = re.match(r"^\s*(\d+)\s*-\s*(.+)$", d.name)
+            if m:
+                order.setdefault(san(m.group(2)), int(m.group(1)))
+    except Exception:
+        pass
+    # 3) meta__01_Ten.json / vid__01_Ten.json
+    for f in list(root.glob("meta__*.json")) + list(root.glob("vid__*.json")):
+        m = re.match(r"^(?:meta|vid)__(\d+)_(.+)\.json$", f.name, re.I)
+        if not m:
+            continue
+        # ten file da san_file; van map so
+        order.setdefault(san(m.group(2).replace("_", " ")), int(m.group(1)))
+    return order
+
+
+def chapter_sort_key(title, order_map=None, folder_name=None):
+    """Key sap xep: stt trong order_map / so prefix folder / ten."""
+    t = san(title or "")
+    om = order_map if order_map is not None else chapter_order_map()
+    if t in om:
+        return (0, om[t], t.lower())
+    # thu ten goc (chua san)
+    raw = (title or "").strip()
+    if raw in om:
+        return (0, om[raw], t.lower())
+    if folder_name:
+        m = re.match(r"^\s*(\d+)\s*-", folder_name)
+        if m:
+            return (0, int(m.group(1)), t.lower())
+    m2 = re.match(r"^\s*(\d+)\s*-", raw)
+    if m2:
+        return (0, int(m2.group(1)), t.lower())
+    return (1, 10**9, t.lower())
+
+
+def sort_chapter_titles(titles, root=None):
+    om = chapter_order_map(root)
+    return sorted(titles, key=lambda t: chapter_sort_key(t, om))
+
+
 def load_best(pattern, score_fn):
     """Doc tat ca file khop pattern (de quy duoi DUMP_ROOT cua khoa), loai trung lap:
-       moi chuong giu ban diem cao nhat. Tra ve list (ctitle, path, course_root)."""
+       moi chuong giu ban diem cao nhat. Tra ve list (ctitle, path, course_root)
+       theo thu tu 1,2,3... (_chapters.json / so folder)."""
     best = {}
     for f in sorted(C.DUMP_ROOT.rglob(pattern)):
         try:
@@ -119,7 +186,11 @@ def load_best(pattern, score_fn):
         sc = score_fn(course.get("children") or [])
         if ct not in best or sc > best[ct][0]:
             best[ct] = (sc, f, course)
-    return [(ct, v[1], v[2]) for ct, v in sorted(best.items())]
+    om = chapter_order_map(C.DUMP_ROOT)
+    return sorted(
+        [(ct, v[1], v[2]) for ct, v in best.items()],
+        key=lambda it: chapter_sort_key(it[0], om),
+    )
 
 # ---- mang ----
 def online():

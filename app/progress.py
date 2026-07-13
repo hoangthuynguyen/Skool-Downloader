@@ -9,7 +9,7 @@ nut "Tai tiep", va nut "Cuu bai native het han".
 Native Skool dung token JWT (claim `exp`) song ~24h -> doc thang exp de biet
 token het han ma KHONG can tai thu.
 """
-import os, json, time, base64
+import os, re, json, time, base64
 from pathlib import Path
 import common as K
 import config as C
@@ -77,7 +77,9 @@ def _count_urls(nodes):
 
 
 def _best_chapters(root):
-    """Gom ban tot nhat (nhieu link nhat) cho moi chuong tu cac vid_*.json."""
+    """Gom ban tot nhat (nhieu link nhat) cho moi chuong tu cac vid_*.json.
+       Tra ve dict co thu tu chen theo _chapters.json (Python 3.7+ insert order
+       khong dam bao khi build — dung _iter_chapters de duyet dung thu tu)."""
     best = {}
     for f in sorted(root.rglob("vid_*.json")):
         try:
@@ -92,6 +94,14 @@ def _best_chapters(root):
         if ct not in best or sc > best[ct][0]:
             best[ct] = (sc, course)
     return best
+
+
+def _iter_chapters(best, root):
+    """Duyet chuong theo thu tu 1,2,3... (khong alphabet)."""
+    om = K.chapter_order_map(root)
+    items = list(best.items())
+    items.sort(key=lambda it: K.chapter_sort_key(it[0], om))
+    return items
 
 
 def scan(root):
@@ -111,7 +121,7 @@ def scan(root):
     missing = []
     native_expired = []
     n_lessons = 0
-    for ct, (sc, course) in sorted(best.items()):
+    for ct, (sc, course) in _iter_chapters(best, root):
         chap = _chapter_folder(root, ct)
         cdone = ctot = 0  # ctot = bai CO video url (de tai)
         lessons = K.walk(course.get("children") or [], chap or root)
@@ -157,7 +167,7 @@ def tree(root):
     root = Path(root)
     best = _best_chapters(root)
     chapters = []
-    for ct, (sc, course) in sorted(best.items()):
+    for ct, (sc, course) in _iter_chapters(best, root):
         chap = _chapter_folder(root, ct)
         lessons = []; cdone = 0; with_video = 0
         for folder, node in K.walk(course.get("children") or [], chap or root):
@@ -216,10 +226,15 @@ def list_course_items(base=None):
                       "root": legacy, "is_legacy": True})
     cdir = base / "courses"
     if cdir.exists():
-        for p in sorted(cdir.iterdir()):
-            if p.is_dir():
-                items.append({"item": p.name, "course": p.name,
-                              "root": p, "is_legacy": False})
+        dirs = [p for p in cdir.iterdir() if p.is_dir() and not p.name.startswith(("_", "."))]
+        def _nat(p):
+            m = re.match(r"^(\d+)", p.name.strip())
+            if m:
+                return (0, int(m.group(1)), p.name.lower())
+            return (1, 10**9, p.name.lower())
+        for p in sorted(dirs, key=_nat):
+            items.append({"item": p.name, "course": p.name,
+                          "root": p, "is_legacy": False})
     return items
 
 
