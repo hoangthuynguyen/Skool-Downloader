@@ -135,8 +135,8 @@ def enrich_hit_snippet(hit: dict, query: str, roots=None, mark: str = "**", mark
 
 
 def search_all(query, top_k=12, course=None, ensure_index=False, log=print,
-               with_snippet=True, mark="**", mark_close=None):
-    """Tim tren 1 hoac moi khoa. Tra ve list hit dict (co snippet neu with_snippet)."""
+               with_snippet=True, mark="**", mark_close=None, include_notes=True):
+    """Tim tren 1 hoac moi khoa (+ notes Sprint Y). Tra ve list hit dict."""
     query = (query or "").strip()
     if not query:
         return []
@@ -208,8 +208,28 @@ def search_all(query, top_k=12, course=None, ensure_index=False, log=print,
         scored.sort(key=lambda x: -x[0])
         hits = [h for _, h in scored[:top_k]]
 
+    # Sprint Y: ghep hits tu notes.md
+    if include_notes:
+        try:
+            import notes as N
+            note_hits = N.search_notes(query, roots=roots, top_k=max(4, top_k // 2))
+            # boost notes a bit so they surface
+            for h in note_hits:
+                h["score"] = (h.get("score") or 1) + 0.5
+            # merge de-dupe by path
+            seen = {str(h.get("path") or "") for h in hits}
+            for h in note_hits:
+                key = str(h.get("path") or "")
+                if key and key not in seen:
+                    hits.append(h)
+                    seen.add(key)
+            hits.sort(key=lambda x: -(x.get("score") or 0))
+        except Exception as e:
+            log(f"[search notes] {e}")
+
     if with_snippet:
         hits = [enrich_hit_snippet(h, query, roots=roots, mark=mark, mark_close=mark_close)
+                if h.get("method") != "notes" else h
                 for h in hits]
     return hits[:top_k]
 

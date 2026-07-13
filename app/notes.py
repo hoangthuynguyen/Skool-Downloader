@@ -81,6 +81,69 @@ def build_index(root) -> dict:
     }
 
 
+def search_notes(query, roots=None, top_k=20):
+    """Sprint Y: tim trong notes.md toan kho. roots: list Path | None = moi khoa."""
+    import progress as P
+    q = (query or "").strip().lower()
+    if not q:
+        return []
+    if roots is None:
+        roots = [m["root"] for m in P.list_course_items()]
+    hits = []
+    for root in roots:
+        root = Path(root)
+        if not root.exists():
+            continue
+        course = root.name
+        for p in root.rglob(NOTE_NAME):
+            if not p.is_file():
+                continue
+            try:
+                text = p.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            low = text.lower()
+            if q not in low:
+                # token match
+                if not any(t in low for t in q.split() if len(t) >= 2):
+                    continue
+            idx = low.find(q) if q in low else -1
+            if idx < 0:
+                for t in q.split():
+                    if len(t) >= 2:
+                        idx = low.find(t)
+                        if idx >= 0:
+                            break
+            start = max(0, idx - 60) if idx >= 0 else 0
+            end = min(len(text), (idx + len(q) + 60) if idx >= 0 else 160)
+            snip = " ".join(text[start:end].split())
+            if start > 0:
+                snip = "…" + snip
+            if end < len(text):
+                snip = snip + "…"
+            try:
+                rel = str(p.parent.relative_to(root)).replace("\\", "/")
+            except ValueError:
+                rel = p.parent.name
+            hits.append({
+                "course": course,
+                "chapter": rel.split("/")[0] if "/" in rel else "",
+                "title": p.parent.name,
+                "section": "notes",
+                "path": str(p.parent),
+                "folder": str(p.parent.resolve()),
+                "score": 2.0 if q in low else 1.0,
+                "method": "notes",
+                "preview": snip[:200],
+                "snippet": snip[:220],
+                "match": q,
+            })
+            if len(hits) >= top_k:
+                return hits
+    hits.sort(key=lambda h: -h.get("score", 0))
+    return hits[:top_k]
+
+
 def export_notes_md(root, out_path=None) -> Path:
     root = Path(root)
     idx = build_index(root)

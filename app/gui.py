@@ -245,6 +245,8 @@ class App:
         root.configure(fg_color=BG)
         root.grid_columnconfigure(1, weight=1)
         root.grid_rowconfigure(0, weight=1)
+        # Sprint AB: keyboard shortcuts
+        self._bind_shortcuts()
 
         # ---------- sidebar ----------
         self.side = ctk.CTkFrame(root, width=228, corner_radius=0, fg_color=SIDE)
@@ -577,6 +579,99 @@ class App:
             pass
         self.log.see("end"); self.log.configure(state="disabled")
 
+    def _bind_shortcuts(self):
+        """Sprint AB: phim tat toan app."""
+        r = self.root
+        r.bind_all("<Command-k>", self._hotkey_focus_search)
+        r.bind_all("<Control-k>", self._hotkey_focus_search)
+        r.bind_all("<Command-f>", self._hotkey_focus_search)
+        r.bind_all("<Control-f>", self._hotkey_focus_search)
+        r.bind_all("<slash>", self._hotkey_slash)
+        r.bind_all("<Command-1>", lambda e: self._hotkey_nav("dashboard"))
+        r.bind_all("<Control-1>", lambda e: self._hotkey_nav("dashboard"))
+        r.bind_all("<Command-2>", lambda e: self._hotkey_nav("queue"))
+        r.bind_all("<Control-2>", lambda e: self._hotkey_nav("queue"))
+        r.bind_all("<Command-3>", lambda e: self._hotkey_nav("chat"))
+        r.bind_all("<Control-3>", lambda e: self._hotkey_nav("chat"))
+        r.bind_all("<Command-4>", lambda e: self._hotkey_nav("cloud"))
+        r.bind_all("<Control-4>", lambda e: self._hotkey_nav("cloud"))
+        r.bind_all("<Command-r>", self._hotkey_refresh)
+        r.bind_all("<Control-r>", self._hotkey_refresh)
+        r.bind_all("<F5>", self._hotkey_refresh)
+        r.bind_all("<Command-comma>", lambda e: self._hotkey_nav("doctor"))
+        r.bind_all("<Control-comma>", lambda e: self._hotkey_nav("doctor"))
+        r.bind_all("<F1>", self._hotkey_help)
+
+    def _typing_in_field(self, event=None):
+        try:
+            w = self.root.focus_get()
+            if w is None:
+                return False
+            cls = w.winfo_class()
+            return cls in ("Entry", "Text", "TEntry", "CTkEntry", "CTkTextbox") or "entry" in cls.lower() or "text" in cls.lower()
+        except Exception:
+            return False
+
+    def _hotkey_slash(self, event=None):
+        if self._typing_in_field(event):
+            return
+        return self._hotkey_focus_search(event)
+
+    def _hotkey_nav(self, page):
+        try:
+            if page == "dashboard":
+                self.show_dashboard()
+            elif page == "queue":
+                self.show_queue()
+            elif page == "chat":
+                self.show_chat()
+            elif page == "cloud":
+                self.show_cloud()
+            elif page == "doctor":
+                self.show_doctor()
+        except Exception:
+            pass
+        return "break"
+
+    def _hotkey_refresh(self, event=None):
+        if getattr(self, "nav_page", "") == "dashboard":
+            try:
+                self._dash_refresh()
+            except Exception:
+                pass
+        return "break"
+
+    def _hotkey_focus_search(self, event=None):
+        try:
+            if hasattr(self, "dash_search_entry") and self.dash_search_entry.winfo_exists():
+                self.dash_search_entry.focus_set()
+                return "break"
+            self.show_dashboard()
+            self.root.after(120, lambda: (
+                self.dash_search_entry.focus_set()
+                if hasattr(self, "dash_search_entry") and self.dash_search_entry.winfo_exists()
+                else None
+            ))
+        except Exception:
+            pass
+        return "break"
+
+    def _hotkey_help(self, event=None):
+        messagebox.showinfo(
+            "Phím tắt",
+            "⌘/Ctrl+K hoặc / — Focus tìm kiếm\n"
+            "⌘/Ctrl+1 — Dashboard\n"
+            "⌘/Ctrl+2 — Hàng đợi\n"
+            "⌘/Ctrl+3 — Chat RAG\n"
+            "⌘/Ctrl+4 — Cloud\n"
+            "⌘/Ctrl+R · F5 — Làm mới Dashboard\n"
+            "⌘/Ctrl+, — Doctor\n"
+            "F1 — Trợ giúp phím tắt\n"
+            "★ trên card — Ghim khóa\n"
+            "Aa — Đặt alias tên hiển thị",
+        )
+        return "break"
+
     def course_root(self, name=None):
         name = name or self.course_name
         if not name or str(name).startswith("SkoolCourse"): return C.BASE / "SkoolCourse"
@@ -586,7 +681,24 @@ class App:
         items = []
         if (C.BASE / "SkoolCourse").exists(): items.append("SkoolCourse (đã có sẵn)")
         cdir = C.BASE / "courses"
-        if cdir.exists(): items += sorted(p.name for p in cdir.iterdir() if p.is_dir())
+        if cdir.exists():
+            # bo thu muc he thong
+            skip = {"_backups", "_site"}
+            items += sorted(
+                p.name for p in cdir.iterdir()
+                if p.is_dir() and not p.name.startswith("_") and p.name not in skip
+            )
+        # Sprint AA: favorites len dau
+        try:
+            import session_state as SS
+            fav = set(SS.list_favorites())
+            def key(it):
+                ck = self.item_course(it)
+                fk = "SkoolCourse" if ck is None else str(ck)
+                return (0 if fk in fav or it in fav else 1, it.lower())
+            items.sort(key=key)
+        except Exception:
+            pass
         return items
 
     def item_course(self, item):
@@ -595,6 +707,16 @@ class App:
 
     def item_root(self, item):
         return self.course_root(self.item_course(item))
+
+    def item_display(self, item):
+        """Ten hien thi (alias || item)."""
+        try:
+            import session_state as SS
+            ck = self.item_course(item)
+            key = "SkoolCourse" if ck is None else str(ck)
+            return SS.display_name(key, fallback=item)
+        except Exception:
+            return item
 
     # ---------- chay nen + tra ket qua ve luong giao dien ----------
     def run_async(self, fn, cb):
@@ -1073,10 +1195,11 @@ class App:
         inner.pack(fill="x", padx=12, pady=10)
         self.dash_search_var = ctk.StringVar(value="")
         ent = ctk.CTkEntry(inner, textvariable=self.dash_search_var,
-                           placeholder_text="🔍  Tìm trong toàn bộ khóa (transcript / mô tả)…",
+                           placeholder_text="🔍  Tìm transcript / mô tả / notes…  (⌘K hoặc /)",
                            font=(FT, 13), height=38, corner_radius=10,
                            border_color=BORDER, fg_color=CARD2)
         ent.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self.dash_search_entry = ent
         ent.bind("<Return>", lambda e: self.dash_run_search())
         btn(inner, "Tìm", self.dash_run_search, kind="accent", width=80, height=36).pack(side="left", padx=(0, 4))
         btn(inner, "Báo cáo", self.dash_export_report, kind="secondary", width=96, height=36).pack(side="left")
@@ -1151,13 +1274,28 @@ class App:
         ctk.CTkCheckBox(top, text="", variable=var, width=24,
                         fg_color=ACCENT, hover_color=ACCENT_H,
                         border_color=BORDER).pack(side="left")
-        ctk.CTkRadioButton(top, text=item, variable=self.pick_var, value=item,
+        # Sprint AA favorite star
+        try:
+            import session_state as SS
+            ck = self.item_course(item)
+            fkey = "SkoolCourse" if ck is None else str(ck)
+            is_fav = SS.is_favorite(fkey)
+        except Exception:
+            fkey, is_fav = item, False
+        fav_lbl = "★" if is_fav else "☆"
+        fav_btn = btn(top, fav_lbl, lambda it=item: self._dash_toggle_fav(it),
+                      kind="ghost", width=32, height=28)
+        fav_btn.pack(side="left", padx=(2, 0))
+        disp = self.item_display(item)
+        ctk.CTkRadioButton(top, text=disp, variable=self.pick_var, value=item,
                            font=(FT, 14, "bold"), text_color=TEXT,
                            fg_color=ACCENT, hover_color=ACCENT_H,
                            border_color=BORDER).pack(side="left", padx=(4, 0))
         badge = ctk.CTkLabel(top, text="…", font=(FT, 11, "bold"),
                              text_color=TEXT2, fg_color=CARD2, corner_radius=999, padx=10, pady=3)
         badge.pack(side="right")
+        sync_lbl = ctk.CTkLabel(top, text="", font=(FT, 10), text_color=TEXT2)
+        sync_lbl.pack(side="right", padx=(0, 8))
         prog = ctk.CTkLabel(card, text="đang tính…", font=(FT, 12), text_color=TEXT2, anchor="w")
         prog.pack(fill="x", padx=44, pady=(0, 4))
         pb = ctk.CTkProgressBar(card, height=8, corner_radius=4,
@@ -1178,13 +1316,16 @@ class App:
             kind="secondary", width=64, height=30).pack(side="left", padx=2)
         btn(acts, "+ Queue", lambda it=item: self._dash_enqueue_one(it),
             kind="soft", width=80, height=30).pack(side="left", padx=2)
+        btn(acts, "Aa", lambda it=item: self._dash_set_alias(it),
+            kind="ghost", width=40, height=30).pack(side="left", padx=2)
         fail_btn = btn(acts, "Fail", lambda it=item: self._dash_show_fails(it),
                        kind="warn", width=64, height=30)
         fail_btn.pack_forget()
         btn(acts, "🗑", lambda it=item: self._dash_delete(it),
             kind="ghost", width=40, height=30).pack(side="right")
         self.prog_labels[item] = {"prog": prog, "badge": badge, "pb": pb, "card": card,
-                                  "fail_btn": fail_btn, "acts": acts}
+                                  "fail_btn": fail_btn, "acts": acts, "sync_lbl": sync_lbl,
+                                  "fav_btn": fav_btn, "fav_key": fkey}
 
     def _dash_scan_async(self):
         def work():
@@ -1255,6 +1396,23 @@ class App:
             if n_fail:
                 prog_txt += f" · ⚠ {n_fail} fail"
             w["prog"].configure(text=prog_txt)
+            # Sprint Z: cloud last_sync badge
+            sl = w.get("sync_lbl")
+            if sl is not None:
+                try:
+                    from cloud.sync import load_sync_state
+                    st = load_sync_state(e["root"]) or {}
+                    ls = st.get("last_sync")
+                    if ls:
+                        short = str(ls)[:16].replace("T", " ")
+                        sl.configure(text=f"☁ {short}", text_color=SUCCESS)
+                    else:
+                        sl.configure(text="☁ —", text_color=TEXT2)
+                except Exception:
+                    try:
+                        sl.configure(text="")
+                    except Exception:
+                        pass
             tot = s.get("total") or 0
             done = s.get("done") or 0
             pct = (done / tot) if tot else 0
@@ -1333,7 +1491,8 @@ class App:
             block = ctk.CTkFrame(self.dash_search_box, fg_color=CARD2, corner_radius=8)
             block.pack(fill="x", padx=10, pady=3)
             row = ctk.CTkFrame(block, fg_color="transparent"); row.pack(fill="x", padx=8, pady=(6, 2))
-            label = f"[{h.get('course')}] {h.get('chapter')} / {h.get('title')}"
+            tag = "📝 " if h.get("method") == "notes" or h.get("section") == "notes" else ""
+            label = f"{tag}[{h.get('course')}] {h.get('chapter')} / {h.get('title')}"
             ctk.CTkLabel(row, text=label if len(label) < 64 else label[:61] + "…",
                          font=(FT, 12, "bold"), text_color=TEXT, anchor="w").pack(side="left", fill="x", expand=True)
             course = h.get("course")
@@ -1405,6 +1564,43 @@ class App:
         except Exception:
             pass
         self.show_manager()
+
+    def _dash_toggle_fav(self, item):
+        """Sprint AA: pin/unpin khoa."""
+        try:
+            import session_state as SS
+            ck = self.item_course(item)
+            key = "SkoolCourse" if ck is None else str(ck)
+            on = SS.toggle_favorite(key)
+            w = self.prog_labels.get(item) or {}
+            fb = w.get("fav_btn")
+            if fb is not None and fb.winfo_exists():
+                fb.configure(text="★" if on else "☆")
+            self.write(f"{'★ Ghim' if on else '☆ Bỏ ghim'}: {self.item_display(item)}")
+        except Exception as e:
+            messagebox.showerror("Favorite", str(e))
+
+    def _dash_set_alias(self, item):
+        """Sprint AC: dat ten hien thi (alias)."""
+        try:
+            import session_state as SS
+            from tkinter import simpledialog
+            ck = self.item_course(item)
+            key = "SkoolCourse" if ck is None else str(ck)
+            cur = SS.get_alias(key) or ""
+            name = simpledialog.askstring(
+                "Alias khóa",
+                f"Tên hiển thị cho:\n{item}\n(để trống = xóa alias)",
+                initialvalue=cur,
+                parent=self.root,
+            )
+            if name is None:
+                return
+            SS.set_alias(key, name)
+            self.write(f"Aa alias: {key} → {name or '(xóa)'}")
+            self.show_dashboard()
+        except Exception as e:
+            messagebox.showerror("Alias", str(e))
 
     def dash_resume_last(self):
         try:

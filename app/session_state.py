@@ -82,14 +82,71 @@ def clear_bookmarks():
     _save(s)
 
 
+# ----- Sprint AA: favorites / pin -----
+def list_favorites():
+    s = _load()
+    fav = s.get("favorites") or []
+    return list(fav) if isinstance(fav, list) else []
+
+
+def is_favorite(course_key: str) -> bool:
+    return str(course_key or "") in {str(x) for x in list_favorites()}
+
+
+def toggle_favorite(course_key: str) -> bool:
+    """Pin/unpin. Tra ve True neu dang favorite sau toggle."""
+    key = str(course_key or "")
+    s = _load()
+    fav = [str(x) for x in (s.get("favorites") or [])]
+    if key in fav:
+        fav = [x for x in fav if x != key]
+        on = False
+    else:
+        fav.insert(0, key)
+        on = True
+    s["favorites"] = fav[:40]
+    _save(s)
+    return on
+
+
+# ----- Sprint AC: display aliases -----
+def get_alias(course_key: str) -> str:
+    s = _load()
+    aliases = s.get("aliases") or {}
+    return (aliases.get(str(course_key or "")) or "").strip()
+
+
+def set_alias(course_key: str, alias: str) -> str:
+    s = _load()
+    aliases = dict(s.get("aliases") or {})
+    key = str(course_key or "")
+    alias = (alias or "").strip()
+    if alias:
+        aliases[key] = alias
+    else:
+        aliases.pop(key, None)
+    s["aliases"] = aliases
+    _save(s)
+    return alias
+
+
+def display_name(course_key: str, fallback: str = "") -> str:
+    """Ten hien thi = alias || fallback || course_key."""
+    a = get_alias(course_key)
+    return a or fallback or str(course_key or "")
+
+
 def main():
     import argparse
-    ap = argparse.ArgumentParser(description="Session / bookmarks")
+    ap = argparse.ArgumentParser(description="Session / bookmarks / favorites")
     ap.add_argument("--last", action="store_true")
     ap.add_argument("--set-last", metavar="COURSE")
     ap.add_argument("--list-bm", action="store_true")
     ap.add_argument("--add-bm", nargs=2, metavar=("COURSE", "PATH"))
     ap.add_argument("--title", default="")
+    ap.add_argument("--list-fav", action="store_true")
+    ap.add_argument("--toggle-fav", metavar="COURSE")
+    ap.add_argument("--set-alias", nargs=2, metavar=("COURSE", "ALIAS"))
     a = ap.parse_args()
     if a.set_last is not None:
         set_last_course(a.set_last or None)
@@ -102,6 +159,17 @@ def main():
     if a.add_bm:
         r = add_bookmark(a.add_bm[0], a.add_bm[1], title=a.title)
         print(json.dumps(r, ensure_ascii=False, indent=2))
+        return
+    if a.list_fav:
+        print(json.dumps(list_favorites(), ensure_ascii=False, indent=2))
+        return
+    if a.toggle_fav is not None:
+        on = toggle_favorite(a.toggle_fav)
+        print("favorite" if on else "unfavorite", a.toggle_fav)
+        return
+    if a.set_alias:
+        set_alias(a.set_alias[0], a.set_alias[1])
+        print(display_name(a.set_alias[0]))
         return
     if a.list_bm or True:
         print(json.dumps(list_bookmarks(), ensure_ascii=False, indent=2))

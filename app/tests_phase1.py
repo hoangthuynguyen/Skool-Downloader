@@ -502,6 +502,28 @@ def test_sprint_tuvwx():
     print("  PASS  sprint T–X notes/disk/study")
 
 
+def test_sprint_y_ac():
+    """Sprint Y–AC: notes search, favorites, aliases."""
+    import notes as N
+    import session_state as SS
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        lesson = root / "01 - C" / "01 - L"
+        lesson.mkdir(parents=True)
+        N.write_note(lesson, "Remember the webhook secret key for production.")
+        hits = N.search_notes("webhook", roots=[root])
+        assert hits and "webhook" in hits[0]["snippet"].lower()
+    on = SS.toggle_favorite("__test_fav_course__")
+    assert on is True and SS.is_favorite("__test_fav_course__")
+    SS.toggle_favorite("__test_fav_course__")
+    assert not SS.is_favorite("__test_fav_course__")
+    SS.set_alias("__test_alias__", "My Nice Name")
+    assert SS.display_name("__test_alias__") == "My Nice Name"
+    SS.set_alias("__test_alias__", "")
+    assert SS.display_name("__test_alias__", fallback="X") == "X"
+    print("  PASS  sprint Y–AC notes-search/fav/alias")
+
+
 def test_warehouse_fails_field():
     import progress as P
     st = P.warehouse_stats([])
@@ -596,7 +618,7 @@ def test_config_base_and_doctor_requeue():
 
 
 def main():
-    print("Phase 1–10 + Sprint A–X smoke tests")
+    print("Phase 1–10 + Sprint A–AC smoke tests")
     fails = 0
     for fn in (test_progress_badge, test_queue_persist, test_cloud_policy,
                test_updates_diff, test_rag_score, test_tfidf_and_multi,
@@ -608,7 +630,8 @@ def main():
                test_retry_failed_and_knowledge_pack,
                test_smart_update_and_chapters, test_search_snippet_highlight,
                test_pack_backup_restore, test_notify_session_workers_digest,
-               test_sprint_jklmn, test_sprint_opqrs, test_sprint_tuvwx):
+               test_sprint_jklmn, test_sprint_opqrs, test_sprint_tuvwx,
+               test_sprint_y_ac):
         try:
             fn()
         except Exception as e:
