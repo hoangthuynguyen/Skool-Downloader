@@ -1,9 +1,9 @@
 # Skool Downloader — Hướng dẫn Features & Workflows
 
-> Phiên bản app: **2.15.0+** · Cập nhật: 2026-07  
+> Phiên bản app: **2.15.1+** · Cập nhật: 2026-07  
 > Launcher: `SkoolDownloader.cmd` (Win) · `SkoolDownloader.command` (macOS) · CLI: `app/main.py` · LLM: `app/llm_prompt.py`
 
-Tài liệu này mô tả **tính năng**, **luồng làm việc** và **cách cấu hình LLM** (Claude, OpenAI, **Grok**, Gemini, OpenRouter, Qwen, GLM, Kimi, …).
+Tài liệu này mô tả **tính năng**, **luồng làm việc**, **giao diện video/progress**, và **cấu hình LLM** (Claude, OpenAI, **Grok**, Gemini, OpenRouter, Qwen, GLM, Kimi, …).
 
 ---
 
@@ -18,7 +18,8 @@ Tài liệu này mô tả **tính năng**, **luồng làm việc** và **cách c
 | **Linux** | `bash SkoolDownloader.command` hoặc sau `install_shortcut.sh` dùng menu ứng dụng. |
 
 Lần đầu: tự tạo `app/venv` + `pip install -r requirements.txt` (cần mạng).  
-macOS nếu báo “không mở được”: **chuột phải → Open** (lần đầu).
+macOS nếu báo “không mở được”: **chuột phải → Open** (lần đầu).  
+macOS nếu GUI không hiện: dùng **Homebrew Python** (app tự ưu tiên; tránh Python Xcode CLT — Tk bị treo).
 
 ### 1.2 CLI (Windows / macOS / Linux)
 
@@ -29,30 +30,59 @@ python3 doctor.py
 python3 selftest.py --quick
 # hoac mo GUI truc tiep (khi da co venv):
 bash start.sh
+# neu thieu Chromium (dump browser):
+./venv/bin/python -m playwright install chromium
 ```
 
-### 1.3 BASE path (thư mục dữ liệu khóa)
+### 1.3 Chọn thư mục lưu khóa (BASE / output)
 
-Ưu tiên: biến môi trường `SKOOL_BASE` → `app/.settings.json` (`skool_base`) → auto-detect.
+**Trong app (khuyến nghị):**
+
+1. Mở **Dashboard**
+2. Ô **📁 Thư mục lưu khóa (output)** → **Chọn…** → chọn folder
+3. **Lưu** — app ghi `app/.settings.json` (`skool_base`) và tạo `courses/` nếu chưa có
+
+Cũng có cùng điều khiển ở **🩺 Doctor**.
+
+**CLI / env (tùy chọn):**
 
 ```bash
-python doctor.py --set-base "E:/SkoolProject"
+python doctor.py --set-base "E:/SkoolData"
+# hoặc
+export SKOOL_BASE="/Users/you/SkoolData"
 ```
 
-Cấu trúc khóa:
+Ưu tiên: `SKOOL_BASE` env → `settings.json` → auto-detect.
+
+Cấu trúc sau khi lưu:
 
 ```
-BASE/
+BASE/                          ← folder bạn chọn
 ├─ courses/
 │  ├─ TenKhoa/
 │  │  ├─ 01 - Chuong/
-│  │  │  └─ 01 - Bai/  description.md · video.* · video.txt · notes.md
-│  │  ├─ _TongHop.md · _TomTat.md · video_fails.json
+│  │  │  └─ 01 - Bai/
+│  │  │       description.md · video.mp4 · video.txt · video.srt · notes.md
+│  │  ├─ _download_progress.json   ← progress live khi đang tải
+│  │  ├─ _TongHop.md · video_fails.json
 │  │  └─ .rag/
 │  ├─ _backups/
 │  └─ _health.json
-└─ SkoolCourse/          # layout cũ (legacy)
+└─ SkoolCourse/                # layout cũ (legacy)
 ```
+
+### 1.4 Giao diện — thông tin video & progress live
+
+| Vùng UI | Nội dung hiển thị |
+|---------|-------------------|
+| **KPI Dashboard** | Số khóa · **Video đã tải x/y** · **Dung lượng video** · Cảnh báo (token / fail) |
+| **Card khóa** | `Video x/y · N chương · dung lượng · còn Z` · progress bar · badge (✓ đủ / ⏳ còn / 🔑 hết hạn) |
+| **Trình tải** | Header: `Video done/total · chương · size · nguồn (youtube/loom/native)` |
+| **Dòng chương** | `▶ done/total` + dung lượng chương · nút ⬇ Chương |
+| **Dòng bài** | Trạng thái ✓ xong / ⏳ đang / • chờ · **size video** · host · ⬇ / ★ / ✎ |
+| **Panel live (khi tải)** | **Khóa · Folder · Video x/y · Bài hiện tại · progress % · ETA** + 3 cột: Đã xong / Đang·lỗi / Chuẩn bị |
+
+File progress: `courses/<TenKhoa>/_download_progress.json` (app đọc ~1s/lần khi đang tải).
 
 ---
 
@@ -61,11 +91,13 @@ BASE/
 ### Workflow A — Lưu trữ khóa mới (end-to-end)
 
 ```
-Dashboard → ➕ Thêm khóa mới
-  → 1. Mở Skool & đăng nhập (trình duyệt app)
+Dashboard → Chọn… folder lưu → Lưu
+  → ➕ Thêm khóa mới
+  → 1. Mở Skool & đăng nhập (trình duyệt app / Playwright Chromium)
   → 2. Lấy danh sách chương
   → 3. Tick chương → Dump JSON
-  → Trình tải: ⬇ Tải toàn bộ (hoặc theo chương/bài)
+  → Trình tải: xem Video x/y · ⬇ Tải toàn bộ (hoặc theo chương/bài)
+  → Theo dõi panel live (khóa / folder / video / bài)
   → (tuỳ chọn) Phụ đề Whisper
   → Xuất & Báo cáo / Chat RAG / Cloud
 ```
@@ -171,13 +203,15 @@ python export_site.py --open
 |------|-----------|
 | **Core** | Pipeline folders→extras→videos→transcribe→audit · preflight · resume · until-clean |
 | **GUI v2** | Sidebar · dark/light · density · dashboard KPI · wizard dump · manager chương/bài |
+| **Output** | Chọn folder lưu (BASE) trên Dashboard/Doctor · persist `skool_base` |
+| **Video UI** | Card khóa Video x/y · size · host · trạng thái bài · panel live 3 cột |
 | **Tải thông minh** | Fail-driven retry · smart-update · parallel workers · adaptive 429 · ETA live |
 | **Queue** | Multi-course · workers 1–4 · requeue failed · smart-batch |
 | **Knowledge** | Pack zip · backup/restore · notes · content-diff · Anki · quiz · playlist · ICS |
 | **RAG** | Catalog + TF-IDF · dense embed (tuỳ chọn) · chat multi-course · search + notes |
 | **Cloud** | R2 · Google Drive · OneDrive · sync badge · after-download |
 | **Web** | Local viewer · static site · health schedule · tray |
-| **LLM** | Prompt tùy chỉnh · multi-provider · fallback · presets |
+| **LLM** | Prompt tùy chỉnh · multi-provider (Grok/Claude/Gemini/…) · fallback · presets |
 | **UX** | Favorites · alias · shortcuts · last-course · bookmarks · disk report |
 
 ---
@@ -349,6 +383,10 @@ Helpers Windows: folder **`Nâng cao/`** (`LLM Prompt.cmd`, `Doctor.cmd`, …).
 |------------|------------|
 | YouTube bot / 429 | Cài Node.js · cookies · `--until-clean` · hạ workers · adaptive |
 | Native 403 token | Dump lại chương · Cứu native |
+| Không thấy khóa | Dashboard → **Chọn…** BASE đúng folder · Doctor → Lưu BASE · `courses/` |
+| GUI macOS không hiện | Homebrew Python · xóa `app/venv` · mở lại `SkoolDownloader.command` |
+| Playwright thiếu Chromium | `app/venv/bin/python -m playwright install chromium` |
+| Không thấy progress video | Đang tải? Xem panel Dashboard/manager · file `_download_progress.json` |
 | LLM “Chưa có API key” | Xuất & Báo cáo → dán key provider · `--check` |
 | Grok 401 | Kiểm tra `XAI_API_KEY` · model id đúng (`grok-3-mini`) |
 | Grok/network CN | Dùng OpenRouter `x-ai/grok-3-mini` hoặc fallback `qwen`/`glm` |

@@ -1562,8 +1562,8 @@ class App:
         self.stat_row = ctk.CTkFrame(self.content, fg_color="transparent")
         self.stat_row.pack(fill="x", pady=(0, 10))
         self._stat_courses = self.stat_card(self.stat_row, "Khóa học", "…", "đang quét", "info")
-        self._stat_lessons = self.stat_card(self.stat_row, "Bài đã tải", "…", "", "ok")
-        self._stat_size = self.stat_card(self.stat_row, "Dung lượng", "…", "", "muted")
+        self._stat_lessons = self.stat_card(self.stat_row, "Video đã tải", "…", "bài có video", "ok")
+        self._stat_size = self.stat_card(self.stat_row, "Dung lượng video", "…", "", "muted")
         self._stat_alert = self.stat_card(self.stat_row, "Cảnh báo", "…", "", "warn")
 
         # hidden summary label for compat
@@ -1829,8 +1829,8 @@ class App:
         if hasattr(self, "_stat_courses"):
             _set_stat(self._stat_courses, str(st["courses"]), "trong kho")
             _set_stat(self._stat_lessons, f"{st['done']}/{st['total']}",
-                      "✓ đủ" if (st["total"] and left == 0) else f"còn {left}")
-            _set_stat(self._stat_size, fmt_size(st["size"]), "video")
+                      "✓ đủ video" if (st["total"] and left == 0) else f"còn {left} video")
+            _set_stat(self._stat_size, fmt_size(st["size"]), "tổng file video")
             alert_n = (st.get("expired") or 0) + nf
             _set_stat(self._stat_alert, str(alert_n),
                       f"🔑 {st.get('expired', 0)} · fail {nf}" if alert_n else "ổn định")
@@ -1921,12 +1921,24 @@ class App:
         self.run_async(work, cb)
 
     def _fmt_prog(self, s):
-        if isinstance(s, Exception) or not s or not s.get("has_data"): return "chưa có dữ liệu"
+        if isinstance(s, Exception) or not s or not s.get("has_data"):
+            return "chưa có dữ liệu video (cần dump / tải)"
         done, tot = s["done"], s["total"]
-        if tot and done >= tot: return f"✓ đủ {tot} bài · {fmt_size(s['size'])}"
+        size = fmt_size(s.get("size") or 0)
+        chaps = s.get("chapters") or []
+        n_chap = len(chaps)
+        miss = len(s.get("missing") or [])
+        if tot and done >= tot:
+            return f"✓ Video {done}/{tot} · {n_chap} chương · {size}"
         nat = len(s.get("native_expired") or [])
-        tag = f" · {nat} native hết hạn" if nat else ""
-        return f"{done}/{tot} bài · còn {tot - done} · {fmt_size(s['size'])}{tag}"
+        parts = [f"Video {done}/{tot}", f"còn {tot - done}", size]
+        if n_chap:
+            parts.insert(1, f"{n_chap} ch.")
+        if miss and miss != (tot - done):
+            parts.append(f"thiếu {miss}")
+        if nat:
+            parts.append(f"🔑 {nat} native hết hạn")
+        return " · ".join(parts)
 
     def _scan_all_async(self, items):
         """Giữ tương thích chỗ cũ (report…)."""
@@ -3176,9 +3188,15 @@ class App:
         btn(crow, ("▾" if exp else "▸"), (lambda n=name: self._mgr_toggle(n)), kind="ghost", width=26).pack(side="left", padx=(2, 0))
         full = ch["total"] and ch["done"] >= ch["total"]
         ic = ctk.CTkLabel(crow, text=("✓" if full else ("⏳" if ch["done"] else "•")), text_color=(SUCCESS if full else (WARNING if ch["done"] else TEXT2)), width=20, font=(FT, 14, "bold")); ic.pack(side="left")
-        disp = name if len(name) <= 38 else name[:37] + "…"
-        ctk.CTkLabel(crow, text=disp, font=(FT, 13, "bold"), text_color=TEXT, width=290, anchor="w").pack(side="left")
-        cnt = ctk.CTkLabel(crow, text=f"{ch['done']}/{ch['total']}", font=("Consolas", 12), text_color=TEXT2, width=54, anchor="e"); cnt.pack(side="left", padx=4)
+        disp = name if len(name) <= 32 else name[:31] + "…"
+        ctk.CTkLabel(crow, text=disp, font=(FT, 13, "bold"), text_color=TEXT, width=250, anchor="w").pack(side="left")
+        # video count + chapter size
+        chap_sz = sum((L.get("size") or 0) for L in (ch.get("lessons") or []))
+        cnt = ctk.CTkLabel(crow, text=f"▶ {ch['done']}/{ch['total']}", font=("Consolas", 12),
+                           text_color=TEXT2, width=64, anchor="e")
+        cnt.pack(side="left", padx=2)
+        ctk.CTkLabel(crow, text=fmt_size(chap_sz) if chap_sz else "—",
+                     font=("Consolas", 10), text_color=TEXT2, width=52, anchor="e").pack(side="left", padx=2)
         btn(crow, "⬇ Chương", (lambda t=ch["title"], n=name: self.dl_chapter(t, n)), kind="secondary", width=92, height=30).pack(side="right", padx=4, pady=3)
         self.mgr_widgets[("chap", name)] = {"ic": ic, "cnt": cnt}
         if exp:
@@ -3202,11 +3220,19 @@ class App:
             except Exception:
                 pass
         ic = ctk.CTkLabel(lrow, text=st_icon, text_color=st_col, width=18, font=(FT, 13)); ic.pack(side="left")
-        t = L["title"] or "(bài)"; t = t if len(t) <= 34 else t[:33] + "…"
-        ctk.CTkLabel(lrow, text=t, font=(FT, 12), text_color=TEXT, width=250, anchor="w").pack(side="left")
-        ctk.CTkLabel(lrow, text=st_tag, font=(FT, 10), text_color=st_col, width=40, anchor="w").pack(side="left")
+        t = L["title"] or "(bài)"; t = t if len(t) <= 30 else t[:29] + "…"
+        ctk.CTkLabel(lrow, text=t, font=(FT, 12), text_color=TEXT, width=220, anchor="w").pack(side="left")
+        ctk.CTkLabel(lrow, text=st_tag, font=(FT, 10), text_color=st_col, width=36, anchor="w").pack(side="left")
+        # dung luong video neu da tai
+        sz = L.get("size") or 0
+        sz_txt = fmt_size(sz) if (L.get("done") and sz) else ("—" if not L.get("done") else "0")
+        ctk.CTkLabel(lrow, text=sz_txt, font=("Consolas", 10), text_color=TEXT2,
+                     width=56, anchor="e").pack(side="left", padx=(2, 4))
         host = (L["host"] or "").replace("www.", "")[:12]
-        ctk.CTkLabel(lrow, text=host, font=("Consolas", 10), text_color=TEXT2, width=90, anchor="w").pack(side="left")
+        host = ("▶ " + host) if host else ""
+        if L.get("native"):
+            host = (host + " · native") if host else "native"
+        ctk.CTkLabel(lrow, text=host, font=("Consolas", 10), text_color=TEXT2, width=100, anchor="w").pack(side="left")
         btn(lrow, "⬇", (lambda r=L["rel"], tt=(L["title"] or "bài"): self.dl_lesson(r, tt)), kind="ghost", width=32, height=26).pack(side="right", padx=2)
         btn(lrow, "★", (lambda L=L: self._bookmark_lesson(L)), kind="ghost", width=28, height=26).pack(side="right", padx=1)
         btn(lrow, "✎", (lambda L=L: self._edit_lesson_note(L)), kind="ghost", width=28, height=26).pack(side="right", padx=1)
@@ -3349,10 +3375,23 @@ class App:
         if not (hasattr(self, "mgr_status") and self.mgr_status.winfo_exists()): return
         if self.mgr_busy: self._mgr_busy_status(); return
         if not self.mgr_tree:
-            self.mgr_status.configure(text="Chưa có dữ liệu chương.", text_color=TEXT2); return
-        done = sum(c["done"] for c in self.mgr_tree); tot = sum(c["total"] for c in self.mgr_tree)
+            self.mgr_status.configure(text="Chưa có dữ liệu chương / video.", text_color=TEXT2); return
+        done = sum(c["done"] for c in self.mgr_tree)
+        tot = sum(c["total"] for c in self.mgr_tree)
+        n_chap = len(self.mgr_tree)
         size = sum(L["size"] for c in self.mgr_tree for L in c["lessons"])
-        msg = f"Đã tải {done}/{tot} bài  ·  {fmt_size(size)}." + (" ✓ Đủ." if (tot and done >= tot) else f"  Còn {tot - done} bài.")
+        hosts = {}
+        for c in self.mgr_tree:
+            for L in c["lessons"]:
+                h = (L.get("host") or "?").replace("www.", "")
+                if L.get("native"):
+                    h = "skool-native"
+                hosts[h] = hosts.get(h, 0) + 1
+        host_s = " · ".join(f"{k}×{v}" for k, v in sorted(hosts.items(), key=lambda x: -x[1])[:4])
+        msg = (f"Video {done}/{tot}  ·  {n_chap} chương  ·  {fmt_size(size)}"
+               + ("  ·  ✓ Đủ video." if (tot and done >= tot) else f"  ·  còn {tot - done} video"))
+        if host_s:
+            msg += f"\nNguồn: {host_s}"
         fails = self._load_fails()
         if fails:
             msg += f"  ·  ⚠ {len(fails)} fail"

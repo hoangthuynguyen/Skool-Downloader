@@ -1,5 +1,5 @@
 """Phien ban Skool Downloader (Phase ship)."""
-__version__ = "2.15.0"
+__version__ = "2.15.1"
 __codename__ = "live-progress"
 
 # Phase milestones (gan dung commit history)
@@ -32,6 +32,7 @@ HISTORY = (
     "2.14.1 rename display name to Skool Downloader",
     "2.14.2 fix macOS GUI hang (CLT Tk) + full SkoolDownloader rename",
     "2.15.0 pick output folder + live download progress (course/folder/video/lesson)",
+    "2.15.1 video stats on UI (size/host/status) + usage guide update",
 )
 
 
