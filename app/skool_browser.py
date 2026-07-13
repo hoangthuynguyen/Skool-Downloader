@@ -129,6 +129,28 @@ JS_DUMP = r"""async () => {
   function inline(ns){return (ns||[]).map(n=>{if(n.type==='text'){let t=n.text||'';const mk=(n.marks||[]).map(m=>m.type);if(mk.includes('code'))t='`'+t+'`';if(mk.includes('bold'))t='**'+t+'**';if(mk.includes('italic'))t='*'+t+'*';const lk=(n.marks||[]).find(m=>m.type==='link');if(lk&&lk.attrs&&lk.attrs.href)t='['+t+']('+lk.attrs.href+')';return t;}if(n.type==='hardBreak')return '  \n';return '';}).join('');}
   function blocks(a,dep){dep=dep||0;const o=[];for(const b of (a||[])){const t=b.type;if(t==='paragraph')o.push(inline(b.content));else if(t==='heading')o.push('#'.repeat((b.attrs&&b.attrs.level)||2)+' '+inline(b.content));else if(t==='blockquote')o.push('> '+blocks(b.content,dep).join('\n> '));else if(t==='codeBlock')o.push('```\n'+inline(b.content)+'\n```');else if(t==='bulletList')for(const li of (b.content||[]))o.push('  '.repeat(dep)+'- '+blocks(li.content,dep+1).join('\n').trim());else if(t==='orderedList'){let i=(b.attrs&&b.attrs.start)||1;for(const li of (b.content||[]))o.push('  '.repeat(dep)+(i++)+'. '+blocks(li.content,dep+1).join('\n').trim());}else if(t==='listItem')o.push(blocks(b.content,dep).join('\n'));else if(t==='image')o.push('![]('+((b.attrs&&(b.attrs.src||b.attrs.url))||'')+')');else if(b.content)o.push(blocks(b.content,dep).join('\n'));}return o;}
   function descToMd(x){if(!x)return '';let s=String(x);if(s.startsWith('[v2]')){try{return blocks(JSON.parse(s.slice(4)),0).join('\n\n').replace(/\n{3,}/g,'\n\n').trim();}catch(e){return '';}}return s.trim();}
+  function embedFromText(s){
+    if(!s) return '';
+    const m = String(s).match(/https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?[^\s"'<>]+|youtu\.be\/[\w-]+|loom\.com\/share\/[\w-]+[^\s"'<>]*|vimeo\.com\/\d+|stream\.video\.skool\.com\/[^\s"'<>]+)/i);
+    return m ? m[0] : '';
+  }
+  function pickVideo(rpp, lm){
+    // 1) external link tren metadata
+    let url = ((lm && lm.videoLink) || '').trim();
+    if (url) return {url, kind:'ext'};
+    // 2) native Mux / Skool stream
+    const pv = rpp && rpp.video;
+    if (pv) {
+      if (pv.playbackId && pv.playbackToken)
+        return {url:'https://stream.video.skool.com/'+pv.playbackId+'.m3u8?token='+pv.playbackToken, kind:'native'};
+      if (pv.video_url) return {url:String(pv.video_url).trim(), kind:'ext'};
+      if (pv.url) return {url:String(pv.url).trim(), kind:'ext'};
+    }
+    // 3) link nhung trong mo ta
+    const emb = embedFromText(lm && lm.desc);
+    if (emb) return {url:emb, kind:'embed'};
+    return {url:'', kind:'none'};
+  }
   async function resolveRes(raw){let arr=[];try{arr=typeof raw==='string'?JSON.parse(raw):(raw||[]);}catch(e){arr=[];}const out=[];for(const r of (arr||[])){if(r.link){out.push({type:'link',file_name:r.title||r.link,url:r.link});continue;}if(r.file_id){let u='';for(let a=0;a<3&&!u;a++){try{const rs=await fetch('https://api2.skool.com/files/'+r.file_id+'/download-url?expire=28800',{method:'POST',credentials:'include'});if(rs.ok)u=(await rs.text()).trim();}catch(e){}if(!u)await sleep(500*(a+1));}out.push({type:'file',file_name:r.file_name||r.title||'file',url:u});}}return out;}
   function leaves(ws,tr,acc){acc=acc||[];for(const w of (ws||[])){const o=w.course;if(!o)continue;const t=(o.metadata&&o.metadata.title)||'';const k=w.children||[];if(k.length)leaves(k,tr.concat([t]),acc);else acc.push({trail:tr.concat([t]),obj:o});}return acc;}
   function nest(items,setLeaf){const roots=[];for(const it of items){let lv=roots;for(let i=0;i<it.trail.length;i++){const ti=it.trail[i],last=i===it.trail.length-1;let nd=lv.find(n=>n.title===ti&&(!!n.__c!==last));if(!nd){nd={title:ti,children:[]};if(last)setLeaf(nd,it);else nd.__c=true;lv.push(nd);}lv=nd.children;}}return roots;}
@@ -136,14 +158,44 @@ JS_DUMP = r"""async () => {
   const title=(pp.course.course&&pp.course.course.metadata&&pp.course.course.metadata.title)||cid;
   const lvs=leaves(pp.course.children,[],[]); let native=0,ext=0,none=0;
   const vi=[],mi=[];
-  for(const lf of lvs){const m=lf.obj.metadata||{};let url=(m.videoLink||'').trim(),desc=m.desc,resRaw=m.resources,pv=null;
-    for(let a=0;a<4;a++){try{const r=await fetch('/_next/data/'+buildId+'/'+GROUP+'/classroom/'+cid+'.json?md='+lf.obj.id+'&group='+GROUP+'&course='+cid,{credentials:'include',headers:{'x-nextjs-data':'1'}});if(r.ok){const j=await r.json(),rpp=j.pageProps||{};let lm=null;JSON.stringify(rpp.course,(k,v)=>{if(v&&typeof v==='object'&&v.id===lf.obj.id&&v.metadata)lm=v.metadata;return v;});if(lm){if(lm.desc)desc=lm.desc;if(lm.resources)resRaw=lm.resources;if(!url&&(lm.videoLink||'').trim())url=lm.videoLink.trim();}pv=rpp.video||null;break;}}catch(e){}await sleep(350*(a+1));}
-    if(!url&&pv&&pv.playbackId&&pv.playbackToken){url='https://stream.video.skool.com/'+pv.playbackId+'.m3u8?token='+pv.playbackToken;native++;}else if(url)ext++;else none++;
-    const dm=descToMd(desc);const res=await resolveRes(resRaw);
-    vi.push({trail:lf.trail,url});mi.push({trail:lf.trail,desc_md:dm,resources:res});await sleep(80);}
-  const vidTree=[{title,url:'',children:clean(nest(vi,(n,it)=>{n.url=it.url;}),true)}];
-  const metaTree=[{title,children:clean(nest(mi,(n,it)=>{n.desc_md=it.desc_md;n.resources=it.resources;}),false)}];
-  return {ok:true,chapter:title,total:lvs.length,native,ext,none,vid:JSON.stringify(vidTree),meta:JSON.stringify(metaTree)};
+  for(const lf of lvs){
+    let url='', desc=(lf.obj.metadata&&lf.obj.metadata.desc)||'', resRaw=(lf.obj.metadata&&lf.obj.metadata.resources)||null, kind='none';
+    // retry: API thinh thoang tra video=null o lan 1
+    for(let a=0;a<5;a++){
+      try{
+        const r=await fetch('/_next/data/'+buildId+'/'+GROUP+'/classroom/'+cid+'.json?md='+lf.obj.id+'&group='+GROUP+'&course='+cid,{credentials:'include',headers:{'x-nextjs-data':'1'}});
+        if(r.ok){
+          const j=await r.json(), rpp=j.pageProps||{};
+          let lm=null;
+          JSON.stringify(rpp.course,(k,v)=>{if(v&&typeof v==='object'&&v.id===lf.obj.id&&v.metadata)lm=v.metadata;return v;});
+          if(lm){ if(lm.desc) desc=lm.desc; if(lm.resources) resRaw=lm.resources; }
+          const picked=pickVideo(rpp, lm||lf.obj.metadata||{});
+          url=picked.url; kind=picked.kind;
+          if(url || a>=3) break;  // co video hoac da thu du
+        }
+      }catch(e){}
+      await sleep(400*(a+1));
+    }
+    if(kind==='native') native++; else if(url) ext++; else none++;
+    const dm=descToMd(desc); const res=await resolveRes(resRaw);
+    // links trong mo ta (Notion/Gemini/PDF/...) — extras se ghi links.md
+    const linkSet=[];
+    const re=/https?:\/\/[^\s"'<>\]]+/gi;
+    let mm; const blob=(desc||'')+' '+JSON.stringify(res||[]);
+    while((mm=re.exec(blob))){ const u=mm[0].replace(/[).,;}>]+$/,'').replace(/\\u0026/g,'&'); if(u&&!linkSet.includes(u)) linkSet.push(u); }
+    let videoId=null;
+    try{
+      // lay videoId tu metadata goc neu co
+      const r2=await fetch('/_next/data/'+buildId+'/'+GROUP+'/classroom/'+cid+'.json?md='+lf.obj.id+'&group='+GROUP+'&course='+cid,{credentials:'include',headers:{'x-nextjs-data':'1'}});
+      if(r2.ok){ const j2=await r2.json(); let lm2=null; JSON.stringify((j2.pageProps||{}).course,(k,v)=>{if(v&&v.id===lf.obj.id&&v.metadata)lm2=v.metadata;return v;}); if(lm2&&lm2.videoId) videoId=lm2.videoId; }
+    }catch(e){}
+    vi.push({trail:lf.trail,url,video_id:videoId});
+    mi.push({trail:lf.trail,desc_md:dm,resources:res,links:linkSet,video_id:videoId,url:url||''});
+    await sleep(120);
+  }
+  const vidTree=[{title,url:'',children:clean(nest(vi,(n,it)=>{n.url=it.url; if(it.video_id)n.video_id=it.video_id;}),true)}];
+  const metaTree=[{title,children:clean(nest(mi,(n,it)=>{n.desc_md=it.desc_md;n.resources=it.resources;n.links=it.links;n.video_id=it.video_id;if(it.url)n.url=it.url;}),false)}];
+  return {ok:true,chapter:title,total:lvs.length,with_video:native+ext,native,ext,none,vid:JSON.stringify(vidTree),meta:JSON.stringify(metaTree)};
 }"""
 
 
@@ -595,11 +647,15 @@ class SkoolBrowser:
                 (out / f"vid__{safe}.json").write_text(res["vid"], encoding="utf-8")
                 (out / f"meta__{safe}.json").write_text(res["meta"], encoding="utf-8")
                 ok += 1
+                wv = res.get("with_video")
+                if wv is None:
+                    wv = (res.get("native") or 0) + (res.get("ext") or 0)
                 self.emit(
                     type="log",
                     msg=(
                         f"  [OK] {res['chapter']}: {res['total']} bai "
-                        f"(native={res['native']} ext={res['ext']} text={res['none']})"
+                        f"(có video={wv}: native={res['native']} ext={res['ext']} · "
+                        f"text/tài liệu={res['none']})"
                     ),
                 )
                 self._save_state()

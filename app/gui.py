@@ -3249,11 +3249,10 @@ class App:
         self.run_async(load, cb)
 
     def _ensure_folders(self, course_name):
-        """Tao cay folder chuong/bai cho khoa (idempotent) truoc khi liet ke, de duong dan bai (rel)
-           luon day du & khop voi videos.py -> tai dung tu lan bam dau. Co lap config.C + chan print
-           (pythonw khong co stdout)."""
+        """Tao cay folder + extras (description.md, links.md, lesson.json, resources/).
+           Idempotent — chay moi lan mo manager de dong bo noi dung dump."""
         import io, sys as _sys
-        import config as C2, folders
+        import config as C2, folders, extras
         with self._cfg_lock:
             saved = (C2.COURSE, C2.ROOT, C2.DUMP_ROOT)
             out = (_sys.stdout, _sys.stderr)
@@ -3265,6 +3264,7 @@ class App:
                     C2.ROOT.mkdir(parents=True, exist_ok=True)
                 _sys.stdout = _sys.stderr = io.StringIO()
                 folders.run()
+                extras.run()
             except Exception:
                 pass
             finally:
@@ -3299,10 +3299,18 @@ class App:
         ic = ctk.CTkLabel(crow, text=("✓" if full else ("⏳" if ch["done"] else "•")), text_color=(SUCCESS if full else (WARNING if ch["done"] else TEXT2)), width=20, font=(FT, 14, "bold")); ic.pack(side="left")
         disp = name if len(name) <= 32 else name[:31] + "…"
         ctk.CTkLabel(crow, text=disp, font=(FT, 13, "bold"), text_color=TEXT, width=250, anchor="w").pack(side="left")
-        # video count + chapter size
+        # video count + chapter size (total bai / bai co video / da tai)
         chap_sz = sum((L.get("size") or 0) for L in (ch.get("lessons") or []))
-        cnt = ctk.CTkLabel(crow, text=f"▶ {ch['done']}/{ch['total']}", font=("Consolas", 12),
-                           text_color=TEXT2, width=64, anchor="e")
+        wv = ch.get("with_video")
+        if wv is None:
+            wv = sum(1 for L in (ch.get("lessons") or []) if L.get("has_video") or L.get("url"))
+        n_all = ch.get("total") or len(ch.get("lessons") or [])
+        cnt = ctk.CTkLabel(
+            crow,
+            text=f"▶ {ch['done']}/{wv}·{n_all}",
+            font=("Consolas", 11),
+            text_color=TEXT2, width=88, anchor="e",
+        )
         cnt.pack(side="left", padx=2)
         ctk.CTkLabel(crow, text=fmt_size(chap_sz) if chap_sz else "—",
                      font=("Consolas", 10), text_color=TEXT2, width=52, anchor="e").pack(side="left", padx=2)
@@ -3316,11 +3324,14 @@ class App:
 
     def _mgr_render_lesson(self, L):
         lrow = ctk.CTkFrame(self.mgr_scroll, fg_color="transparent"); lrow.pack(fill="x", padx=(38, 4), pady=0)
-        # trang thai: done / dang tai (tu progress) / cho
-        st_icon, st_col, st_tag = "•", TEXT2, "chờ"
-        if L.get("done"):
+        has_vid = bool(L.get("has_video") if "has_video" in L else L.get("url"))
+        # trang thai: done / dang tai / cho / text (khong video)
+        if not has_vid:
+            st_icon, st_col, st_tag = "📄", TEXT2, "text"
+        elif L.get("done"):
             st_icon, st_col, st_tag = "✓", SUCCESS, "xong"
         else:
+            st_icon, st_col, st_tag = "•", TEXT2, "chờ"
             try:
                 cur = getattr(self, "_live_current_folder", None) or ""
                 folder = str(L.get("folder") or "")
@@ -3332,17 +3343,20 @@ class App:
         t = L["title"] or "(bài)"; t = t if len(t) <= 30 else t[:29] + "…"
         ctk.CTkLabel(lrow, text=t, font=(FT, 12), text_color=TEXT, width=220, anchor="w").pack(side="left")
         ctk.CTkLabel(lrow, text=st_tag, font=(FT, 10), text_color=st_col, width=36, anchor="w").pack(side="left")
-        # dung luong video neu da tai
         sz = L.get("size") or 0
-        sz_txt = fmt_size(sz) if (L.get("done") and sz) else ("—" if not L.get("done") else "0")
+        sz_txt = fmt_size(sz) if (L.get("done") and sz) else ("—" if not has_vid else "—")
         ctk.CTkLabel(lrow, text=sz_txt, font=("Consolas", 10), text_color=TEXT2,
                      width=56, anchor="e").pack(side="left", padx=(2, 4))
-        host = (L["host"] or "").replace("www.", "")[:12]
-        host = ("▶ " + host) if host else ""
-        if L.get("native"):
-            host = (host + " · native") if host else "native"
+        if has_vid:
+            host = (L.get("host") or "").replace("www.", "")[:12]
+            host = ("▶ " + host) if host else "▶ video"
+            if L.get("native"):
+                host = (host + " · native") if host else "native"
+        else:
+            host = "tài liệu/text"
         ctk.CTkLabel(lrow, text=host, font=("Consolas", 10), text_color=TEXT2, width=100, anchor="w").pack(side="left")
-        btn(lrow, "⬇", (lambda r=L["rel"], tt=(L["title"] or "bài"): self.dl_lesson(r, tt)), kind="ghost", width=32, height=26).pack(side="right", padx=2)
+        if has_vid:
+            btn(lrow, "⬇", (lambda r=L["rel"], tt=(L["title"] or "bài"): self.dl_lesson(r, tt)), kind="ghost", width=32, height=26).pack(side="right", padx=2)
         btn(lrow, "★", (lambda L=L: self._bookmark_lesson(L)), kind="ghost", width=28, height=26).pack(side="right", padx=1)
         btn(lrow, "✎", (lambda L=L: self._edit_lesson_note(L)), kind="ghost", width=28, height=26).pack(side="right", padx=1)
         self.mgr_widgets[("lesson", L["rel"])] = {"ic": ic}
@@ -3486,21 +3500,33 @@ class App:
         if not self.mgr_tree:
             self.mgr_status.configure(text="Chưa có dữ liệu chương / video.", text_color=TEXT2); return
         done = sum(c["done"] for c in self.mgr_tree)
-        tot = sum(c["total"] for c in self.mgr_tree)
+        n_vid = sum(
+            c.get("with_video")
+            if c.get("with_video") is not None
+            else sum(1 for L in c["lessons"] if L.get("has_video") or L.get("url"))
+            for c in self.mgr_tree
+        )
+        n_all = sum(len(c["lessons"]) for c in self.mgr_tree)
+        n_text = max(0, n_all - n_vid)
         n_chap = len(self.mgr_tree)
         size = sum(L["size"] for c in self.mgr_tree for L in c["lessons"])
         hosts = {}
         for c in self.mgr_tree:
             for L in c["lessons"]:
+                if not (L.get("has_video") or L.get("url")):
+                    continue
                 h = (L.get("host") or "?").replace("www.", "")
                 if L.get("native"):
                     h = "skool-native"
                 hosts[h] = hosts.get(h, 0) + 1
         host_s = " · ".join(f"{k}×{v}" for k, v in sorted(hosts.items(), key=lambda x: -x[1])[:4])
-        msg = (f"Video {done}/{tot}  ·  {n_chap} chương  ·  {fmt_size(size)}"
-               + ("  ·  ✓ Đủ video." if (tot and done >= tot) else f"  ·  còn {tot - done} video"))
+        msg = (
+            f"Bài {n_all}  ·  có video {n_vid}  ·  đã tải {done}/{n_vid}  ·  text/tài liệu {n_text}\n"
+            f"{n_chap} chương  ·  {fmt_size(size)}"
+            + ("  ·  ✓ Đủ video." if (n_vid and done >= n_vid) else (f"  ·  còn {n_vid - done} video" if n_vid else ""))
+        )
         if host_s:
-            msg += f"\nNguồn: {host_s}"
+            msg += f"\nNguồn video: {host_s}"
         fails = self._load_fails()
         if fails:
             msg += f"  ·  ⚠ {len(fails)} fail"
@@ -3982,6 +4008,13 @@ class App:
             if hasattr(self, "dump_status") and self.dump_status.winfo_exists():
                 self.dump_status.configure(text=f"✓ Đã lấy {e['ok']}/{e['total']} chương")
             if hasattr(self, "dump_pb") and self.dump_pb.winfo_exists(): self.dump_pb.set(1)
+            # Tao folder + ghi description/links/resources ngay sau dump
+            try:
+                self.write("Đang dựng folder + lưu text/links/resources từng bài…")
+                self._ensure_folders(self.course_name)
+                self.write("✓ Đã lưu description.md · links.md · lesson.json · resources/ theo từng bài.")
+            except Exception as ex:
+                self.write(f"[extras] {ex}")
             # Sprint Q: content diff / snapshot sau dump
             try:
                 import content_diff as CD
@@ -3999,7 +4032,18 @@ class App:
                 self.write("Token mới đã sẵn sàng — bắt đầu tải lại native…"); self.start_native_download(); return
             if self.purpose == "update":
                 messagebox.showinfo("Xong", f"Đã cập nhật {e['ok']}/{e['total']} chương.\nChọn chương/bài để tải phần mới."); self.show_manager(); return
-            messagebox.showinfo("Xong", f"Đã lấy dữ liệu khóa ({e['ok']}/{e['total']} chương).\nChọn chương/bài để tải."); self.show_manager()
+            messagebox.showinfo(
+                "Xong",
+                f"Đã lấy {e['ok']}/{e['total']} chương.\n\n"
+                "Mỗi bài có folder riêng:\n"
+                "  • description.md — text bài\n"
+                "  • links.md — mọi link (Notion, PDF, …)\n"
+                "  • lesson.json — metadata\n"
+                "  • resources/ — file tải được\n"
+                "  • video.* — sau khi tải video\n\n"
+                "Mở Trình tải để xem / tải video.",
+            )
+            self.show_manager()
         elif t == "error":
             self._dumping = False     # gỡ kẹt: nếu đang dump mà lỗi, mở lại nút
             if hasattr(self, "b_dump") and self.b_dump.winfo_exists():

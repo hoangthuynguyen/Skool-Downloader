@@ -110,14 +110,16 @@ def scan(root):
     size = 0
     missing = []
     native_expired = []
+    n_lessons = 0
     for ct, (sc, course) in sorted(best.items()):
         chap = _chapter_folder(root, ct)
-        cdone = ctot = 0
+        cdone = ctot = 0  # ctot = bai CO video url (de tai)
         lessons = K.walk(course.get("children") or [], chap or root)
         for folder, node in lessons:
-            url = node.get("url")
+            n_lessons += 1
+            url = (node.get("url") or "").strip()
             if not url:
-                continue
+                continue  # bai text/resource — khong dem vao video total
             ctot += 1
             total += 1
             v = video_in(folder) if chap else None
@@ -141,36 +143,46 @@ def scan(root):
                          "folder": chap, "done": cdone, "total": ctot})
     return {"root": root, "has_data": bool(best), "chapters": chapters,
             "total": total, "done": done, "size": size,
+            "lessons": n_lessons,
             "missing": missing, "native_expired": native_expired}
 
 
 def tree(root):
     """Cay day du cho GUI: list chuong, moi chuong co list bai.
-       chuong: {name, title, folder, done, total, lessons:[...]}
-       bai:    {folder, rel, title, url, host, native, done, size}
+       chuong: {name, title, folder, done, total, with_video, lessons:[...]}
+       bai:    {folder, rel, title, url, host, native, done, size, has_video}
+       Hien TAT CA bai (ke ca text/resource khong co video) — truoc day loc bo bai khong url
+       nen user thay 3/9 bai.
        rel = duong dan tuong doi vs course root (truyen cho main.py --lesson)."""
     root = Path(root)
     best = _best_chapters(root)
     chapters = []
     for ct, (sc, course) in sorted(best.items()):
         chap = _chapter_folder(root, ct)
-        lessons = []; cdone = 0
+        lessons = []; cdone = 0; with_video = 0
         for folder, node in K.walk(course.get("children") or [], chap or root):
-            url = node.get("url")
-            if not url:
-                continue
+            url = (node.get("url") or "").strip()
+            has_video = bool(url)
+            if has_video:
+                with_video += 1
             v = video_in(folder) if chap else None
             done = bool(v); sz = 0
             if v:
                 cdone += 1
                 try: sz = v.stat().st_size
                 except OSError: pass
-            rel = str(folder).replace(str(root) + os.sep, "")   # luon la duong dan (khong dung ten bai)
-            lessons.append({"folder": folder, "rel": rel, "title": node.get("title", ""),
-                            "url": url, "host": host_of(url), "native": is_native(url),
-                            "done": done, "size": sz})
-        chapters.append({"name": chap.name if chap else ct, "title": ct, "folder": chap,
-                         "done": cdone, "total": len(lessons), "lessons": lessons})
+            rel = str(folder).replace(str(root) + os.sep, "")
+            lessons.append({
+                "folder": folder, "rel": rel, "title": node.get("title", ""),
+                "url": url, "host": host_of(url) if url else "",
+                "native": is_native(url) if url else False,
+                "done": done, "size": sz, "has_video": has_video,
+            })
+        chapters.append({
+            "name": chap.name if chap else ct, "title": ct, "folder": chap,
+            "done": cdone, "total": len(lessons), "with_video": with_video,
+            "lessons": lessons,
+        })
     return chapters
 
 

@@ -1,6 +1,6 @@
 """Phien ban Skool Downloader (Phase ship)."""
-__version__ = "2.15.5"
-__codename__ = "classroom-ux"
+__version__ = "2.16.0"
+__codename__ = "full-lesson-pack"
 
 # Phase milestones (gan dung commit history)
 HISTORY = (
@@ -37,6 +37,8 @@ HISTORY = (
     "2.15.3 robust Skool browser recover + better chapter list (no blank lessons)",
     "2.15.4 browser via storage_state (fix closed-page on list chapters)",
     "2.15.5 classroom UX: keep Chrome open, live URL, auto-list chapters",
+    "2.15.6 show all lessons (not only with URL) + better video extract",
+    "2.16.0 full lesson pack: description/links/resources/lesson.json per folder",
 )
 
 

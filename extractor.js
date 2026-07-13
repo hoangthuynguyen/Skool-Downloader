@@ -144,8 +144,17 @@
           if (a === 3) st.err++;
           await sleep(400 * (a + 1));
         }
-        if (!url && pv && pv.playbackId && pv.playbackToken) { url = `https://stream.video.skool.com/${pv.playbackId}.m3u8?token=${pv.playbackToken}`; st.native++; }
-        else if (url) st.ext++; else st.none++;
+        if (!url && pv && pv.playbackId && pv.playbackToken) {
+          url = `https://stream.video.skool.com/${pv.playbackId}.m3u8?token=${pv.playbackToken}`;
+        } else if (!url && pv && (pv.video_url || pv.url)) {
+          url = (pv.video_url || pv.url || '').trim();
+        } else if (!url && desc) {
+          const emb = String(desc).match(/https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?[^\s"'<>]+|youtu\.be\/[\w-]+|loom\.com\/share\/[\w-]+)/i);
+          if (emb) url = emb[0];
+        }
+        if (url && url.includes('stream.video.skool.com')) st.native++;
+        else if (url) st.ext++;
+        else st.none++;
         const desc_md = descToMd(desc); if (desc_md) st.desc++;
         const resources = await resolveResources(resRaw);
         st.file += resources.filter(r => r.type === 'file').length;
