@@ -119,11 +119,14 @@ DRY_RUN = False
 ONLY_HOSTS = []
 ONLY_CHAPTER = None
 ONLY_LESSON = None
+ONLY_FAILED = False          # True: chi tai lai folder co trong video_fails.json
+FAIL_CODES = None            # None = moi code; set(["rate","network"]) de loc
 JS_RUNTIME = "node"
 YT_COOKIES_FILE = ""
 YT_COOKIES_BROWSER = ""
 MAX_TRIES = 6
 RETRY_WAIT = 8
+AUTO_INDEX = True            # sau pipeline: build RAG index (catalog + tfidf)
 
 # ===================== TRANSCRIBE =====================
 WHISPER_ENGINE = "faster-whisper"

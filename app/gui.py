@@ -789,9 +789,12 @@ class App:
         r2 = ctk.CTkFrame(act, fg_color="transparent"); r2.pack(fill="x", padx=14, pady=4)
         btn(r2, "🌐  Dịch tiếng Việt", self.do_translate, kind="secondary", width=210).pack(side="left", padx=(0, 8))
         ctk.CTkLabel(r2, text="Dịch file tổng hợp sang tiếng Việt", font=(FT, 11), text_color=TEXT2).pack(side="left")
-        r3 = ctk.CTkFrame(act, fg_color="transparent"); r3.pack(fill="x", padx=14, pady=(4, 12))
+        r3 = ctk.CTkFrame(act, fg_color="transparent"); r3.pack(fill="x", padx=14, pady=4)
         btn(r3, "📝  Tóm tắt + To-do (AI)", self.do_summary, kind="secondary", width=210).pack(side="left", padx=(0, 8))
-        ctk.CTkLabel(r3, text="Tóm tắt từng chương + việc áp dụng cho Trường Việt Anh", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        ctk.CTkLabel(r3, text="Tóm tắt từng chương + to-do áp dụng", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r4 = ctk.CTkFrame(act, fg_color="transparent"); r4.pack(fill="x", padx=14, pady=(4, 12))
+        btn(r4, "📦  Knowledge pack (zip)", self.do_knowledge_pack, kind="accent", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r4, text="Zip text/resources — gửi sếp / USB (không video)", font=(FT, 11), text_color=TEXT2).pack(side="left")
 
         row = ctk.CTkFrame(self.content, fg_color="transparent"); row.pack(fill="x", pady=12)
         btn(row, "←  Dashboard", self.show_dashboard, kind="ghost", width=120).pack(side="left")
@@ -882,6 +885,12 @@ class App:
                                     "Tóm tắt + To-do cần API key Claude.\nDán API key vào ô bên trên rồi bấm Lưu."); return
         except Exception: pass
         self.start([PY, "ai_tools.py"] + args + ["--summary"], "TÓM TẮT + TO-DO")
+
+    def do_knowledge_pack(self):
+        v = self.rep_var.get().strip() if hasattr(self, "rep_var") else ""
+        if not v:
+            messagebox.showinfo("Chưa chọn", "Hãy chọn một khóa."); return
+        self.export_knowledge_pack(v)
 
     # ====================== DASHBOARD (S1) ======================
     def show_step1(self):
@@ -1003,6 +1012,8 @@ class App:
         btn(acts, "Cập nhật", lambda it=item: self._dash_update(it),
             kind="secondary", width=88, height=30).pack(side="left", padx=2)
         btn(acts, "Chat", lambda it=item: self._dash_chat(it),
+            kind="secondary", width=64, height=30).pack(side="left", padx=2)
+        btn(acts, "Pack", lambda it=item: self.export_knowledge_pack(it),
             kind="secondary", width=64, height=30).pack(side="left", padx=2)
         btn(acts, "Sync", lambda it=item: self._dash_sync(it),
             kind="secondary", width=64, height=30).pack(side="left", padx=2)
@@ -1680,10 +1691,35 @@ class App:
         if hasattr(self, "run_lbl"): self.run_lbl.configure(text="✓  Hoàn tất", text_color=SUCCESS)
         if getattr(self, "opt_sub", None) and self.opt_sub.get(): self.write("Bật phụ đề chạy ngầm..."); self.run_sub_on()
         self._maybe_cloud_after(self.course_name)
+        # auto index (Sprint A) — nen, khong block
+        self._maybe_auto_index()
         self._show_fails_panel(self.content)
-        btn(self.done_row, "📁  Mở thư mục dự án", self.open_folder, kind="secondary", width=200).pack(side="left", padx=(0, 8))
-        btn(self.done_row, "📄  Xuất & Báo cáo", self.show_report, kind="secondary", width=180).pack(side="left", padx=(0, 8))
-        btn(self.done_row, "↻  Dashboard", self.show_dashboard, width=140).pack(side="left")
+        btn(self.done_row, "📁  Mở thư mục", self.open_folder, kind="secondary", width=140).pack(side="left", padx=(0, 6))
+        btn(self.done_row, "📦 Pack", lambda: self.export_knowledge_pack(), kind="soft", width=90).pack(side="left", padx=(0, 6))
+        btn(self.done_row, "📄 Xuất", self.show_report, kind="secondary", width=100).pack(side="left", padx=(0, 6))
+        btn(self.done_row, "↻ Dashboard", self.show_dashboard, kind="accent", width=130).pack(side="left")
+
+    def _maybe_auto_index(self):
+        """Index RAG sau tai neu AUTO_INDEX (khong hoi)."""
+        try:
+            if not getattr(C, "AUTO_INDEX", True):
+                return
+        except Exception:
+            return
+        root = self.course_root(self.course_name)
+        self.write("📇 Auto-index RAG (nền)…")
+        def work():
+            try:
+                from rag.index import build_catalog
+                return build_catalog(root, log=lambda s: self.ui_q.put(lambda m=s: self.write(m)))
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                self.write(f"[index] {r}")
+            else:
+                self.write(f"📇 Index xong: {r.get('n_lessons', 0)} bài")
+        self.run_async(work, cb)
 
     def _load_fails(self, course_name=None):
         try:
@@ -1721,8 +1757,9 @@ class App:
             btn(row, "🔑 Cứu native", self.rescue_from_fails, kind="warn", width=130, height=32).pack(side="left", padx=2)
         if "bot" in codes:
             btn(row, "Node.js / cookies", self.show_check, kind="secondary", width=140, height=32).pack(side="left", padx=2)
-        btn(row, "↻ Tải lại", self._retry_download_after_fails, kind="accent", width=100, height=32).pack(side="left", padx=2)
-        btn(row, "🗑 Dọn file dở", self.cleanup_partials, kind="ghost", width=120, height=32).pack(side="left", padx=2)
+        btn(row, "↻ Chỉ tải fail", self.retry_failed_only, kind="accent", width=120, height=32).pack(side="left", padx=2)
+        btn(row, "↻ Tải thiếu", self._retry_download_after_fails, kind="secondary", width=100, height=32).pack(side="left", padx=2)
+        btn(row, "🗑 Dọn dở", self.cleanup_partials, kind="ghost", width=90, height=32).pack(side="left", padx=2)
         self.write(f"⚠ {len(fails)} bài fail — xem panel phía trên / video_fails.json")
 
     def rescue_from_fails(self):
@@ -1761,6 +1798,72 @@ class App:
         args = self._course_args() + ["--until-clean"]
         self.write("↻ Tải lại các bài còn thiếu…")
         self.start([PY, "main.py"] + args, "TẢI LẠI", on_done=self.show_manager)
+
+    def retry_failed_only(self, codes=None):
+        """Chi tai lai folder trong video_fails.json (fail-driven)."""
+        if self.proc:
+            messagebox.showinfo("Đang bận", "Đang có tác vụ chạy."); return
+        fails = self._load_fails()
+        if not fails:
+            messagebox.showinfo("Fails", "Không có video_fails.json."); return
+        args = self._course_args() + ["--only", "videos", "--retry-failed", "--until-clean", "--skip-preflight"]
+        if codes:
+            args += ["--fail-codes", ",".join(codes)]
+        n = len(fails)
+        self.write(f"↻ Chỉ tải {n} bài fail…")
+        self.start([PY, "main.py"] + args, "TẢI LẠI FAIL", on_done=self._after_retry_failed)
+
+    def _after_retry_failed(self):
+        self.show_manager()
+        # goi y index
+        if messagebox.askyesno("Index RAG?", "Tải fail xong. Build lại index chat (catalog + TF-IDF)?"):
+            self._run_index_current()
+
+    def _run_index_current(self):
+        if self.proc:
+            return
+        args = self._course_args() + ["--only", "audit", "--index", "--skip-preflight"]
+        # audit no-op-ish; dung main --index via only videos dry? better call knowledge path
+        root = self.course_root(self.course_name)
+        self.write("📇 Đang index RAG…")
+        def work():
+            try:
+                from rag.index import build_catalog
+                return build_catalog(root, log=lambda s: self.ui_q.put(lambda m=s: self.write(m)))
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("Index", str(r))
+            else:
+                messagebox.showinfo("Index", f"Đã index {r.get('n_lessons', 0)} bài")
+        self.run_async(work, cb)
+
+    def export_knowledge_pack(self, item=None):
+        """Zip knowledge pack (text) cho khoa."""
+        if item:
+            self.pick_var.set(item) if hasattr(self, "pick_var") else None
+            course = self.item_course(item)
+            root = self.item_root(item)
+            name = item
+        else:
+            course = self.course_name
+            root = self.course_root(course)
+            name = course or "SkoolCourse"
+        self.write(f"📦 Knowledge pack: {name}…")
+        def work():
+            try:
+                import knowledge_pack as KP
+                return str(KP.pack_course(root, course_name=course or name,
+                                          log=lambda s: self.ui_q.put(lambda m=s: self.write(m))))
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("Knowledge pack", str(r)); return
+            if messagebox.askyesno("Xong", f"Đã tạo:\n{r}\n\nMở thư mục?"):
+                self._open_path(Path(r).parent)
+        self.run_async(work, cb)
 
     def cleanup_partials(self):
         root = self.course_root(self.course_name)
@@ -1801,6 +1904,8 @@ class App:
         ctk.CTkCheckBox(row, text="🔁 Thử lại đến khi đủ", variable=self.opt_clean,
                         font=(FT, 12), text_color=TEXT2, fg_color=ACCENT, hover_color=ACCENT_H,
                         border_color=BORDER).pack(side="left", padx=8)
+        btn(row, "↻ Fail", self.retry_failed_only, kind="warn", width=80, height=32).pack(side="right", padx=4)
+        btn(row, "📦 Pack", lambda: self.export_knowledge_pack(), kind="soft", width=80, height=32).pack(side="right", padx=4)
         btn(row, "🗑 Dọn dở", self.cleanup_partials, kind="secondary", width=96, height=32).pack(side="right", padx=4)
         self.mgr_status = ctk.CTkLabel(bar, text="⏳  Đang đọc danh sách chương…", font=(FT, 12),
                                        text_color=TEXT2, justify="left", wraplength=560)
@@ -1922,6 +2027,7 @@ class App:
         self.mgr_busy = None; self._mgr_scan_async()
         self._mgr_refresh_fails()
         self._maybe_cloud_after(self.course_name)
+        self._maybe_auto_index()
 
     def _mgr_refresh_fails(self):
         if not (hasattr(self, "mgr_fail_box") and self.mgr_fail_box.winfo_exists()):
@@ -1943,6 +2049,7 @@ class App:
         ctk.CTkLabel(ban, text=f"⚠ {len(fails)} bài fail ({summary})", font=(FT, 12, "bold"),
                      text_color="#9A3412").pack(side="left", padx=12, pady=8)
         btn(ban, "Chi tiết", lambda: self._show_fails_dialog(fails), kind="warn", width=90, height=28).pack(side="right", padx=8, pady=6)
+        btn(ban, "↻ Chỉ tải fail", self.retry_failed_only, kind="accent", width=120, height=28).pack(side="right", padx=4, pady=6)
 
     def _show_fails_dialog(self, fails=None):
         fails = fails if fails is not None else self._load_fails()

@@ -10,8 +10,86 @@ def passes(url):
 def chap_ok(ct):
     return (not C.ONLY_CHAPTER) or ct == C.ONLY_CHAPTER
 
+def _norm_path(p):
+    try:
+        return str(Path(p).resolve()).replace("\\", "/").lower()
+    except Exception:
+        return str(p).replace("\\", "/").lower()
+
+
+def failed_folder_set(root=None):
+    """Tap folder (absolute norm) tu video_fails.json, loc theo C.FAIL_CODES neu co."""
+    try:
+        import cleanup as CL
+        fails = CL.load_fails(root or C.ROOT)
+    except Exception:
+        fails = []
+    codes = C.FAIL_CODES
+    if codes:
+        codes = {str(c).lower() for c in codes}
+        fails = [f for f in fails if (f.get("code") or "").lower() in codes]
+    out = set()
+    for f in fails:
+        fp = f.get("folder") or ""
+        if not fp:
+            continue
+        out.add(_norm_path(fp))
+        # them basename path de match linh hoat
+        try:
+            out.add(Path(fp).name.lower())
+        except Exception:
+            pass
+    return out
+
+
+_FAILED_CACHE = None
+
+
+def _failed_set():
+    global _FAILED_CACHE
+    if not C.ONLY_FAILED:
+        return None
+    if _FAILED_CACHE is None:
+        _FAILED_CACHE = failed_folder_set()
+    return _FAILED_CACHE
+
+
+def reset_failed_cache():
+    global _FAILED_CACHE
+    _FAILED_CACHE = None
+
+
+def in_failed_set(folder, fset):
+    if not fset:
+        return False
+    n = _norm_path(folder)
+    if n in fset:
+        return True
+    # match neu fail path la prefix/suffix
+    for f in fset:
+        if not f:
+            continue
+        if n.endswith("/" + f) or n.endswith(f) or f.endswith(n):
+            return True
+        try:
+            if Path(n).name.lower() == Path(f).name.lower() and Path(n).name:
+                # ten folder bai trung (yeu) — chi khi cung parent name
+                if Path(n).parent.name.lower() == Path(f).parent.name.lower():
+                    return True
+        except Exception:
+            pass
+    return False
+
+
 def lesson_ok(folder):
-    """So khop duong dan bai — chuan hoa / vs \\ de Windows/macOS giong nhau."""
+    """So khop duong dan bai — chuan hoa / vs \\ ; hoac loc ONLY_FAILED."""
+    if C.ONLY_FAILED:
+        fset = _failed_set()
+        if not fset:
+            return False
+        if not in_failed_set(folder, fset):
+            return False
+        # van ton trong ONLY_LESSON neu co
     if not C.ONLY_LESSON:
         return True
     only = str(C.ONLY_LESSON).replace("\\", "/").strip("/").lower()
@@ -144,7 +222,15 @@ def _warn_expired_tokens(plan):
 
 
 def run():
+    reset_failed_cache()
     print(f"=== TAI VIDEO === (ONLY_HOSTS={C.ONLY_HOSTS or 'TAT CA'})")
+    if C.ONLY_FAILED:
+        fset = _failed_set() or set()
+        codes = C.FAIL_CODES or "all"
+        print(f"(retry-failed: {len(fset)} folder · codes={codes})")
+        if not fset:
+            print("Khong co video_fails.json / khong khop code -> bo qua\n")
+            return []
     chapters = K.load_best(C.VID_PATTERN, count_urls)
     if not chapters: print("Khong co vid_*.json -> bo qua\n"); return []
     plan = []; total = 0

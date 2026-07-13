@@ -87,6 +87,11 @@ def main():
     ap.add_argument("--native-only", action="store_true", help="Chi tai video native Skool (de cuu bai het token).")
     ap.add_argument("--chapter", help="Chi tai 1 chuong (ten chuong da san). Dung cho GUI tai theo chuong.")
     ap.add_argument("--lesson", help="Chi tai 1 bai (duong dan tuong doi vs course root).")
+    ap.add_argument("--retry-failed", action="store_true",
+                    help="Chi tai lai bai co trong video_fails.json (fail-driven).")
+    ap.add_argument("--fail-codes", help="Loc code fail, vd: rate,network,token (mac dinh: tat ca).")
+    ap.add_argument("--index", action="store_true", help="Sau pipeline: build RAG index (catalog+tfidf).")
+    ap.add_argument("--no-index", action="store_true", help="Tat auto index sau pipeline.")
     # multi-course queue (S2) — uy thac queue_engine
     ap.add_argument("--queue", help="Them nhieu khoa vao hang doi (ten cach nhau bang dau phay) roi chay.")
     ap.add_argument("--queue-add", help="Chi them vao hang doi, khong chay (ten cach nhau bang dau phay).")
@@ -145,15 +150,24 @@ def main():
     if a.native_only:           C.ONLY_HOSTS = [NATIVE_HOST]
     if a.chapter:               C.ONLY_CHAPTER = a.chapter
     if a.lesson:                C.ONLY_LESSON = a.lesson
+    if a.retry_failed:
+        C.ONLY_FAILED = True
+        if a.fail_codes:
+            C.FAIL_CODES = {x.strip().lower() for x in a.fail_codes.split(",") if x.strip()}
+    do_index = bool(a.index) or (getattr(C, "AUTO_INDEX", True) and not a.no_index and not a.only)
 
     print(f"=== KHOA: {C.COURSE or C.ROOT.name}  ({C.ROOT}) ===\n")
 
     if a.only:
         if a.only == "videos":
-            if a.chapter or a.lesson: folders.run()   # bao dam co folder truoc khi tai chon loc
+            if a.chapter or a.lesson or a.retry_failed:
+                folders.run()   # bao dam co folder truoc khi tai chon loc
             run_videos(until_clean=a.until_clean, rounds=a.rounds, wait=a.round_wait)
         else:
             STEPS[a.only]()
+        # --only: chi index khi user goi --index (AUTO_INDEX chi full pipeline)
+        if a.index:
+            _maybe_index()
         return
 
     if not a.skip_preflight:
@@ -166,7 +180,19 @@ def main():
     run_videos(until_clean=a.until_clean, rounds=a.rounds, wait=a.round_wait)  # native 24h truoc, roi loom/youtube
     if a.transcribe: transcribe.run()
     audit.run()
+    if do_index or a.index:
+        _maybe_index()
     print("=== HOAN TAT PIPELINE ===")
+
+
+def _maybe_index():
+    """Build RAG catalog + TF-IDF (Sprint A incremental knowledge)."""
+    try:
+        from rag.index import build_catalog
+        print("\n=== RAG INDEX ===")
+        build_catalog(C.ROOT)
+    except Exception as e:
+        print(f"[index] bo qua: {e}")
 
 if __name__ == "__main__":
     main()

@@ -189,6 +189,45 @@ def test_version_module():
     print("  PASS  version module")
 
 
+def test_retry_failed_and_knowledge_pack():
+    import config as C
+    import videos as V
+    import knowledge_pack as KP
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        lesson = root / "01 - Chap" / "02 - Bai"
+        lesson.mkdir(parents=True)
+        (lesson / "description.md").write_text("hello", encoding="utf-8")
+        (lesson / "video.txt").write_text("transcript", encoding="utf-8")
+        (root / "video_fails.json").write_text(json.dumps([
+            {"folder": str(lesson), "code": "rate", "message": "429", "fix": "wait"},
+            {"folder": str(root / "other"), "code": "token", "message": "403", "fix": "dump"},
+        ]), encoding="utf-8")
+        old = (C.ROOT, C.ONLY_FAILED, C.FAIL_CODES)
+        try:
+            C.ROOT = root
+            C.ONLY_FAILED = True
+            C.FAIL_CODES = {"rate"}
+            V.reset_failed_cache()
+            fset = V.failed_folder_set(root)
+            assert V.in_failed_set(lesson, fset)
+            assert V.lesson_ok(lesson) is True
+            C.FAIL_CODES = {"token"}
+            V.reset_failed_cache()
+            assert V.lesson_ok(lesson) is False
+        finally:
+            C.ROOT, C.ONLY_FAILED, C.FAIL_CODES = old
+            V.reset_failed_cache()
+        z = KP.pack_course(root, course_name="Test", out_path=str(root / "t.zip"), log=lambda *_: None)
+        assert Path(z).exists() and Path(z).stat().st_size > 0
+        import zipfile
+        with zipfile.ZipFile(z) as zf:
+            names = zf.namelist()
+            assert any("description.md" in n for n in names)
+            assert "_pack_manifest.json" in names
+    print("  PASS  retry-failed + knowledge pack")
+
+
 def test_warehouse_fails_field():
     import progress as P
     st = P.warehouse_stats([])
@@ -283,7 +322,7 @@ def test_config_base_and_doctor_requeue():
 
 
 def main():
-    print("Phase 1–10 smoke tests")
+    print("Phase 1–10 + Sprint A smoke tests")
     fails = 0
     for fn in (test_progress_badge, test_queue_persist, test_cloud_policy,
                test_updates_diff, test_rag_score, test_tfidf_and_multi,
@@ -291,7 +330,8 @@ def main():
                test_search_and_report, test_onedrive_module, test_health_and_web,
                test_export_site_and_embed, test_config_base_and_doctor_requeue,
                test_video_classify_and_lesson_path, test_cleanup_fails,
-               test_version_module, test_warehouse_fails_field):
+               test_version_module, test_warehouse_fails_field,
+               test_retry_failed_and_knowledge_pack):
         try:
             fn()
         except Exception as e:

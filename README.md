@@ -2,7 +2,7 @@
 
 Công cụ lưu trữ **toàn bộ một khóa học Skool** về máy: cây thư mục theo chương/bài, video (native Skool + Loom + YouTube), mô tả bài, tài liệu (resources) và **phụ đề tiếng Anh (Whisper)** — chạy bằng **một lệnh**, có **kiểm tra môi trường trước khi chạy** và **báo lỗi kèm cách xử lý**.
 
-> Phiên bản hiện tại: **2.3.0** — UI v2.3 density + dark mode (`python app/main.py --version`).  
+> Phiên bản hiện tại: **2.4.0** — fail-driven retry · knowledge pack · auto-index (`python app/main.py --version`).  
 > Đã kiểm chứng trên khóa *AI Automations by Jack* (584 bài, ~170 GB).
 
 ---
@@ -19,6 +19,7 @@ Archiver/
 │  ├─ Doctor.cmd                 ← kiểm tra môi trường + BASE
 │  ├─ Web Viewer.cmd             ← duyệt knowledge local
 │  ├─ Health check.cmd           ← quét sức khỏe kho
+│  ├─ Knowledge pack.cmd         ← zip text/resources (không video)
 │  ├─ Xuat site tinh.cmd         ← export HTML offline
 │  ├─ Cai / Go transcribe nen.cmd
 ├─ extractor.js                  ← dán vào Console trình duyệt để dump
@@ -187,6 +188,10 @@ python app\main.py --version
 python app\queue_engine.py --requeue-failed    # thu lai job failed/stopped
 python app\cleanup.py --course "X" --fails     # xem video_fails.json
 python app\cleanup.py --course "X" --apply     # xoa file .part/.ytdl thua
+python app\main.py --course "X" --only videos --retry-failed --until-clean
+python app\main.py --course "X" --retry-failed --fail-codes rate,network
+python app\knowledge_pack.py --course "X"      # zip text/resources (khong video)
+python app\main.py --course "X" --index        # build RAG index sau pipeline
 python app\export.py   --course "X" --docx     # gộp & xuất Word (Nhóm A)
 python app\ai_tools.py --course "X" --translate --summary   # dịch + tóm tắt/to-do (cần API key / deep-translator)
 python app\updates.py  --course "X" --scan-local            # sức khỏe local / diff helper
