@@ -63,10 +63,14 @@ class App:
         self.target_titles = set()       # chuong can re-dump (cuu native het han)
         self.last_scan = None            # ket qua progress.scan gan nhat
         self.scan_cache = {}             # {display item -> scan} cho Buoc 1 (de hien dung luong khi xoa)
+        self.dash_entries = []           # ket qua scan_all cho dashboard
+        self.queue_runner = None         # queue_engine.QueueRunner
+        self.queue_checks = {}           # id -> BooleanVar (chon job)
+        self.chat_history = []           # [(role, text)]
         self._cfg_lock = threading.Lock()  # serialize khi tam set config.C (tao folder)
         self._in_err = False             # tranh de quy man hinh loi
 
-        root.title("Skool Archiver"); root.geometry("820x620"); root.minsize(580, 420)
+        root.title("Skool Archiver"); root.geometry("900x680"); root.minsize(640, 480)
         root.configure(fg_color=BG)
         root.grid_columnconfigure(1, weight=1); root.grid_rowconfigure(0, weight=1)
 
@@ -74,11 +78,21 @@ class App:
         side = ctk.CTkFrame(root, width=206, corner_radius=0, fg_color=SIDE)
         side.grid(row=0, column=0, sticky="nsw"); side.grid_propagate(False)
         ctk.CTkLabel(side, text="📦  Skool Archiver", font=(FT, 18, "bold"), text_color="white").pack(anchor="w", padx=22, pady=(26, 4))
-        ctk.CTkLabel(side, text="Lưu trữ khóa học Skool", font=(FT, 11), text_color=ON_SIDE).pack(anchor="w", padx=22, pady=(0, 22))
+        ctk.CTkLabel(side, text="Lưu trữ khóa học Skool", font=(FT, 11), text_color=ON_SIDE).pack(anchor="w", padx=22, pady=(0, 12))
         self.step_box = ctk.CTkFrame(side, fg_color="transparent"); self.step_box.pack(fill="x", padx=14)
+        # Nav Phase 1 (S1–S5)
+        nav = ctk.CTkFrame(side, fg_color="transparent"); nav.pack(fill="x", padx=10, pady=(14, 0))
+        for label, cmd in (
+            ("⌂  Dashboard", self.show_dashboard),
+            ("☰  Hàng đợi", self.show_queue),
+            ("💬  Chat RAG", self.show_chat),
+            ("☁  Cloud", self.show_cloud),
+            ("📄  Xuất & Báo cáo", self.show_report),
+        ):
+            btn(nav, label, cmd, kind="ghost", text_color="white", hover_color=SIDE_HI,
+                anchor="w", height=32, font=(FT, 12)).pack(fill="x", pady=1)
         self.badge = ctk.CTkLabel(side, text="", font=(FT, 12, "bold"), text_color="white"); self.badge.pack(side="bottom", anchor="w", padx=22, pady=(0, 8))
         btn(side, "⚙  Kiểm tra môi trường", self.show_check, kind="ghost", text_color="white", hover_color=SIDE_HI, anchor="w").pack(side="bottom", fill="x", padx=14, pady=(0, 6))
-        btn(side, "📄  Xuất & Báo cáo", self.show_report, kind="ghost", text_color="white", hover_color=SIDE_HI, anchor="w").pack(side="bottom", fill="x", padx=14, pady=(0, 2))
 
         # ---------- main ----------
         main = ctk.CTkFrame(root, corner_radius=0, fg_color=BG); main.grid(row=0, column=1, sticky="nsew")
@@ -94,7 +108,7 @@ class App:
 
         root.report_callback_exception = self._tk_err   # KHONG bao gio de man hinh trang/ket vi loi nuot im
         root.bind_all("<Control-Alt-t>", self.toggle_admin); root.bind_all("<Control-Alt-T>", self.toggle_admin)
-        self.render_sidebar(); self.show_step1()
+        self.render_sidebar(); self.show_dashboard()
         self.root.after(120, self.poll)
 
     # ---------- bat MOI loi giao dien -> ghi log + man hinh phuc hoi (khong bao gio trang/ket) ----------
@@ -122,7 +136,7 @@ class App:
         box = ctk.CTkTextbox(card, height=150, font=("Consolas", 10), fg_color="#FFF7ED", text_color="#7C2D12", corner_radius=8)
         box.pack(fill="x", padx=12, pady=(2, 12)); box.insert("end", full[-2500:]); box.configure(state="disabled")
         row = ctk.CTkFrame(self.content, fg_color="transparent"); row.pack(fill="x", pady=10)
-        btn(row, "←  Về đầu", self.show_step1, kind="ghost", width=120).pack(side="left")
+        btn(row, "←  Về Dashboard", self.show_dashboard, kind="ghost", width=150).pack(side="left")
         btn(row, "📁  Mở thư mục log", lambda: self._open_path(ARCHIVER / "logs"), kind="secondary", width=170).pack(side="left", padx=8)
 
     def _open_path(self, p):
@@ -153,7 +167,9 @@ class App:
         # Xoa cac tham chieu widget cua man hinh cu -> hasattr() guard moi noi chinh xac (tranh dung widget da huy)
         for a in ("mgr_scroll", "mgr_status", "chap_scroll", "chap_hdr", "sum_lbl", "native_banner",
                   "status4", "pct_lbl", "pb4", "run_lbl", "done_row", "trans_lbl", "trans_pb", "tl_lbl",
-                  "dump_status", "dump_pb", "b_start", "b_all", "b_dump", "b_list", "b_open", "chap_box", "dump_row"):
+                  "dump_status", "dump_pb", "b_start", "b_all", "b_dump", "b_list", "b_open", "chap_box", "dump_row",
+                  "dash_list", "dash_summary", "q_list", "q_status", "chat_box", "chat_input", "chat_src",
+                  "cloud_status"):
             if hasattr(self, a): delattr(self, a)
 
     def toggle_admin(self, *_):
@@ -374,7 +390,7 @@ class App:
         ctk.CTkLabel(r3, text="Tóm tắt từng chương + việc áp dụng cho Trường Việt Anh", font=(FT, 11), text_color=TEXT2).pack(side="left")
 
         row = ctk.CTkFrame(self.content, fg_color="transparent"); row.pack(fill="x", pady=12)
-        btn(row, "←  Quay lại", self.show_step1, kind="ghost", width=110).pack(side="left")
+        btn(row, "←  Dashboard", self.show_dashboard, kind="ghost", width=120).pack(side="left")
         btn(row, "📁  Mở thư mục khóa", self.open_report_folder, kind="secondary", width=190).pack(side="right")
 
     # ---------- API key Claude (điền sống trong app) ----------
@@ -465,37 +481,119 @@ class App:
         except Exception: pass
         self.start([PY, "ai_tools.py"] + args + ["--summary"], "TÓM TẮT + TO-DO")
 
-    # ====================== BƯỚC 1 ======================
+    # ====================== DASHBOARD (S1) ======================
     def show_step1(self):
+        """Alias — màn hình chính là Dashboard."""
+        self.show_dashboard()
+
+    def show_dashboard(self):
         self.set_step(1); self.clear(); self.purpose = "import"
-        self.head("Bạn muốn tải khóa nào?", "Chọn khóa đã có rồi bấm Tiếp tục để tải tiếp phần còn thiếu, hoặc thêm khóa mới từ Skool.")
+        self.head("Dashboard", "Toàn bộ khóa đã lưu — tiến độ, dung lượng, cảnh báo. Chọn khóa để tải tiếp, xếp hàng đợi, chat hoặc đồng bộ cloud.")
         try: miss = self.env_missing()
         except Exception: miss = []
         if miss:
             ban = ctk.CTkFrame(self.content, fg_color="#F4F4F5", corner_radius=12, border_width=1, border_color="#D4D4D8"); ban.pack(fill="x", pady=(0, 8))
             ctk.CTkLabel(ban, text="⚠  Thiếu: " + ", ".join(m[0].split(" (")[0] for m in miss), text_color=TEXT, font=(FT, 12, "bold")).pack(side="left", padx=14, pady=10)
             btn(ban, "Kiểm tra & cài", self.show_check, kind="warn", width=140).pack(side="right", padx=10, pady=8)
-        items = self.existing_courses(); card = self.card(); self.prog_labels = {}
-        if items:
-            ctk.CTkLabel(card, text="Khóa đã có", font=(FT, 12, "bold"), text_color=TEXT2).pack(anchor="w", padx=16, pady=(12, 4))
-            self.pick_var = ctk.StringVar(value=items[0])
-            for it in items:
-                rowf = ctk.CTkFrame(card, fg_color="transparent"); rowf.pack(fill="x", padx=18, pady=4)
-                ctk.CTkRadioButton(rowf, text=it, variable=self.pick_var, value=it, font=(FT, 13), text_color=TEXT,
-                                   fg_color=PRIMARY, hover_color=PRIMARY_H).pack(side="left")
-                lbl = ctk.CTkLabel(rowf, text="đang tính…", font=("Consolas", 11), text_color=TEXT2); lbl.pack(side="right")
-                self.prog_labels[it] = lbl
-            ctk.CTkFrame(card, fg_color="transparent", height=8).pack()
-            self._scan_all_async(items)
+
+        # tong hop
+        sumc = self.card()
+        self.dash_summary = ctk.CTkLabel(sumc, text="⏳  Đang quét kho khóa…", font=(FT, 13), text_color=TEXT2, justify="left", wraplength=560)
+        self.dash_summary.pack(anchor="w", padx=16, pady=12)
+
+        # toolbar
+        bar = ctk.CTkFrame(self.content, fg_color="transparent"); bar.pack(fill="x", pady=(0, 6))
+        btn(bar, "➕  Thêm khóa mới", self.go_import, width=150).pack(side="left")
+        btn(bar, "↻  Làm mới", self._dash_refresh, kind="secondary", width=110).pack(side="left", padx=6)
+        btn(bar, "🔄  Quét cập nhật (local)", self.batch_local_health, kind="secondary", width=180).pack(side="left", padx=2)
+        btn(bar, "+ Hàng đợi (đã chọn)", self.dash_enqueue_selected, kind="secondary", width=160).pack(side="right")
+
+        self.dash_list = ctk.CTkFrame(self.content, fg_color="transparent"); self.dash_list.pack(fill="x")
+        self.pick_var = ctk.StringVar(value="")
+        self.dash_checks = {}  # item -> BooleanVar
+        self.prog_labels = {}
+        items = self.existing_courses()
+        if not items:
+            ctk.CTkLabel(self.dash_list, text="(Chưa có khóa nào — bấm Thêm khóa mới)", font=(FT, 12), text_color=TEXT2).pack(padx=8, pady=20)
         else:
-            ctk.CTkLabel(card, text="(Chưa có khóa nào — hãy thêm khóa mới)", font=(FT, 12), text_color=TEXT2).pack(padx=16, pady=16)
-            self.pick_var = ctk.StringVar(value="")
-        row = ctk.CTkFrame(self.content, fg_color="transparent"); row.pack(fill="x", pady=14)
-        btn(row, "➕  Thêm khóa mới", self.go_import, width=180).pack(side="left")
-        if items:
-            btn(row, "🗑  Xóa khóa", self.delete_course, kind="danger", width=110).pack(side="left", padx=(8, 0))
-            btn(row, "Tiếp tục  →", self.use_existing, kind="success", width=130).pack(side="right", padx=(8, 0))
-            btn(row, "🔄  Cập nhật", self.check_updates, kind="secondary", width=140).pack(side="right")
+            self.pick_var.set(items[0])
+            for it in items:
+                self._dash_skeleton_card(it)
+            self._dash_scan_async()
+
+    def _dash_skeleton_card(self, item):
+        card = ctk.CTkFrame(self.dash_list, fg_color=CARD, corner_radius=12, border_width=1, border_color=BORDER)
+        card.pack(fill="x", pady=5)
+        top = ctk.CTkFrame(card, fg_color="transparent"); top.pack(fill="x", padx=12, pady=(10, 2))
+        var = ctk.BooleanVar(value=False)
+        self.dash_checks[item] = var
+        ctk.CTkCheckBox(top, text="", variable=var, width=24, fg_color=PRIMARY, hover_color=PRIMARY_H).pack(side="left")
+        ctk.CTkRadioButton(top, text=item, variable=self.pick_var, value=item, font=(FT, 14, "bold"),
+                           text_color=TEXT, fg_color=PRIMARY, hover_color=PRIMARY_H).pack(side="left")
+        badge = ctk.CTkLabel(top, text="…", font=(FT, 11, "bold"), text_color=TEXT2, width=110, anchor="e")
+        badge.pack(side="right")
+        prog = ctk.CTkLabel(card, text="đang tính…", font=("Consolas", 11), text_color=TEXT2, anchor="w")
+        prog.pack(fill="x", padx=40, pady=(0, 4))
+        pb = ctk.CTkProgressBar(card, height=8, corner_radius=4, progress_color=PRIMARY)
+        pb.pack(fill="x", padx=40, pady=(0, 6)); pb.set(0)
+        acts = ctk.CTkFrame(card, fg_color="transparent"); acts.pack(fill="x", padx=12, pady=(0, 10))
+        btn(acts, "▶ Mở", lambda it=item: self._dash_open(it), kind="success", width=72, height=28).pack(side="left", padx=(0, 4))
+        btn(acts, "🔄 Cập nhật", lambda it=item: self._dash_update(it), kind="secondary", width=100, height=28).pack(side="left", padx=2)
+        btn(acts, "💬 Chat", lambda it=item: self._dash_chat(it), kind="secondary", width=72, height=28).pack(side="left", padx=2)
+        btn(acts, "☁ Sync", lambda it=item: self._dash_sync(it), kind="secondary", width=72, height=28).pack(side="left", padx=2)
+        btn(acts, "+ Queue", lambda it=item: self._dash_enqueue_one(it), kind="secondary", width=80, height=28).pack(side="left", padx=2)
+        btn(acts, "🗑", lambda it=item: self._dash_delete(it), kind="danger", width=40, height=28).pack(side="right")
+        self.prog_labels[item] = {"prog": prog, "badge": badge, "pb": pb, "card": card}
+
+    def _dash_scan_async(self):
+        def work():
+            try:
+                entries = P.scan_all()
+            except Exception as e:
+                entries = e
+            self.ui_q.put(lambda: self._dash_apply(entries))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _dash_apply(self, entries):
+        if isinstance(entries, Exception):
+            if hasattr(self, "dash_summary") and self.dash_summary.winfo_exists():
+                self.dash_summary.configure(text=f"Lỗi quét: {entries}")
+            return
+        self.dash_entries = entries
+        for e in entries:
+            it = e["item"]
+            s = e.get("scan") or {}
+            self.scan_cache[it] = s
+            w = self.prog_labels.get(it)
+            if not w: continue
+            try:
+                if not w["prog"].winfo_exists(): continue
+            except Exception:
+                continue
+            badge = e.get("badge") or P.status_badge(s)
+            w["badge"].configure(text=badge.get("label") or "?")
+            w["prog"].configure(text=self._fmt_prog(s))
+            tot = s.get("total") or 0; done = s.get("done") or 0
+            w["pb"].set((done / tot) if tot else 0)
+            # badge update meta
+            try:
+                import updates as U
+                meta = U.read_update_meta(e["root"])
+                if meta and meta.get("has_updates"):
+                    w["badge"].configure(text="🆕 " + (badge.get("label") or "Cập nhật"))
+            except Exception:
+                pass
+        st = P.warehouse_stats(entries)
+        if hasattr(self, "dash_summary") and self.dash_summary.winfo_exists():
+            left = st["total"] - st["done"]
+            self.dash_summary.configure(
+                text=(f"{st['courses']} khóa  ·  {st['done']}/{st['total']} bài  ·  {fmt_size(st['size'])}"
+                      + (f"  ·  còn {left} bài" if left else "  ·  ✓ đủ")
+                      + (f"  ·  🔑 {st['expired']} hết hạn" if st["expired"] else ""))
+            )
+
+    def _dash_refresh(self):
+        self.show_dashboard()
 
     def _fmt_prog(self, s):
         if isinstance(s, Exception) or not s or not s.get("has_data"): return "chưa có dữ liệu"
@@ -506,12 +604,93 @@ class App:
         return f"{done}/{tot} bài · còn {tot - done} · {fmt_size(s['size'])}{tag}"
 
     def _scan_all_async(self, items):
+        """Giữ tương thích chỗ cũ (report…)."""
         for it in items:
             def cb(s, it=it):
                 if not isinstance(s, Exception): self.scan_cache[it] = s
-                lbl = self.prog_labels.get(it)
-                if lbl is not None and lbl.winfo_exists(): lbl.configure(text=self._fmt_prog(s))
             self.run_async(lambda it=it: P.scan(self.item_root(it)), cb)
+
+    def _dash_open(self, item):
+        self.pick_var.set(item)
+        self.mode = "existing"; self.course_name = self.item_course(item); self.show_manager()
+
+    def _dash_update(self, item):
+        self.pick_var.set(item); self.check_updates()
+
+    def _dash_chat(self, item):
+        self.pick_var.set(item)
+        self.course_name = self.item_course(item)
+        self.show_chat(preselect=item)
+
+    def _dash_sync(self, item):
+        self.pick_var.set(item)
+        self.course_name = self.item_course(item)
+        self._cloud_sync_course(item)
+
+    def _dash_delete(self, item):
+        self.pick_var.set(item); self.delete_course()
+
+    def _dash_enqueue_one(self, item):
+        try:
+            import queue_engine as QE
+            course = self.item_course(item)
+            QE.add_jobs([course], kind="full", until_clean=True)
+            self.write(f"✓ Đã thêm vào hàng đợi: {item}")
+            messagebox.showinfo("Hàng đợi", f"Đã thêm «{item}» vào hàng đợi.\nMở Hàng đợi ở sidebar để chạy.")
+        except Exception as e:
+            messagebox.showerror("Lỗi", str(e))
+
+    def dash_enqueue_selected(self):
+        items = [it for it, v in (self.dash_checks or {}).items() if v.get()]
+        if not items:
+            # fallback: khoa dang radio-chon
+            v = self.pick_var.get().strip() if hasattr(self, "pick_var") else ""
+            if v: items = [v]
+        if not items:
+            messagebox.showinfo("Chưa chọn", "Tick ít nhất 1 khóa (ô checkbox) hoặc chọn radio rồi thử lại."); return
+        try:
+            import queue_engine as QE
+            courses = [self.item_course(it) for it in items]
+            QE.add_jobs(courses, kind="full", until_clean=True)
+            self.write(f"✓ Đã thêm {len(courses)} khóa vào hàng đợi.")
+            if messagebox.askyesno("Hàng đợi", f"Đã thêm {len(courses)} khóa.\nMở màn Hàng đợi ngay?"):
+                self.show_queue()
+        except Exception as e:
+            messagebox.showerror("Lỗi", str(e))
+
+    def batch_local_health(self):
+        """S3: quet local tat ca khoa, ghi badge / _update_diff nhe."""
+        self.write("Đang quét sức khỏe local toàn kho…")
+        def work():
+            try:
+                import updates as U
+                results = []
+                for meta in P.list_course_items():
+                    h = U.local_health(meta["root"])
+                    # ghi meta nhe de dashboard hien 🆕 khi con thieu
+                    if h.get("needs_attention"):
+                        s = h["scan"]
+                        U.mark_update_meta(meta["root"], {
+                            "summary": f"Còn {(s.get('total') or 0) - (s.get('done') or 0)} bài · "
+                                       f"{len(s.get('native_expired') or [])} hết hạn",
+                            "has_updates": True,
+                            "new_chapters": [],
+                            "missing_lessons": s.get("missing") or [],
+                            "native_expired": s.get("native_expired") or [],
+                            "scan": {"total": s.get("total"), "done": s.get("done"),
+                                     "size": s.get("size"), "has_data": s.get("has_data")},
+                        })
+                    results.append((meta["item"], h))
+                return results
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("Lỗi", str(r)); return
+            attn = sum(1 for _, h in r if h.get("needs_attention"))
+            self.write(f"Quét xong: {attn}/{len(r)} khóa cần chú ý.")
+            self.show_dashboard()
+        self.run_async(work, cb)
 
     def use_existing(self):
         v = self.pick_var.get().strip()
@@ -536,7 +715,11 @@ class App:
         v = self.pick_var.get().strip()
         if not v: return
         self.mode = "existing"; self.course_name = self.item_course(v); self.purpose = "update"
-        self.known_titles = self._saved_titles(self.item_root(v))
+        try:
+            import updates as U
+            self.known_titles = U.saved_chapter_titles(self.item_root(v))
+        except Exception:
+            self.known_titles = self._saved_titles(self.item_root(v))
         self.show_step2()
 
     # ---------- xoa khoa ----------
@@ -582,7 +765,7 @@ class App:
         else:
             self.write(f"[LỖI xóa] {err}")
             messagebox.showerror("Lỗi", f"Không xóa được khóa:\n{err}")
-        self.show_step1()
+        self.show_dashboard()
 
     # ====================== BƯỚC 2 ======================
     def show_step2(self):
@@ -604,7 +787,7 @@ class App:
         self.b_list = btn(f, lbl2, self.do_list, kind="secondary", height=44, state="disabled"); self.b_list.pack(fill="x", pady=5)
         self.chap_box = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=14)   # cuon theo trang ngoai
         self.dump_row = ctk.CTkFrame(self.content, fg_color="transparent")
-        btn(self.content, "←  Quay lại", self.show_step1, kind="ghost", width=110).pack(anchor="w", pady=8)
+        btn(self.content, "←  Quay lại", self.show_dashboard, kind="ghost", width=110).pack(anchor="w", pady=8)
 
     def do_open(self):
         if self.sb is None:
@@ -623,8 +806,23 @@ class App:
         for w in self.dump_row.winfo_children(): w.destroy()
         self.chap_box.pack(fill="x", pady=8); self.dump_row.pack(fill="x", pady=4)
         upd = (self.purpose == "update")
+        # S3: diff thong minh hon (chuong moi + bai thieu local)
+        self._last_update_diff = None
+        if upd:
+            try:
+                import updates as U
+                diff = U.diff_remote_chapters(self.course_root(self.course_name), chapters)
+                U.mark_update_meta(self.course_root(self.course_name), diff)
+                self._last_update_diff = diff
+                self.write(f"Diff: {diff.get('summary')}")
+            except Exception as e:
+                self.write(f"[diff] {e}")
         n_new = sum(1 for c in chapters if K.san(c["title"]) not in self.known_titles) if upd else len(chapters)
-        cap = (f"Khóa: {group} — {n_new} chương MỚI (đã tick sẵn)" if upd
+        extra = ""
+        if upd and self._last_update_diff:
+            d = self._last_update_diff
+            extra = f"  ·  {len(d.get('missing_lessons') or [])} bài thiếu  ·  {len(d.get('native_expired') or [])} hết hạn"
+        cap = (f"Khóa: {group} — {n_new} chương MỚI (đã tick sẵn){extra}" if upd
                else f"Khóa: {group} — chọn chương cần tải")
         ctk.CTkLabel(self.chap_box, text=cap, font=(FT, 12, "bold"), text_color=PRIMARY).pack(anchor="w", padx=6, pady=(4, 6))
         self.chapters = []
@@ -678,7 +876,7 @@ class App:
         if self.admin:
             ctk.CTkCheckBox(card, text="🔧 Chế độ TEST — chỉ kiểm tra, KHÔNG tải thật (dry-run)", variable=self.opt_test, font=(FT, 13, "bold"), text_color="#9A6700", fg_color=WARNING, hover_color="#B98700").pack(anchor="w", padx=16, pady=(0, 12))
         row = ctk.CTkFrame(self.content, fg_color="transparent"); row.pack(fill="x", pady=16)
-        btn(row, "←  Quay lại", self.show_step1, kind="ghost", width=110).pack(side="left")
+        btn(row, "←  Quay lại", self.show_dashboard, kind="ghost", width=110).pack(side="left")
         self.b_start = btn(row, "▶   Bắt đầu tải", self.start_download, kind="success", width=210, height=46); self.b_start.pack(side="right")
         self._scan_current_async()
 
@@ -798,7 +996,7 @@ class App:
         if getattr(self, "opt_sub", None) and self.opt_sub.get(): self.write("Bật phụ đề chạy ngầm..."); self.run_sub_on()
         btn(self.done_row, "📁  Mở thư mục dự án", self.open_folder, kind="secondary", width=200).pack(side="left", padx=(0, 8))
         btn(self.done_row, "📄  Xuất & Báo cáo", self.show_report, kind="secondary", width=180).pack(side="left", padx=(0, 8))
-        btn(self.done_row, "↻  Làm khóa khác", self.show_step1, width=150).pack(side="left")
+        btn(self.done_row, "↻  Dashboard", self.show_dashboard, width=140).pack(side="left")
 
     # ====================== TRÌNH TẢI (theo chương / bài) ======================
     def show_manager(self):
@@ -816,7 +1014,7 @@ class App:
         self.mgr_status = ctk.CTkLabel(bar, text="⏳  Đang đọc danh sách chương…", font=(FT, 12), text_color=TEXT2, justify="left", wraplength=520); self.mgr_status.pack(anchor="w", padx=16, pady=(2, 10))
         self.mgr_scroll = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=14, border_width=1, border_color=BORDER); self.mgr_scroll.pack(fill="x", pady=(2, 6))
         nav = ctk.CTkFrame(self.content, fg_color="transparent"); nav.pack(fill="x", pady=10)
-        btn(nav, "←  Quay lại", self.show_step1, kind="ghost", width=110).pack(side="left")
+        btn(nav, "←  Dashboard", self.show_dashboard, kind="ghost", width=120).pack(side="left")
         btn(nav, "Tạo phụ đề  →", self.show_transcribe, kind="secondary", width=160).pack(side="right")
         self._mgr_scan_async()
 
@@ -1184,6 +1382,403 @@ class App:
             if hasattr(self, "b_dump") and self.b_dump.winfo_exists():
                 self.b_dump.configure(state="normal", text="3.   Tải dữ liệu các chương đã chọn  →")
             self.write(f"[LỖI trình duyệt] {e.get('msg', '')}"); messagebox.showerror("Lỗi", e.get("msg", "Lỗi trình duyệt"))
+
+    # ====================== HÀNG ĐỢI (S2) ======================
+    def show_queue(self):
+        self.clear()
+        self.head("Hàng đợi multi-course", "Xếp nhiều khóa chạy tuần tự. Mỗi job = 1 lần main.py (cách ly an toàn). Trạng thái lưu queue_state.json.")
+        import queue_engine as QE
+        counts = QE.summary()
+        self.q_status = ctk.CTkLabel(
+            self.content,
+            text=f"queued={counts.get('queued',0)}  running={counts.get('running',0)}  "
+                 f"done={counts.get('done',0)}  failed={counts.get('failed',0)}  stopped={counts.get('stopped',0)}",
+            font=("Consolas", 12), text_color=TEXT2)
+        self.q_status.pack(anchor="w", pady=(0, 8))
+
+        bar = ctk.CTkFrame(self.content, fg_color="transparent"); bar.pack(fill="x", pady=4)
+        btn(bar, "▶  Chạy hàng đợi", self.queue_run, kind="success", width=150).pack(side="left")
+        btn(bar, "■  Dừng", self.queue_stop, kind="danger", width=90).pack(side="left", padx=6)
+        btn(bar, "Xóa đã xong", self.queue_clear_done, kind="secondary", width=120).pack(side="left", padx=4)
+        btn(bar, "↻ Làm mới", self.show_queue, kind="ghost", width=100).pack(side="right")
+
+        add_card = self.card()
+        ctk.CTkLabel(add_card, text="Thêm khóa vào hàng đợi", font=(FT, 12, "bold"), text_color=TEXT2).pack(anchor="w", padx=14, pady=(10, 4))
+        items = self.existing_courses()
+        self.q_add_var = ctk.StringVar(value=items[0] if items else "")
+        if items:
+            ctk.CTkOptionMenu(add_card, variable=self.q_add_var, values=items, width=320,
+                              fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
+                              text_color=TEXT).pack(anchor="w", padx=14, pady=4)
+            row = ctk.CTkFrame(add_card, fg_color="transparent"); row.pack(fill="x", padx=14, pady=(4, 12))
+            btn(row, "＋ Thêm", self.queue_add_current, width=100).pack(side="left")
+            btn(row, "＋ Thêm tất cả", self.queue_add_all, kind="secondary", width=130).pack(side="left", padx=8)
+        else:
+            ctk.CTkLabel(add_card, text="(Chưa có khóa)", font=(FT, 12), text_color=TEXT2).pack(padx=14, pady=12)
+
+        self.q_list = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=12, border_width=1, border_color=BORDER)
+        self.q_list.pack(fill="x", pady=8)
+        self._queue_render_jobs()
+
+        btn(self.content, "←  Dashboard", self.show_dashboard, kind="ghost", width=120).pack(anchor="w", pady=10)
+
+    def _queue_render_jobs(self):
+        if not (hasattr(self, "q_list") and self.q_list.winfo_exists()): return
+        for w in self.q_list.winfo_children(): w.destroy()
+        import queue_engine as QE
+        state = QE.load_state()
+        jobs = state.get("jobs") or []
+        if not jobs:
+            ctk.CTkLabel(self.q_list, text="(Hàng đợi trống — thêm khóa từ Dashboard hoặc ở trên)",
+                         font=(FT, 12), text_color=TEXT2).pack(padx=14, pady=16)
+            return
+        for j in jobs:
+            row = ctk.CTkFrame(self.q_list, fg_color="transparent"); row.pack(fill="x", padx=8, pady=3)
+            st = j.get("status") or "?"
+            col = SUCCESS if st == "done" else (DANGER if st in ("failed", "stopped") else (WARNING if st == "running" else TEXT2))
+            ctk.CTkLabel(row, text=f"[{st}]", font=("Consolas", 11, "bold"), text_color=col, width=80, anchor="w").pack(side="left")
+            ctk.CTkLabel(row, text=j.get("label") or j.get("course") or "SkoolCourse",
+                         font=(FT, 12), text_color=TEXT, anchor="w").pack(side="left", fill="x", expand=True)
+            jid = j.get("id")
+            if st == "queued":
+                btn(row, "Hủy", lambda i=jid: self._queue_cancel(i), kind="ghost", width=50, height=26).pack(side="right")
+            btn(row, "✕", lambda i=jid: self._queue_remove(i), kind="ghost", width=36, height=26).pack(side="right", padx=2)
+
+    def queue_add_current(self):
+        import queue_engine as QE
+        v = self.q_add_var.get().strip() if hasattr(self, "q_add_var") else ""
+        if not v: return
+        QE.add_jobs([self.item_course(v)], kind="full", until_clean=True)
+        self.write(f"Queue + {v}"); self.show_queue()
+
+    def queue_add_all(self):
+        import queue_engine as QE
+        items = self.existing_courses()
+        if not items: return
+        QE.add_jobs([self.item_course(it) for it in items], kind="full", until_clean=True)
+        self.write(f"Queue + {len(items)} khóa"); self.show_queue()
+
+    def _queue_cancel(self, jid):
+        import queue_engine as QE
+        QE.cancel_job(jid); self.show_queue()
+
+    def _queue_remove(self, jid):
+        import queue_engine as QE
+        QE.remove_job(jid); self.show_queue()
+
+    def queue_clear_done(self):
+        import queue_engine as QE
+        QE.clear_done(); self.show_queue()
+
+    def queue_run(self):
+        import queue_engine as QE
+        if self.proc:
+            messagebox.showinfo("Đang bận", "Một tác vụ pipeline đang chạy. Dừng trước hoặc đợi xong."); return
+        if self.queue_runner and self.queue_runner.is_running():
+            messagebox.showinfo("Đang chạy", "Hàng đợi đang chạy."); return
+        def on_ev(ev):
+            t = ev.get("type")
+            if t == "start":
+                self.ui_q.put(lambda: self.write(f"\n===== QUEUE: {ev['job'].get('label')} ====="))
+            elif t == "log":
+                line = ev.get("line") or ""
+                self.ui_q.put(lambda s=line: self.write(s))
+            elif t == "end":
+                j = ev["job"]
+                self.ui_q.put(lambda: self.write(f"--- job {j.get('status')} (rc={j.get('returncode')}) ---"))
+                self.ui_q.put(self._queue_soft_refresh)
+            elif t == "finished":
+                self.ui_q.put(lambda: self.write(f"✓ Hàng đợi xong ({ev.get('ran')} job)"))
+                self.ui_q.put(self._queue_soft_refresh)
+        self.queue_runner = QE.QueueRunner(on_event=on_ev)
+        if self.queue_runner.start_async():
+            self.write("▶ Bắt đầu chạy hàng đợi…")
+            if hasattr(self, "q_status") and self.q_status.winfo_exists():
+                self.q_status.configure(text="⏳ Đang chạy hàng đợi… (xem Nhật ký)")
+        else:
+            messagebox.showinfo("Đang chạy", "Runner đã bận.")
+
+    def _queue_soft_refresh(self):
+        """Cap nhat list job neu van o man queue."""
+        if hasattr(self, "q_list") and self.q_list.winfo_exists():
+            try:
+                import queue_engine as QE
+                counts = QE.summary()
+                if hasattr(self, "q_status") and self.q_status.winfo_exists():
+                    self.q_status.configure(
+                        text=f"queued={counts.get('queued',0)}  running={counts.get('running',0)}  "
+                             f"done={counts.get('done',0)}  failed={counts.get('failed',0)}")
+                self._queue_render_jobs()
+            except Exception:
+                pass
+
+    def queue_stop(self):
+        if self.queue_runner:
+            self.queue_runner.stop()
+            self.write("[Queue] Đã gửi lệnh dừng")
+        else:
+            messagebox.showinfo("Không chạy", "Không có hàng đợi nào đang chạy.")
+
+    # ====================== CLOUD R2 (S4) ======================
+    def show_cloud(self):
+        self.clear()
+        self.head("Cloud upload (R2)", "Đồng bộ knowledge (md/txt/srt/resources) lên Cloudflare R2. Mặc định không upload video.")
+        try:
+            from cloud.sync import load_cloud_settings
+            cfg = load_cloud_settings() or {}
+        except Exception:
+            cfg = {}
+        r2 = cfg.get("r2") or {}
+
+        card = self.card()
+        ctk.CTkLabel(card, text="Cấu hình Cloudflare R2", font=(FT, 12, "bold"), text_color=TEXT2).pack(anchor="w", padx=14, pady=(12, 6))
+        fields = [
+            ("Account ID", "account_id", r2.get("account_id") or ""),
+            ("Bucket", "bucket", r2.get("bucket") or ""),
+            ("Access Key", "access_key", r2.get("access_key") or ""),
+            ("Secret Key", "secret_key", r2.get("secret_key") or ""),
+            ("Endpoint (để trống = auto)", "endpoint", r2.get("endpoint") or ""),
+            ("Prefix (tuỳ chọn)", "prefix", cfg.get("prefix") or ""),
+        ]
+        self.cloud_vars = {}
+        for label, key, val in fields:
+            row = ctk.CTkFrame(card, fg_color="transparent"); row.pack(fill="x", padx=14, pady=2)
+            ctk.CTkLabel(row, text=label, font=(FT, 12), text_color=TEXT, width=180, anchor="w").pack(side="left")
+            var = ctk.StringVar(value=val)
+            show = "•" if "secret" in key or "access" in key else None
+            ent = ctk.CTkEntry(row, textvariable=var, font=("Consolas", 11), show=show)
+            ent.pack(side="left", fill="x", expand=True)
+            self.cloud_vars[key] = var
+
+        mode_row = ctk.CTkFrame(card, fg_color="transparent"); mode_row.pack(fill="x", padx=14, pady=(6, 4))
+        ctk.CTkLabel(mode_row, text="Mode", font=(FT, 12), text_color=TEXT, width=180, anchor="w").pack(side="left")
+        self.cloud_mode = ctk.StringVar(value=cfg.get("mode") or "knowledge")
+        ctk.CTkOptionMenu(mode_row, variable=self.cloud_mode, values=["knowledge", "full"], width=160,
+                          fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
+                          text_color=TEXT).pack(side="left")
+
+        brow = ctk.CTkFrame(card, fg_color="transparent"); brow.pack(fill="x", padx=14, pady=(8, 12))
+        btn(brow, "💾  Lưu cấu hình", self.cloud_save, width=140).pack(side="left")
+        btn(brow, "🔌  Test kết nối", self.cloud_test, kind="secondary", width=130).pack(side="left", padx=8)
+
+        self.cloud_status = ctk.CTkLabel(self.content, text="", font=(FT, 12), text_color=TEXT2, wraplength=540, justify="left")
+        self.cloud_status.pack(anchor="w", pady=4)
+
+        sync_card = self.card()
+        ctk.CTkLabel(sync_card, text="Đồng bộ khóa", font=(FT, 12, "bold"), text_color=TEXT2).pack(anchor="w", padx=14, pady=(12, 4))
+        items = self.existing_courses()
+        self.cloud_course = ctk.StringVar(value=items[0] if items else "")
+        if items:
+            ctk.CTkOptionMenu(sync_card, variable=self.cloud_course, values=items, width=320,
+                              fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
+                              text_color=TEXT).pack(anchor="w", padx=14, pady=4)
+            srow = ctk.CTkFrame(sync_card, fg_color="transparent"); srow.pack(fill="x", padx=14, pady=(6, 12))
+            btn(srow, "☁  Sync khóa này", self.cloud_sync_selected, kind="success", width=160).pack(side="left")
+            btn(srow, "Dry-run", self.cloud_dry_run, kind="secondary", width=100).pack(side="left", padx=8)
+        else:
+            ctk.CTkLabel(sync_card, text="(Chưa có khóa)", font=(FT, 12), text_color=TEXT2).pack(padx=14, pady=12)
+
+        btn(self.content, "←  Dashboard", self.show_dashboard, kind="ghost", width=120).pack(anchor="w", pady=10)
+
+    def cloud_save(self):
+        try:
+            from cloud.sync import load_cloud_settings, save_cloud_settings
+            cfg = load_cloud_settings() or {}
+            r2 = dict(cfg.get("r2") or {})
+            for k in ("account_id", "bucket", "access_key", "secret_key", "endpoint"):
+                if k in self.cloud_vars:
+                    r2[k] = self.cloud_vars[k].get().strip()
+            cfg["provider"] = "r2"
+            cfg["r2"] = r2
+            cfg["mode"] = self.cloud_mode.get() if hasattr(self, "cloud_mode") else "knowledge"
+            if "prefix" in self.cloud_vars:
+                cfg["prefix"] = self.cloud_vars["prefix"].get().strip()
+            save_cloud_settings(cfg)
+            self.write("✓ Đã lưu cấu hình cloud (.settings.json)")
+            if hasattr(self, "cloud_status") and self.cloud_status.winfo_exists():
+                self.cloud_status.configure(text="✓ Đã lưu cấu hình.")
+        except Exception as e:
+            messagebox.showerror("Lỗi", str(e))
+
+    def cloud_test(self):
+        self.cloud_save()
+        def work():
+            try:
+                from cloud.sync import test_connection
+                return test_connection()
+            except Exception as e:
+                return False, str(e)
+        def cb(r):
+            ok, msg = r if isinstance(r, tuple) else (False, str(r))
+            self.write(("✓ " if ok else "✗ ") + msg)
+            if hasattr(self, "cloud_status") and self.cloud_status.winfo_exists():
+                self.cloud_status.configure(text=msg)
+            if not ok:
+                messagebox.showerror("Kết nối thất bại", msg)
+        self.run_async(work, cb)
+
+    def _cloud_sync_course(self, item, dry_run=False):
+        root = self.item_root(item)
+        course = self.item_course(item)
+        self.write(f"{'[dry-run] ' if dry_run else ''}☁ Sync {item}…")
+        def work():
+            try:
+                from cloud.sync import sync_course
+                return sync_course(root, course_name=course or "SkoolCourse",
+                                  dry_run=dry_run, log=lambda s: self.ui_q.put(lambda m=s: self.write(m)))
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("Cloud", str(r)); self.write(f"[cloud] {r}"); return
+            messagebox.showinfo("Cloud", f"upload={r.get('uploaded')} skip={r.get('skipped')} fail={r.get('failed')}")
+        self.run_async(work, cb)
+
+    def cloud_sync_selected(self):
+        v = self.cloud_course.get().strip() if hasattr(self, "cloud_course") else ""
+        if not v:
+            messagebox.showinfo("Chưa chọn", "Chọn một khóa."); return
+        self.cloud_save()
+        self._cloud_sync_course(v, dry_run=False)
+
+    def cloud_dry_run(self):
+        v = self.cloud_course.get().strip() if hasattr(self, "cloud_course") else ""
+        if not v: return
+        self.cloud_save()
+        self._cloud_sync_course(v, dry_run=True)
+
+    # ====================== RAG CHAT (S5) ======================
+    def show_chat(self, preselect=None):
+        self.clear()
+        self.head("Chat RAG", "Hỏi đáp trên mô tả + lời giảng đã tải. Phase 1: tìm theo từ khóa (hierarchical), trả lời bằng Claude.")
+        items = self.existing_courses()
+        if preselect and preselect in items:
+            cur = preselect
+        elif self.course_name:
+            cur = self.course_name if self.course_name in items else (
+                "SkoolCourse (đã có sẵn)" if self.course_name is None and items else (items[0] if items else ""))
+        else:
+            cur = items[0] if items else ""
+        top = self.card()
+        row = ctk.CTkFrame(top, fg_color="transparent"); row.pack(fill="x", padx=12, pady=10)
+        ctk.CTkLabel(row, text="Khóa:", font=(FT, 12), text_color=TEXT).pack(side="left")
+        self.chat_course = ctk.StringVar(value=cur)
+        if items:
+            ctk.CTkOptionMenu(row, variable=self.chat_course, values=items, width=280,
+                              fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
+                              text_color=TEXT).pack(side="left", padx=8)
+        btn(row, "📇 Index lại", self.chat_reindex, kind="secondary", width=110).pack(side="left", padx=4)
+        # API key ngan
+        try:
+            import ai_tools
+            has = ai_tools.have_api()
+        except Exception:
+            has = False
+        ctk.CTkLabel(row, text=("Claude ✓" if has else "⚠ Cần API key Claude"),
+                     font=(FT, 11), text_color=(SUCCESS if has else DANGER)).pack(side="right")
+
+        self.chat_box = ctk.CTkTextbox(self.content, height=280, font=(FT, 13), fg_color=CARD, text_color=TEXT, corner_radius=12)
+        self.chat_box.pack(fill="x", pady=6)
+        self.chat_box.configure(state="disabled")
+        for role, text in self.chat_history[-12:]:
+            self._chat_append(role, text, persist=False)
+
+        self.chat_src = ctk.CTkLabel(self.content, text="", font=(FT, 11), text_color=TEXT2, wraplength=560, justify="left")
+        self.chat_src.pack(anchor="w", pady=(0, 4))
+
+        inp = ctk.CTkFrame(self.content, fg_color="transparent"); inp.pack(fill="x", pady=4)
+        self.chat_input = ctk.CTkEntry(inp, placeholder_text="Hỏi về nội dung khóa… (Enter để gửi)", font=(FT, 13), height=36)
+        self.chat_input.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self.chat_input.bind("<Return>", lambda e: self.chat_send())
+        btn(inp, "Gửi", self.chat_send, kind="success", width=90, height=36).pack(side="left")
+
+        nav = ctk.CTkFrame(self.content, fg_color="transparent"); nav.pack(fill="x", pady=10)
+        btn(nav, "←  Dashboard", self.show_dashboard, kind="ghost", width=120).pack(side="left")
+        btn(nav, "Xóa lịch sử chat", self.chat_clear, kind="ghost", width=140).pack(side="right")
+
+    def _chat_append(self, role, text, persist=True):
+        if persist:
+            self.chat_history.append((role, text))
+        if not (hasattr(self, "chat_box") and self.chat_box.winfo_exists()):
+            return
+        self.chat_box.configure(state="normal")
+        prefix = "Bạn: " if role == "user" else "Archiver: "
+        self.chat_box.insert("end", prefix + text.strip() + "\n\n")
+        self.chat_box.see("end")
+        self.chat_box.configure(state="disabled")
+
+    def chat_clear(self):
+        self.chat_history = []
+        if hasattr(self, "chat_box") and self.chat_box.winfo_exists():
+            self.chat_box.configure(state="normal"); self.chat_box.delete("1.0", "end"); self.chat_box.configure(state="disabled")
+        if hasattr(self, "chat_src") and self.chat_src.winfo_exists():
+            self.chat_src.configure(text="")
+
+    def chat_reindex(self):
+        v = self.chat_course.get().strip() if hasattr(self, "chat_course") else ""
+        if not v:
+            messagebox.showinfo("Chưa chọn", "Chọn khóa."); return
+        root = self.item_root(v)
+        self.write(f"Đang index RAG: {v}…")
+        def work():
+            try:
+                from rag.index import build_catalog
+                return build_catalog(root, log=lambda s: self.ui_q.put(lambda m=s: self.write(m)))
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("Index", str(r)); return
+            messagebox.showinfo("Index", f"Đã index {r.get('n_lessons', 0)} bài · {r.get('n_chars', 0)} ký tự")
+        self.run_async(work, cb)
+
+    def chat_send(self):
+        q = ""
+        if hasattr(self, "chat_input") and self.chat_input.winfo_exists():
+            q = self.chat_input.get().strip()
+        if not q: return
+        v = self.chat_course.get().strip() if hasattr(self, "chat_course") else ""
+        if not v:
+            messagebox.showinfo("Chưa chọn", "Chọn khóa."); return
+        try:
+            import ai_tools
+            if not ai_tools.have_api():
+                messagebox.showinfo("Cần API key", "Chat cần Claude API key.\nVào Xuất & Báo cáo để dán key."); return
+        except Exception:
+            pass
+        self.chat_input.delete(0, "end")
+        self._chat_append("user", q)
+        self._chat_append("assistant", "⏳ Đang tìm trong khóa + gọi Claude…")
+        root = self.item_root(v)
+        def work():
+            try:
+                from rag.chat import answer
+                return answer(root, q, log=lambda s: self.ui_q.put(lambda m=s: self.write(m)))
+            except Exception as e:
+                return e
+        def cb(r):
+            # xoa dong "dang tim"
+            if self.chat_history and self.chat_history[-1][0] == "assistant" and self.chat_history[-1][1].startswith("⏳"):
+                self.chat_history.pop()
+            if hasattr(self, "chat_box") and self.chat_box.winfo_exists():
+                # rebuild simple: clear + replay
+                self.chat_box.configure(state="normal"); self.chat_box.delete("1.0", "end"); self.chat_box.configure(state="disabled")
+                hist = list(self.chat_history)
+                self.chat_history = []
+                for role, text in hist:
+                    self._chat_append(role, text)
+            if isinstance(r, Exception):
+                self._chat_append("assistant", f"Lỗi: {r}")
+                return
+            self._chat_append("assistant", r.get("answer") or "(trống)")
+            srcs = r.get("sources") or []
+            if hasattr(self, "chat_src") and self.chat_src.winfo_exists():
+                if srcs:
+                    lines = " · ".join(f"{s.get('chapter')}/{s.get('title')}" for s in srcs[:5])
+                    self.chat_src.configure(text=f"Nguồn: {lines}  ({r.get('n_indexed', 0)} bài đã index)")
+                else:
+                    self.chat_src.configure(text=f"({r.get('n_indexed', 0)} bài đã index)")
+        self.run_async(work, cb)
 
 
 def main():

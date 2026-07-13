@@ -186,3 +186,86 @@ def remaining_chapter_titles(scan_result):
 def expired_native_chapter_titles(scan_result):
     """Ten (da san) cac chuong co bai native het han token."""
     return sorted({rec["chapter"] for rec in scan_result["native_expired"]})
+
+
+# ===================== DASHBOARD: multi-course =====================
+
+def list_course_items(base=None):
+    """Danh sach khoa de hien dashboard / queue.
+       Tra ve list dict: {item, course, root, is_legacy}
+       item = ten hien thi (SkoolCourse (đã có sẵn) | ten khoa).
+       course = ten truyen --course (None = layout cu).
+    """
+    base = Path(base or C.BASE)
+    items = []
+    legacy = base / "SkoolCourse"
+    if legacy.exists():
+        items.append({"item": "SkoolCourse (đã có sẵn)", "course": None,
+                      "root": legacy, "is_legacy": True})
+    cdir = base / "courses"
+    if cdir.exists():
+        for p in sorted(cdir.iterdir()):
+            if p.is_dir():
+                items.append({"item": p.name, "course": p.name,
+                              "root": p, "is_legacy": False})
+    return items
+
+
+def status_badge(scan):
+    """Badge ngan cho card dashboard.
+       Tra ve {code, label, level}  level: ok|warn|danger|muted|info
+    """
+    if not scan or isinstance(scan, Exception):
+        return {"code": "unknown", "label": "?", "level": "muted"}
+    if not scan.get("has_data"):
+        return {"code": "empty", "label": "Chưa có dữ liệu", "level": "muted"}
+    tot, done = scan.get("total") or 0, scan.get("done") or 0
+    nat = len(scan.get("native_expired") or [])
+    if nat:
+        return {"code": "token", "label": f"🔑 {nat} hết hạn", "level": "danger"}
+    if tot and done >= tot:
+        return {"code": "done", "label": "✓ Đủ", "level": "ok"}
+    if done == 0:
+        return {"code": "new", "label": "Chưa tải", "level": "info"}
+    left = tot - done
+    return {"code": "partial", "label": f"⏳ Còn {left}", "level": "warn"}
+
+
+def scan_all(base=None, on_one=None):
+    """Quet tat ca khoa. Tra ve list:
+       {item, course, root, is_legacy, scan, badge}
+       on_one(entry) goi sau moi khoa (de GUI cap nhat dan).
+    """
+    out = []
+    for meta in list_course_items(base):
+        try:
+            s = scan(meta["root"])
+        except Exception as e:
+            s = {"has_data": False, "total": 0, "done": 0, "size": 0,
+                 "missing": [], "native_expired": [], "chapters": [],
+                 "error": str(e)}
+        entry = {**meta, "scan": s, "badge": status_badge(s)}
+        out.append(entry)
+        if on_one:
+            try:
+                on_one(entry)
+            except Exception:
+                pass
+    return out
+
+
+def warehouse_stats(entries):
+    """Tong hop toan kho tu ket qua scan_all."""
+    n = len(entries)
+    total = done = size = missing = expired = 0
+    for e in entries:
+        s = e.get("scan") or {}
+        if isinstance(s, Exception):
+            continue
+        total += s.get("total") or 0
+        done += s.get("done") or 0
+        size += s.get("size") or 0
+        missing += len(s.get("missing") or [])
+        expired += len(s.get("native_expired") or [])
+    return {"courses": n, "total": total, "done": done, "size": size,
+            "missing": missing, "expired": expired}

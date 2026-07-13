@@ -86,6 +86,11 @@ def main():
     ap.add_argument("--native-only", action="store_true", help="Chi tai video native Skool (de cuu bai het token).")
     ap.add_argument("--chapter", help="Chi tai 1 chuong (ten chuong da san). Dung cho GUI tai theo chuong.")
     ap.add_argument("--lesson", help="Chi tai 1 bai (duong dan tuong doi vs course root).")
+    # multi-course queue (S2) — uy thac queue_engine
+    ap.add_argument("--queue", help="Them nhieu khoa vao hang doi (ten cach nhau bang dau phay) roi chay.")
+    ap.add_argument("--queue-add", help="Chi them vao hang doi, khong chay (ten cach nhau bang dau phay).")
+    ap.add_argument("--queue-run", action="store_true", help="Chay het job dang queued.")
+    ap.add_argument("--queue-status", action="store_true", help="In trang thai hang doi.")
     # override config nhanh
     ap.add_argument("--js-runtime", help="JS runtime cho yt-dlp (node/deno). '' de tat.")
     ap.add_argument("--cookies-file", help="Duong dan cookies.txt cho yt-dlp.")
@@ -94,6 +99,33 @@ def main():
 
     if a.list_courses:
         list_courses(); return
+
+    # ---- hang doi multi-course ----
+    if a.queue_status or a.queue_run or a.queue or a.queue_add:
+        import queue_engine as QE
+        names = []
+        raw = a.queue or a.queue_add or ""
+        if raw.strip():
+            names = [x.strip() for x in raw.split(",") if x.strip()]
+        if names:
+            courses = [None if n.lower() in ("skoolcourse", "legacy") else n for n in names]
+            QE.add_jobs(courses, kind="full", until_clean=bool(a.until_clean or a.queue))
+            print(f"Da them {len(courses)} job vao queue.")
+        if a.queue_status or (not a.queue and not a.queue_run and a.queue_add):
+            QE.print_status()
+        if a.queue or a.queue_run:
+            def _ev(ev):
+                t = ev.get("type")
+                if t == "start":
+                    print(f"\n>>> {ev['job'].get('label')}")
+                elif t == "log":
+                    print(ev.get("line") or "")
+                elif t == "end":
+                    print(f"<<< {ev['job'].get('status')} rc={ev['job'].get('returncode')}")
+            runner = QE.QueueRunner(on_event=_ev)
+            n = runner.run_all()
+            print(f"=== Queue xong ({n} job) ===")
+        return
 
     if a.root:        C.set_root(a.root)
     elif a.course:    C.set_course(a.course)
