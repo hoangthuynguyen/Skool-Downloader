@@ -205,17 +205,49 @@ def summary(state=None):
     return counts
 
 
-class QueueRunner:
-    """Chay tuan tu cac job queued. GUI / CLI dung chung."""
+# Transcribe/kind nang I/O GPU: luon 1 worker. Download co the song song.
+SERIAL_KINDS = {"transcribe"}
 
-    def __init__(self, state_path=None, on_event=None, py=None):
+
+def load_queue_settings():
+    """Doc app/.settings.json -> queue.max_workers (mac dinh 1)."""
+    try:
+        s = json.loads((HERE / ".settings.json").read_text(encoding="utf-8"))
+        q = s.get("queue") or {}
+        w = int(q.get("max_workers") or 1)
+        return {"max_workers": max(1, min(w, 4))}
+    except Exception:
+        return {"max_workers": 1}
+
+
+def save_queue_settings(max_workers=1):
+    path = HERE / ".settings.json"
+    try:
+        s = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        s = {}
+    s["queue"] = {"max_workers": max(1, min(int(max_workers), 4))}
+    path.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+class QueueRunner:
+    """Chay hang doi. Phase 2: max_workers > 1 -> song song download (subprocess).
+
+    Transcribe van serial (SERIAL_KINDS) de tranh tranh GPU/RAM.
+    """
+
+    def __init__(self, state_path=None, on_event=None, py=None, max_workers=None):
         self.state_path = Path(state_path or STATE_FILE)
         self.on_event = on_event or (lambda ev: None)
         self.py = py or PY
         self._stop = threading.Event()
-        self._proc = None
         self._thread = None
-        self.current_id = None
+        self._lock = threading.Lock()          # bao ve claim job + state
+        self._procs = {}                       # job_id -> Popen
+        self.current_id = None                 # job chinh (tuong thich GUI)
+        if max_workers is None:
+            max_workers = load_queue_settings().get("max_workers", 1)
+        self.max_workers = max(1, min(int(max_workers), 4))
 
     def _emit(self, type_, **kw):
         try:
@@ -224,14 +256,16 @@ class QueueRunner:
             pass
 
     def stop(self):
-        """Dung job dang chay + khong lay job moi."""
+        """Dung tat ca job dang chay + khong lay job moi."""
         self._stop.set()
-        p = self._proc
-        if p and p.poll() is None:
-            try:
-                p.terminate()
-            except Exception:
-                pass
+        with self._lock:
+            procs = list(self._procs.values())
+        for p in procs:
+            if p and p.poll() is None:
+                try:
+                    p.terminate()
+                except Exception:
+                    pass
 
     def is_running(self):
         return self._thread is not None and self._thread.is_alive()
@@ -244,45 +278,99 @@ class QueueRunner:
         self._thread.start()
         return True
 
-    def run_all(self, max_jobs=None):
-        """Chay het job queued (hoac toi da max_jobs)."""
-        n = 0
-        while not self._stop.is_set():
+    def _claim_next(self, prefer_serial_only=False):
+        """Claim 1 job queued -> running (atomic). Tra ve job dict hoac None."""
+        with self._lock:
             state = load_state(self.state_path)
-            job = next_queued(state)
-            if not job:
-                self._emit("idle")
-                break
-            if max_jobs is not None and n >= max_jobs:
-                break
-            self._run_one(job["id"])
-            n += 1
+            queued = [j for j in state["jobs"] if j.get("status") == "queued"]
+            if not queued:
+                return None
+            queued = sorted(queued, key=lambda j: (j.get("priority", 100), j.get("created_at") or ""))
+            for job in queued:
+                kind = job.get("kind") or "full"
+                is_serial = kind in SERIAL_KINDS
+                if prefer_serial_only and not is_serial:
+                    continue
+                if (not prefer_serial_only) and is_serial:
+                    # chi chay serial khi khong con worker khac
+                    if any(1 for p in self._procs.values()):
+                        continue
+                job["status"] = "running"
+                job["started_at"] = _now()
+                job["error"] = None
+                save_state(state, self.state_path)
+                return dict(job)
+            return None
+
+    def run_all(self, max_jobs=None):
+        """Chay het job queued. Song song toi da self.max_workers."""
+        from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+
+        n = 0
+        in_flight = {}  # future -> job_id
+        workers = self.max_workers
+        self._emit("config", max_workers=workers)
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            while not self._stop.is_set():
+                # do day slot
+                while (not self._stop.is_set()
+                       and len(in_flight) < workers
+                       and (max_jobs is None or n < max_jobs)):
+                    # neu dang co serial job -> khong claim them
+                    serial_running = False
+                    with self._lock:
+                        state = load_state(self.state_path)
+                        for j in state["jobs"]:
+                            if j.get("status") == "running" and (j.get("kind") in SERIAL_KINDS):
+                                serial_running = True
+                                break
+                    if serial_running and in_flight:
+                        break
+                    job = self._claim_next()
+                    if not job:
+                        break
+                    jid = job["id"]
+                    fut = pool.submit(self._run_claimed, job)
+                    in_flight[fut] = jid
+                    n += 1
+
+                if not in_flight:
+                    if not next_queued(load_state(self.state_path)):
+                        self._emit("idle")
+                    break
+
+                done, _ = wait(in_flight.keys(), timeout=0.4, return_when=FIRST_COMPLETED)
+                for fut in done:
+                    in_flight.pop(fut, None)
+                    try:
+                        fut.result()
+                    except Exception as e:
+                        self._emit("log", job_id="?", line=f"[queue worker] {e}")
+
         self._emit("finished", ran=n)
         return n
 
-    def _run_one(self, job_id):
-        state = load_state(self.state_path)
-        job = next((j for j in state["jobs"] if j["id"] == job_id), None)
-        if not job or job.get("status") != "queued":
-            return
-        job["status"] = "running"
-        job["started_at"] = _now()
-        job["error"] = None
-        save_state(state, self.state_path)
+    def _run_claimed(self, job):
+        """Chay job da claim (status=running)."""
+        job_id = job["id"]
         self.current_id = job_id
         cmd = build_cmd(job, py=self.py)
         self._emit("start", job=dict(job), cmd=cmd)
         log_lines = []
         rc = 1
+        proc = None
         try:
             env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
-            self._proc = subprocess.Popen(
+            proc = subprocess.Popen(
                 cmd, cwd=str(HERE), env=env,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding="utf-8", errors="replace",
                 bufsize=1, creationflags=NO_WIN,
             )
-            for line in self._proc.stdout:
+            with self._lock:
+                self._procs[job_id] = proc
+            for line in proc.stdout:
                 line = line.rstrip("\n")
                 log_lines.append(line)
                 if len(log_lines) > 80:
@@ -290,35 +378,37 @@ class QueueRunner:
                 self._emit("log", job_id=job_id, line=line)
                 if self._stop.is_set():
                     try:
-                        self._proc.terminate()
+                        proc.terminate()
                     except Exception:
                         pass
                     break
-            rc = self._proc.wait()
+            rc = proc.wait()
         except Exception as e:
             rc = 1
             log_lines.append(f"[queue] {e}")
             self._emit("log", job_id=job_id, line=f"[queue] {e}")
         finally:
-            self._proc = None
-            self.current_id = None
+            with self._lock:
+                self._procs.pop(job_id, None)
+            if self.current_id == job_id:
+                self.current_id = None
 
-        state = load_state(self.state_path)
-        job = next((j for j in state["jobs"] if j["id"] == job_id), None)
-        if not job:
-            return
-        job["returncode"] = rc
-        job["finished_at"] = _now()
-        job["log_tail"] = "\n".join(log_lines[-40:])
-        if self._stop.is_set() and rc != 0:
-            job["status"] = "stopped"
-        elif rc == 0:
-            job["status"] = "done"
-        else:
-            job["status"] = "failed"
-            job["error"] = f"exit {rc}"
-        save_state(state, self.state_path)
-        self._emit("end", job=dict(job))
+        with self._lock:
+            state = load_state(self.state_path)
+            j = next((x for x in state["jobs"] if x["id"] == job_id), None)
+            if j:
+                j["returncode"] = rc
+                j["finished_at"] = _now()
+                j["log_tail"] = "\n".join(log_lines[-40:])
+                if self._stop.is_set() and rc != 0:
+                    j["status"] = "stopped"
+                elif rc == 0:
+                    j["status"] = "done"
+                else:
+                    j["status"] = "failed"
+                    j["error"] = f"exit {rc}"
+                save_state(state, self.state_path)
+                self._emit("end", job=dict(j))
 
 
 def print_status(path=None):
@@ -337,11 +427,15 @@ def main():
     ap.add_argument("--kind", default="full", choices=list(KINDS.keys()), help="Loai job.")
     ap.add_argument("--no-until-clean", action="store_true", help="Tat --until-clean.")
     ap.add_argument("--run", action="store_true", help="Chay het job dang queued.")
+    ap.add_argument("--workers", type=int, default=None, help="So job song song (1-4). Luu vao settings neu kem --save-workers.")
+    ap.add_argument("--save-workers", action="store_true", help="Luu --workers vao .settings.json.")
     ap.add_argument("--status", action="store_true", help="In trang thai queue.")
     ap.add_argument("--clear-done", action="store_true", help="Xoa job done/cancelled/stopped.")
     ap.add_argument("--cancel", help="Huy 1 job queued theo id.")
     ap.add_argument("--remove", help="Xoa job khoi queue theo id.")
     a = ap.parse_args()
+    if a.workers is not None and a.save_workers:
+        save_queue_settings(a.workers); print(f"Saved max_workers={a.workers}")
 
     if a.clear_done:
         clear_done(); print("Cleared done/cancelled/stopped.")
@@ -358,9 +452,10 @@ def main():
     if a.status or not any([a.add, a.add_legacy, a.run, a.clear_done, a.cancel, a.remove]):
         print_status()
     if a.run:
-        runner = QueueRunner(on_event=lambda ev: _cli_event(ev))
+        runner = QueueRunner(on_event=lambda ev: _cli_event(ev),
+                             max_workers=a.workers)
         n = runner.run_all()
-        print(f"=== Queue finished ({n} job(s)) ===")
+        print(f"=== Queue finished ({n} job(s), workers={runner.max_workers}) ===")
 
 
 def _cli_event(ev):

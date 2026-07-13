@@ -43,9 +43,13 @@ def save_cloud_settings(cloud_cfg):
 
 def test_connection():
     cfg = load_cloud_settings()
-    if (cfg.get("provider") or "r2").lower() != "r2":
-        return False, "Phase 1 chỉ hỗ trợ provider=r2."
-    return R2.test_connection(cfg.get("r2") or {})
+    provider = (cfg.get("provider") or "r2").lower()
+    if provider == "r2":
+        return R2.test_connection(cfg.get("r2") or {})
+    if provider == "gdrive":
+        from cloud import gdrive as GD
+        return GD.test_connection(cfg.get("gdrive") or {})
+    return False, f"Provider chưa hỗ trợ: {provider} (r2 | gdrive)"
 
 
 def _file_sig(path: Path):
@@ -71,43 +75,57 @@ def save_sync_state(root, state):
 
 
 def sync_course(root, course_name=None, mode=None, dry_run=False, log=print, force=False):
-    """Upload file theo policy. Tra ve dict stats."""
+    """Upload file theo policy. Tra ve dict stats. provider: r2 | gdrive."""
     root = Path(root)
     cloud = load_cloud_settings()
     provider = (cloud.get("provider") or "r2").lower()
     mode = mode or cloud.get("mode") or "knowledge"
-    if provider != "r2":
-        raise RuntimeError(f"Provider chưa hỗ trợ: {provider} (Phase 1: r2)")
-    r2cfg = cloud.get("r2") or {}
-    if not (r2cfg.get("bucket") and (r2cfg.get("access_key") or r2cfg.get("secret_key"))):
-        raise RuntimeError("Chưa cấu hình R2. Vào Cloud trong app hoặc sửa app/.settings.json → cloud.r2")
-
     course_name = course_name or root.name
     prefix = cloud.get("prefix") or ""
     state = load_sync_state(root)
     files_state = state.setdefault("files", {})
 
+    if provider == "r2":
+        r2cfg = cloud.get("r2") or {}
+        if not (r2cfg.get("bucket") and (r2cfg.get("access_key") or r2cfg.get("secret_key"))):
+            raise RuntimeError("Chưa cấu hình R2. Vào Cloud trong app → cloud.r2")
+    elif provider == "gdrive":
+        gdcfg = cloud.get("gdrive") or {}
+        if not (gdcfg.get("service_account_json") or gdcfg.get("client_secrets_json")):
+            raise RuntimeError("Chưa cấu hình Google Drive (service_account_json hoặc client_secrets_json).")
+        from cloud import gdrive as GD
+    else:
+        raise RuntimeError(f"Provider chưa hỗ trợ: {provider} (r2 | gdrive)")
+
     planned = list(iter_upload_files(root, mode=mode))
-    stats = {"total": len(planned), "uploaded": 0, "skipped": 0, "failed": 0, "bytes": 0, "errors": []}
-    log(f">> Cloud sync [{mode}] {course_name}: {len(planned)} file ứng viên")
+    stats = {"total": len(planned), "uploaded": 0, "skipped": 0, "failed": 0, "bytes": 0,
+             "errors": [], "provider": provider}
+    log(f">> Cloud sync [{provider}/{mode}] {course_name}: {len(planned)} file ứng viên")
 
     for i, path in enumerate(planned, 1):
         rel = path.relative_to(root)
         rel_s = str(rel).replace("\\", "/")
         sig = _file_sig(path)
         prev = files_state.get(rel_s)
-        if not force and prev and prev.get("size") == sig["size"] and prev.get("mtime") == sig["mtime"]:
+        if not force and prev and prev.get("size") == sig["size"] and prev.get("mtime") == sig["mtime"] \
+                and prev.get("provider", provider) == provider:
             stats["skipped"] += 1
             continue
-        key = R2.remote_key(course_name, rel_s, prefix=prefix)
         if dry_run:
-            log(f"   [dry] {rel_s} -> {key}")
+            dest = (R2.remote_key(course_name, rel_s, prefix=prefix) if provider == "r2"
+                    else f"gdrive:courses/{course_name}/{rel_s}")
+            log(f"   [dry] {rel_s} -> {dest}")
             stats["uploaded"] += 1
             continue
         try:
             log(f"   [{i}/{len(planned)}] {rel_s}")
-            R2.upload_file(r2cfg, path, key)
-            files_state[rel_s] = {**sig, "key": key, "ts": int(time.time())}
+            if provider == "r2":
+                key = R2.remote_key(course_name, rel_s, prefix=prefix)
+                R2.upload_file(r2cfg, path, key)
+                remote_id = key
+            else:
+                remote_id = GD.upload_file(gdcfg, path, rel_s, course_name=course_name)
+            files_state[rel_s] = {**sig, "key": remote_id, "provider": provider, "ts": int(time.time())}
             stats["uploaded"] += 1
             stats["bytes"] += sig["size"]
         except Exception as e:
@@ -118,9 +136,9 @@ def sync_course(root, course_name=None, mode=None, dry_run=False, log=print, for
     if not dry_run:
         state["last_sync"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         state["mode"] = mode
-        state["provider"] = "r2"
+        state["provider"] = provider
         save_sync_state(root, state)
-    log(f">> Xong: upload={stats['uploaded']} skip={stats['skipped']} fail={stats['failed']} "
+    log(f">> Xong ({provider}): upload={stats['uploaded']} skip={stats['skipped']} fail={stats['failed']} "
         f"({stats['bytes']} bytes)")
     return stats
 

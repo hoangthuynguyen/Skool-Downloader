@@ -1426,15 +1426,25 @@ class App:
     # ====================== HÀNG ĐỢI (S2) ======================
     def show_queue(self):
         self.clear()
-        self.head("Hàng đợi multi-course", "Xếp nhiều khóa chạy tuần tự. Mỗi job = 1 lần main.py (cách ly an toàn). Trạng thái lưu queue_state.json.")
+        self.head("Hàng đợi multi-course", "Xếp nhiều khóa — có thể chạy song song (workers). Mỗi job = 1 subprocess main.py. Trạng thái: queue_state.json.")
         import queue_engine as QE
         counts = QE.summary()
+        qs = QE.load_queue_settings()
         self.q_status = ctk.CTkLabel(
             self.content,
             text=f"queued={counts.get('queued',0)}  running={counts.get('running',0)}  "
-                 f"done={counts.get('done',0)}  failed={counts.get('failed',0)}  stopped={counts.get('stopped',0)}",
+                 f"done={counts.get('done',0)}  failed={counts.get('failed',0)}  "
+                 f"· workers={qs.get('max_workers',1)}",
             font=("Consolas", 12), text_color=TEXT2)
         self.q_status.pack(anchor="w", pady=(0, 8))
+
+        wrow = ctk.CTkFrame(self.content, fg_color="transparent"); wrow.pack(fill="x", pady=(0, 6))
+        ctk.CTkLabel(wrow, text="Workers song song:", font=(FT, 12), text_color=TEXT).pack(side="left")
+        self.q_workers = ctk.StringVar(value=str(qs.get("max_workers") or 1))
+        ctk.CTkOptionMenu(wrow, variable=self.q_workers, values=["1", "2", "3", "4"], width=70,
+                          fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
+                          text_color=TEXT, command=lambda _=None: self._queue_save_workers()).pack(side="left", padx=8)
+        ctk.CTkLabel(wrow, text="(transcribe vẫn 1 job/lần)", font=(FT, 11), text_color=TEXT2).pack(side="left")
 
         bar = ctk.CTkFrame(self.content, fg_color="transparent"); bar.pack(fill="x", pady=4)
         btn(bar, "▶  Chạy hàng đợi", self.queue_run, kind="success", width=150).pack(side="left")
@@ -1517,19 +1527,35 @@ class App:
         import queue_engine as QE
         QE.clear_done(); self.show_queue()
 
+    def _queue_save_workers(self):
+        try:
+            import queue_engine as QE
+            w = int(self.q_workers.get()) if hasattr(self, "q_workers") else 1
+            QE.save_queue_settings(w)
+            self.write(f"Queue workers = {w}")
+        except Exception as e:
+            self.write(f"[queue workers] {e}")
+
     def queue_run(self):
         import queue_engine as QE
         if self.proc:
             messagebox.showinfo("Đang bận", "Một tác vụ pipeline đang chạy. Dừng trước hoặc đợi xong."); return
         if self.queue_runner and self.queue_runner.is_running():
             messagebox.showinfo("Đang chạy", "Hàng đợi đang chạy."); return
+        self._queue_save_workers()
+        try:
+            workers = int(self.q_workers.get()) if hasattr(self, "q_workers") else QE.load_queue_settings().get("max_workers", 1)
+        except Exception:
+            workers = 1
         def on_ev(ev):
             t = ev.get("type")
             if t == "start":
                 self.ui_q.put(lambda: self.write(f"\n===== QUEUE: {ev['job'].get('label')} ====="))
             elif t == "log":
                 line = ev.get("line") or ""
-                self.ui_q.put(lambda s=line: self.write(s))
+                jid = (ev.get("job_id") or "")[:6]
+                prefix = f"[{jid}] " if jid and jid != "?" else ""
+                self.ui_q.put(lambda s=prefix + line: self.write(s))
             elif t == "end":
                 j = ev["job"]
                 self.ui_q.put(lambda: self.write(f"--- job {j.get('status')} (rc={j.get('returncode')}) ---"))
@@ -1539,11 +1565,13 @@ class App:
             elif t == "finished":
                 self.ui_q.put(lambda: self.write(f"✓ Hàng đợi xong ({ev.get('ran')} job)"))
                 self.ui_q.put(self._queue_soft_refresh)
-        self.queue_runner = QE.QueueRunner(on_event=on_ev)
+            elif t == "config":
+                self.ui_q.put(lambda: self.write(f"Queue workers={ev.get('max_workers')}"))
+        self.queue_runner = QE.QueueRunner(on_event=on_ev, max_workers=workers)
         if self.queue_runner.start_async():
-            self.write("▶ Bắt đầu chạy hàng đợi…")
+            self.write(f"▶ Bắt đầu hàng đợi (workers={workers})…")
             if hasattr(self, "q_status") and self.q_status.winfo_exists():
-                self.q_status.configure(text="⏳ Đang chạy hàng đợi… (xem Nhật ký)")
+                self.q_status.configure(text=f"⏳ Đang chạy… workers={workers}")
         else:
             messagebox.showinfo("Đang chạy", "Runner đã bận.")
 
@@ -1568,19 +1596,27 @@ class App:
         else:
             messagebox.showinfo("Không chạy", "Không có hàng đợi nào đang chạy.")
 
-    # ====================== CLOUD R2 (S4) ======================
+    # ====================== CLOUD R2 + GDrive (Phase 2) ======================
     def show_cloud(self):
         self.clear()
-        self.head("Cloud upload (R2)", "Đồng bộ knowledge (md/txt/srt/resources) lên Cloudflare R2. Mặc định không upload video.")
+        self.head("Cloud upload", "Đồng bộ knowledge (md/txt/srt/resources). Provider: Cloudflare R2 hoặc Google Drive. Mặc định không upload video.")
         try:
             from cloud.sync import load_cloud_settings
             cfg = load_cloud_settings() or {}
         except Exception:
             cfg = {}
         r2 = cfg.get("r2") or {}
+        gd = cfg.get("gdrive") or {}
 
         card = self.card()
-        ctk.CTkLabel(card, text="Cấu hình Cloudflare R2", font=(FT, 12, "bold"), text_color=TEXT2).pack(anchor="w", padx=14, pady=(12, 6))
+        prow = ctk.CTkFrame(card, fg_color="transparent"); prow.pack(fill="x", padx=14, pady=(12, 6))
+        ctk.CTkLabel(prow, text="Provider", font=(FT, 12, "bold"), text_color=TEXT2, width=180, anchor="w").pack(side="left")
+        self.cloud_provider = ctk.StringVar(value=cfg.get("provider") or "r2")
+        ctk.CTkOptionMenu(prow, variable=self.cloud_provider, values=["r2", "gdrive"], width=160,
+                          fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
+                          text_color=TEXT).pack(side="left")
+
+        ctk.CTkLabel(card, text="Cloudflare R2", font=(FT, 12, "bold"), text_color=TEXT2).pack(anchor="w", padx=14, pady=(8, 4))
         fields = [
             ("Account ID", "account_id", r2.get("account_id") or ""),
             ("Bucket", "bucket", r2.get("bucket") or ""),
@@ -1599,7 +1635,23 @@ class App:
             ent.pack(side="left", fill="x", expand=True)
             self.cloud_vars[key] = var
 
-        mode_row = ctk.CTkFrame(card, fg_color="transparent"); mode_row.pack(fill="x", padx=14, pady=(6, 4))
+        ctk.CTkLabel(card, text="Google Drive", font=(FT, 12, "bold"), text_color=TEXT2).pack(anchor="w", padx=14, pady=(12, 4))
+        ctk.CTkLabel(card, text="Service Account: share folder cho email SA. OAuth: client_secrets Desktop + lần đầu mở browser.",
+                     font=(FT, 11), text_color=TEXT2, wraplength=520, justify="left").pack(anchor="w", padx=14, pady=(0, 4))
+        gd_fields = [
+            ("Auth (service_account|oauth)", "gd_auth", gd.get("auth") or "service_account"),
+            ("Service account JSON path", "gd_sa", gd.get("service_account_json") or ""),
+            ("Client secrets JSON path", "gd_secrets", gd.get("client_secrets_json") or ""),
+            ("Folder ID (Drive)", "gd_folder", gd.get("folder_id") or ""),
+        ]
+        for label, key, val in gd_fields:
+            row = ctk.CTkFrame(card, fg_color="transparent"); row.pack(fill="x", padx=14, pady=2)
+            ctk.CTkLabel(row, text=label, font=(FT, 12), text_color=TEXT, width=180, anchor="w").pack(side="left")
+            var = ctk.StringVar(value=val)
+            ctk.CTkEntry(row, textvariable=var, font=("Consolas", 11)).pack(side="left", fill="x", expand=True)
+            self.cloud_vars[key] = var
+
+        mode_row = ctk.CTkFrame(card, fg_color="transparent"); mode_row.pack(fill="x", padx=14, pady=(8, 4))
         ctk.CTkLabel(mode_row, text="Mode", font=(FT, 12), text_color=TEXT, width=180, anchor="w").pack(side="left")
         self.cloud_mode = ctk.StringVar(value=cfg.get("mode") or "knowledge")
         ctk.CTkOptionMenu(mode_row, variable=self.cloud_mode, values=["knowledge", "full"], width=160,
@@ -1607,7 +1659,7 @@ class App:
                           text_color=TEXT).pack(side="left")
 
         self.cloud_after = ctk.BooleanVar(value=bool(cfg.get("after_download")))
-        ctk.CTkCheckBox(card, text="Tự đồng bộ knowledge lên R2 sau khi tải xong (download / queue)",
+        ctk.CTkCheckBox(card, text="Tự đồng bộ knowledge sau khi tải xong (download / queue)",
                         variable=self.cloud_after, font=(FT, 12), text_color=TEXT,
                         fg_color=PRIMARY, hover_color=PRIMARY_H).pack(anchor="w", padx=14, pady=(6, 4))
 
@@ -1642,16 +1694,26 @@ class App:
             for k in ("account_id", "bucket", "access_key", "secret_key", "endpoint"):
                 if k in self.cloud_vars:
                     r2[k] = self.cloud_vars[k].get().strip()
-            cfg["provider"] = "r2"
+            gd = dict(cfg.get("gdrive") or {})
+            if "gd_auth" in self.cloud_vars:
+                gd["auth"] = self.cloud_vars["gd_auth"].get().strip() or "service_account"
+            if "gd_sa" in self.cloud_vars:
+                gd["service_account_json"] = self.cloud_vars["gd_sa"].get().strip()
+            if "gd_secrets" in self.cloud_vars:
+                gd["client_secrets_json"] = self.cloud_vars["gd_secrets"].get().strip()
+            if "gd_folder" in self.cloud_vars:
+                gd["folder_id"] = self.cloud_vars["gd_folder"].get().strip()
+            cfg["provider"] = (self.cloud_provider.get() if hasattr(self, "cloud_provider") else "r2") or "r2"
             cfg["r2"] = r2
+            cfg["gdrive"] = gd
             cfg["mode"] = self.cloud_mode.get() if hasattr(self, "cloud_mode") else "knowledge"
             cfg["after_download"] = bool(self.cloud_after.get()) if hasattr(self, "cloud_after") else False
             if "prefix" in self.cloud_vars:
                 cfg["prefix"] = self.cloud_vars["prefix"].get().strip()
             save_cloud_settings(cfg)
-            self.write("✓ Đã lưu cấu hình cloud (.settings.json)")
+            self.write(f"✓ Đã lưu cloud provider={cfg['provider']}")
             if hasattr(self, "cloud_status") and self.cloud_status.winfo_exists():
-                self.cloud_status.configure(text="✓ Đã lưu cấu hình.")
+                self.cloud_status.configure(text=f"✓ Đã lưu (provider={cfg['provider']}).")
         except Exception as e:
             messagebox.showerror("Lỗi", str(e))
 
@@ -1702,10 +1764,10 @@ class App:
         self.cloud_save()
         self._cloud_sync_course(v, dry_run=True)
 
-    # ====================== RAG CHAT (S5) ======================
+    # ====================== RAG CHAT (S5 + Phase 2 vector/multi) ======================
     def show_chat(self, preselect=None):
         self.clear()
-        self.head("Chat RAG", "Hỏi đáp trên mô tả + lời giảng đã tải. Phase 1: tìm theo từ khóa (hierarchical), trả lời bằng Claude.")
+        self.head("Chat RAG", "Hỏi đáp trên mô tả + lời giảng. Phase 2: TF-IDF vector + chat nhiều khóa. Trả lời bằng Claude.")
         items = self.existing_courses()
         if preselect and preselect in items:
             cur = preselect
@@ -1715,15 +1777,14 @@ class App:
         else:
             cur = items[0] if items else ""
         top = self.card()
-        row = ctk.CTkFrame(top, fg_color="transparent"); row.pack(fill="x", padx=12, pady=10)
+        row = ctk.CTkFrame(top, fg_color="transparent"); row.pack(fill="x", padx=12, pady=(10, 4))
         ctk.CTkLabel(row, text="Khóa:", font=(FT, 12), text_color=TEXT).pack(side="left")
         self.chat_course = ctk.StringVar(value=cur)
         if items:
-            ctk.CTkOptionMenu(row, variable=self.chat_course, values=items, width=280,
+            ctk.CTkOptionMenu(row, variable=self.chat_course, values=items, width=240,
                               fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
                               text_color=TEXT).pack(side="left", padx=8)
         btn(row, "📇 Index lại", self.chat_reindex, kind="secondary", width=110).pack(side="left", padx=4)
-        # API key ngan
         try:
             import ai_tools
             has = ai_tools.have_api()
@@ -1731,6 +1792,16 @@ class App:
             has = False
         ctk.CTkLabel(row, text=("Claude ✓" if has else "⚠ Cần API key Claude"),
                      font=(FT, 11), text_color=(SUCCESS if has else DANGER)).pack(side="right")
+
+        row2 = ctk.CTkFrame(top, fg_color="transparent"); row2.pack(fill="x", padx=12, pady=(0, 10))
+        self.chat_multi = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(row2, text="Chat tất cả khóa (multi-course)", variable=self.chat_multi,
+                        font=(FT, 12), text_color=TEXT, fg_color=PRIMARY, hover_color=PRIMARY_H).pack(side="left")
+        ctk.CTkLabel(row2, text="Method:", font=(FT, 11), text_color=TEXT2).pack(side="left", padx=(16, 4))
+        self.chat_method = ctk.StringVar(value="auto")
+        ctk.CTkOptionMenu(row2, variable=self.chat_method, values=["auto", "tfidf", "keyword"], width=100,
+                          fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
+                          text_color=TEXT).pack(side="left")
 
         self.chat_box = ctk.CTkTextbox(self.content, height=280, font=(FT, 13), fg_color=CARD, text_color=TEXT, corner_radius=12)
         self.chat_box.pack(fill="x", pady=6)
@@ -1803,26 +1874,34 @@ class App:
             pass
         self.chat_input.delete(0, "end")
         self._chat_append("user", q)
-        self._chat_append("assistant", "⏳ Đang tìm trong khóa + gọi Claude…")
+        multi = bool(self.chat_multi.get()) if hasattr(self, "chat_multi") else False
+        method = self.chat_method.get() if hasattr(self, "chat_method") else "auto"
+        self._chat_append("assistant", "⏳ Đang tìm" + (" multi-course" if multi else "") + " + gọi Claude…")
         root = self.item_root(v)
         def work():
             try:
                 from pathlib import Path as _P
                 from rag.index import build_catalog
-                from rag.chat import answer
+                from rag.chat import answer, answer_multi
+                if multi:
+                    roots = [self.item_root(it) for it in self.existing_courses()]
+                    for r in roots:
+                        full = _P(r) / ".rag" / "catalog_full.json"
+                        if r.exists() and not full.exists():
+                            build_catalog(r, log=lambda s: self.ui_q.put(lambda m=s: self.write(m)))
+                    return answer_multi(roots, q, log=lambda s: self.ui_q.put(lambda m=s: self.write(m)))
                 full = _P(root) / ".rag" / "catalog_full.json"
                 if not full.exists():
                     self.ui_q.put(lambda: self.write("RAG: chưa có index — đang index lần đầu…"))
                     build_catalog(root, log=lambda s: self.ui_q.put(lambda m=s: self.write(m)))
-                return answer(root, q, log=lambda s: self.ui_q.put(lambda m=s: self.write(m)))
+                return answer(root, q, method=method,
+                              log=lambda s: self.ui_q.put(lambda m=s: self.write(m)))
             except Exception as e:
                 return e
         def cb(r):
-            # xoa dong "dang tim"
             if self.chat_history and self.chat_history[-1][0] == "assistant" and self.chat_history[-1][1].startswith("⏳"):
                 self.chat_history.pop()
             if hasattr(self, "chat_box") and self.chat_box.winfo_exists():
-                # rebuild simple: clear + replay
                 self.chat_box.configure(state="normal"); self.chat_box.delete("1.0", "end"); self.chat_box.configure(state="disabled")
                 hist = list(self.chat_history)
                 self.chat_history = []
@@ -1835,10 +1914,14 @@ class App:
             srcs = r.get("sources") or []
             if hasattr(self, "chat_src") and self.chat_src.winfo_exists():
                 if srcs:
-                    lines = " · ".join(f"{s.get('chapter')}/{s.get('title')}" for s in srcs[:5])
-                    self.chat_src.configure(text=f"Nguồn: {lines}  ({r.get('n_indexed', 0)} bài đã index)")
+                    lines = " · ".join(
+                        f"[{s.get('course','')}] {s.get('chapter')}/{s.get('title')}" if s.get("course")
+                        else f"{s.get('chapter')}/{s.get('title')}"
+                        for s in srcs[:5])
+                    self.chat_src.configure(
+                        text=f"Nguồn ({r.get('method','')}): {lines}")
                 else:
-                    self.chat_src.configure(text=f"({r.get('n_indexed', 0)} bài đã index)")
+                    self.chat_src.configure(text=f"method={r.get('method')} · indexed={r.get('n_indexed', 0)}")
         self.run_async(work, cb)
 
 

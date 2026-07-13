@@ -56,10 +56,10 @@ Double-click **`SkoolArchiver.cmd`** → mở app cửa sổ. Lần đầu trên
 | Tính năng | Mô tả | CLI / ghi chú |
 |-----------|-------|----------------|
 | **⌂ Dashboard** | Card mỗi khóa: % / dung lượng / badge (đủ · còn N · hết hạn token) · quick actions | `progress.scan_all` |
-| **☰ Hàng đợi** | Xếp nhiều khóa chạy tuần tự (subprocess an toàn), pause/resume, lưu `queue_state.json` | `--queue "A,B"` · `--queue-run` · `--queue-status` |
+| **☰ Hàng đợi** | Multi-course queue, **song song 1–4 workers**, pause/resume, `queue_state.json` | `--queue "A,B"` · `queue_engine --workers 2 --run` |
 | **🔄 Cập nhật v2** | Diff chương mới + bài thiếu local + native hết hạn; quét local toàn kho | `updates.py` · `_update_diff.json` |
-| **☁ Cloud (R2)** | Upload knowledge (md/txt/srt/resources), skip video; resume theo `_cloud_sync.json` | `python -m cloud.sync --course X` (cần `boto3` + key R2) |
-| **💬 Chat RAG** | Hỏi đáp trên mô tả + `video.txt` (Claude + tìm theo từ khóa) | `python -m rag.chat --course X --ask "..."` |
+| **☁ Cloud** | **R2** hoặc **Google Drive**; knowledge mode; resume `_cloud_sync.json` | `python -m cloud.sync --course X` (`boto3` / `google-api-python-client`) |
+| **💬 Chat RAG** | TF-IDF vector + keyword; **multi-course**; Claude trả lời kèm nguồn | `python -m rag.chat --course X --ask "..."` · `--multi "A,B"` |
 
 **Hoàn thiện việc tải (Nhóm B):**
 

@@ -64,6 +64,12 @@ def build_catalog(root, log=print):
     full = _rag_dir(root) / "catalog_full.json"
     full.write_text(json.dumps(cat, ensure_ascii=False), encoding="utf-8")
     log(f">> RAG index: {len(lessons)} bài, {cat['n_chars']} ký tự → {out}")
+    # Phase 2: TF-IDF vector index (best-effort)
+    try:
+        from rag.vector import build_tfidf
+        build_tfidf(root, log=log)
+    except Exception as e:
+        log(f"[rag vector] skip: {e}")
     return cat
 
 
@@ -124,8 +130,21 @@ def score_lesson(query, lesson):
     return score
 
 
-def retrieve(root, query, top_k=4, chapter=None, max_chars=14000):
-    """Lay top-k bai lien quan. Tra ve list lesson (co text) + context gop."""
+def retrieve(root, query, top_k=4, chapter=None, max_chars=14000, method="auto"):
+    """Lay top-k bai lien quan. method: auto|tfidf|keyword."""
+    if method in ("auto", "tfidf"):
+        try:
+            from rag.vector import load_tfidf, retrieve_vector
+            if method == "tfidf" or load_tfidf(root):
+                return retrieve_vector(root, query, top_k=top_k, chapter=chapter,
+                                       max_chars=max_chars)
+        except Exception:
+            pass
+    return _retrieve_keyword(root, query, top_k=top_k, chapter=chapter, max_chars=max_chars)
+
+
+def _retrieve_keyword(root, query, top_k=4, chapter=None, max_chars=14000):
+    """Keyword scoring (Phase 1)."""
     cat = load_catalog(root, full=True)
     lessons = cat.get("lessons") or []
     if chapter:
@@ -138,7 +157,6 @@ def retrieve(root, query, top_k=4, chapter=None, max_chars=14000):
             scored.append((s, L))
     scored.sort(key=lambda x: -x[0])
     if not scored and lessons:
-        # fallback: lay bai dau neu khong match (van cho chat tong quat)
         picked = lessons[: min(top_k, 2)]
     else:
         picked = [L for _, L in scored[:top_k]]
@@ -162,11 +180,14 @@ def retrieve(root, query, top_k=4, chapter=None, max_chars=14000):
             "chapter": L.get("chapter"),
             "section": L.get("section"),
             "path": L.get("path"),
+            "course": cat.get("course"),
             "score": score_lesson(query, L),
+            "method": "keyword",
         })
     return {
         "course": cat.get("course"),
         "context": "\n\n---\n\n".join(parts),
         "sources": sources,
         "n_indexed": cat.get("n_lessons") or 0,
+        "method": "keyword",
     }
