@@ -613,19 +613,34 @@ class App:
 
     def show_check(self):
         self.clear()
-        self.head("Kiểm tra môi trường", "Các thành phần app cần. Cái nào thiếu có nút cài ngay bên cạnh (Node.js phải tải tay rồi mở lại app).")
+        self.head("Kiểm tra môi trường", "Thành phần bắt buộc và tùy chọn. Mục thiếu có nút cài ngay (Node.js tải tay rồi mở lại app).")
+        items = self.check_env()
+        ok_n = sum(1 for i in items if i[1])
+        miss_n = len(items) - ok_n
+        # summary strip
+        sumr = ctk.CTkFrame(self.content, fg_color="transparent")
+        sumr.pack(fill="x", pady=(0, 10))
+        self.stat_card(sumr, "Đạt", str(ok_n), "thành phần", "ok")
+        self.stat_card(sumr, "Thiếu", str(miss_n), "cần xử lý" if miss_n else "ổn", "danger" if miss_n else "ok")
+
         card = self.card()
-        for name, ok, detail, fix in self.check_env():
-            row = ctk.CTkFrame(card, fg_color="transparent"); row.pack(fill="x", padx=14, pady=6)
-            ctk.CTkLabel(row, text=("✓" if ok else "✗"), text_color=(SUCCESS if ok else DANGER), font=(FT, 15, "bold"), width=22).pack(side="left")
-            ctk.CTkLabel(row, text=name, font=(FT, 13), text_color=TEXT, width=210, anchor="w").pack(side="left", padx=6)
-            ctk.CTkLabel(row, text=detail, font=(FT, 11), text_color=TEXT2).pack(side="left")
-            if (not ok) and fix: btn(row, fix[0], (lambda p=fix[1]: self.do_fix(p)), width=130).pack(side="right")
-        row = ctk.CTkFrame(self.content, fg_color="transparent"); row.pack(fill="x", pady=12)
-        btn(row, "←  Quay lại", self.show_step1, kind="ghost", width=110).pack(side="left")
-        btn(row, "↻  Kiểm tra lại", self.show_check, kind="ghost", width=130).pack(side="left", padx=6)
-        if [i for i in self.check_env() if not i[1] and i[3]]:
-            btn(row, "⚙  Cài tất cả còn thiếu", self.fix_all).pack(side="right")
+        for name, ok, detail, fix in items:
+            row = ctk.CTkFrame(card, fg_color=CARD2 if not ok else "transparent", corner_radius=10)
+            row.pack(fill="x", padx=10, pady=4)
+            ir = ctk.CTkFrame(row, fg_color="transparent")
+            ir.pack(fill="x", padx=10, pady=8)
+            self.pill(ir, "OK" if ok else "THIẾU", "ok" if ok else "danger").pack(side="left", padx=(0, 10))
+            ctk.CTkLabel(ir, text=name, font=(FT, 13, "bold"), text_color=TEXT, width=200, anchor="w").pack(side="left")
+            ctk.CTkLabel(ir, text=detail if len(str(detail)) < 48 else str(detail)[:45] + "…",
+                         font=(FT, 11), text_color=TEXT2).pack(side="left", padx=6)
+            if (not ok) and fix:
+                btn(ir, fix[0], (lambda p=fix[1]: self.do_fix(p)),
+                    kind="accent", width=130, height=30).pack(side="right")
+        row = ctk.CTkFrame(self.content, fg_color="transparent"); row.pack(fill="x", pady=14)
+        btn(row, "←  Dashboard", self.show_dashboard, kind="ghost", width=120).pack(side="left")
+        btn(row, "↻  Kiểm tra lại", self.show_check, kind="secondary", width=130).pack(side="left", padx=6)
+        if [i for i in items if not i[1] and i[3]]:
+            btn(row, "⚙  Cài tất cả còn thiếu", self.fix_all, kind="accent").pack(side="right")
 
     def do_fix(self, payload):
         import webbrowser
@@ -1277,21 +1292,41 @@ class App:
         cn = self.course_name or "SkoolCourse"
         heads = {
             "import": ("Lấy khóa mới từ Skool",
-                       "Làm theo 3 nút. App mở một cửa sổ trình duyệt riêng — bạn đăng nhập và mở đúng khóa, app tự lấy danh sách."),
+                       "Làm theo 3 bước. App mở trình duyệt riêng — đăng nhập, mở đúng khóa, app lấy danh sách chương."),
             "update": (f"Kiểm tra cập nhật: {cn}",
-                       "Mở đúng khóa rồi bấm Lấy danh sách. Chương MỚI sẽ được tick sẵn — bấm tải để bổ sung phần mới."),
+                       "Mở đúng khóa → Lấy danh sách. Chương MỚI được tick sẵn — chỉ dump/tải phần mới."),
             "rescue": (f"Cứu bài native hết hạn: {cn}",
-                       "Mở đúng khóa rồi bấm Lấy danh sách. App tự lấy lại token các chương cần cứu rồi tải lại."),
+                       "Mở đúng khóa → Lấy danh sách. App dump lại token các chương cần cứu rồi tải native."),
         }
         h, sub = heads.get(self.purpose, heads["import"])
         self.head(h, sub)
-        f = ctk.CTkFrame(self.content, fg_color="transparent"); f.pack(fill="x")
-        self.b_open = btn(f, "1.   Mở Skool & đăng nhập", self.do_open, height=44); self.b_open.pack(fill="x", pady=5)
+
+        # step guide cards
+        guide = ctk.CTkFrame(self.content, fg_color="transparent")
+        guide.pack(fill="x", pady=(0, 8))
+        for i, (title, desc) in enumerate((
+            ("1  Đăng nhập", "Mở Skool trong cửa sổ app"),
+            ("2  Danh sách", "Đọc chương từ Classroom"),
+            ("3  Dump", "Lưu JSON + tải về"),
+        ), 1):
+            g = ctk.CTkFrame(guide, fg_color=CARD, corner_radius=12, border_width=1, border_color=BORDER)
+            g.pack(side="left", expand=True, fill="both", padx=4)
+            ctk.CTkLabel(g, text=title, font=(FT, 12, "bold"), text_color=ACCENT).pack(anchor="w", padx=12, pady=(10, 0))
+            ctk.CTkLabel(g, text=desc, font=(FT, 11), text_color=TEXT2).pack(anchor="w", padx=12, pady=(2, 12))
+
+        f = self.card()
+        fin = ctk.CTkFrame(f, fg_color="transparent")
+        fin.pack(fill="x", padx=12, pady=12)
+        self.b_open = btn(fin, "1.   Mở Skool & đăng nhập", self.do_open, kind="accent", height=44)
+        self.b_open.pack(fill="x", pady=4)
         lbl2 = "2.   Lấy danh sách & " + ("cứu native" if self.purpose == "rescue" else "chương")
-        self.b_list = btn(f, lbl2, self.do_list, kind="secondary", height=44, state="disabled"); self.b_list.pack(fill="x", pady=5)
-        self.chap_box = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=14)   # cuon theo trang ngoai
+        self.b_list = btn(fin, lbl2, self.do_list, kind="secondary", height=44, state="disabled")
+        self.b_list.pack(fill="x", pady=4)
+
+        self.chap_box = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=16,
+                                     border_width=1, border_color=BORDER)
         self.dump_row = ctk.CTkFrame(self.content, fg_color="transparent")
-        btn(self.content, "←  Quay lại", self.show_dashboard, kind="ghost", width=110).pack(anchor="w", pady=8)
+        btn(self.content, "←  Dashboard", self.show_dashboard, kind="ghost", width=120).pack(anchor="w", pady=10)
 
     def do_open(self):
         if self.sb is None:
@@ -1300,17 +1335,22 @@ class App:
                 from skool_browser import SkoolBrowser; self.sb = SkoolBrowser()
             except Exception as e:
                 messagebox.showerror("Lỗi", f"Không mở được trình duyệt: {e}")
-        else: self.sb.open()
+        else:
+            self.sb.open()
 
     def do_list(self):
-        if self.sb: self.write("Đang đọc danh sách chương..."); self.sb.list_chapters()
+        if self.sb:
+            self.write("Đang đọc danh sách chương...")
+            self.sb.list_chapters()
 
     def render_chapters(self, group, chapters):
-        for w in self.chap_box.winfo_children(): w.destroy()
-        for w in self.dump_row.winfo_children(): w.destroy()
-        self.chap_box.pack(fill="x", pady=8); self.dump_row.pack(fill="x", pady=4)
+        for w in self.chap_box.winfo_children():
+            w.destroy()
+        for w in self.dump_row.winfo_children():
+            w.destroy()
+        self.chap_box.pack(fill="x", pady=8)
+        self.dump_row.pack(fill="x", pady=4)
         upd = (self.purpose == "update")
-        # S3: diff thong minh hon (chuong moi + bai thieu local)
         self._last_update_diff = None
         if upd:
             try:
@@ -1325,26 +1365,47 @@ class App:
         extra = ""
         if upd and self._last_update_diff:
             d = self._last_update_diff
-            extra = f"  ·  {len(d.get('missing_lessons') or [])} bài thiếu  ·  {len(d.get('native_expired') or [])} hết hạn"
-        cap = (f"Khóa: {group} — {n_new} chương MỚI (đã tick sẵn){extra}" if upd
-               else f"Khóa: {group} — chọn chương cần tải")
-        ctk.CTkLabel(self.chap_box, text=cap, font=(FT, 12, "bold"), text_color=PRIMARY).pack(anchor="w", padx=6, pady=(4, 6))
+            extra = f"  ·  {len(d.get('missing_lessons') or [])} thiếu  ·  {len(d.get('native_expired') or [])} hết hạn"
+        hdr = ctk.CTkFrame(self.chap_box, fg_color="transparent")
+        hdr.pack(fill="x", padx=12, pady=(12, 6))
+        ctk.CTkLabel(hdr, text=f"Khóa: {group}", font=(FT, 13, "bold"), text_color=TEXT).pack(side="left")
+        if upd:
+            self.pill(hdr, f"{n_new} mới{extra}", "info" if n_new else "muted").pack(side="right")
+        else:
+            self.pill(hdr, f"{len(chapters)} chương", "muted").pack(side="right")
+
         self.chapters = []
         for c in chapters:
             is_new = (not upd) or (K.san(c["title"]) not in self.known_titles)
             var = ctk.BooleanVar(value=is_new)
-            label = c["title"] + ("   • MỚI" if (upd and is_new) else "")
-            tc = PRIMARY if (upd and is_new) else TEXT
-            ctk.CTkCheckBox(self.chap_box, text=label, variable=var, font=(FT, 13), text_color=tc, fg_color=PRIMARY, hover_color=PRIMARY_H).pack(anchor="w", padx=8, pady=3)
+            row = ctk.CTkFrame(self.chap_box, fg_color=(ACCENT_SOFT if (upd and is_new) else "transparent"),
+                               corner_radius=8)
+            row.pack(fill="x", padx=10, pady=2)
+            label = c["title"] + ("   · MỚI" if (upd and is_new) else "")
+            tc = ACCENT if (upd and is_new) else TEXT
+            ctk.CTkCheckBox(row, text=label, variable=var, font=(FT, 13), text_color=tc,
+                            fg_color=ACCENT, hover_color=ACCENT_H, border_color=BORDER).pack(
+                anchor="w", padx=8, pady=6)
             self.chapters.append({"id": c["id"], "title": c["title"], "var": var})
-        nm = ctk.CTkFrame(self.dump_row, fg_color="transparent"); nm.pack(fill="x", pady=(2, 0))
-        ctk.CTkLabel(nm, text="Đặt tên khóa:", font=(FT, 13), text_color=TEXT).pack(side="left")
+
+        dump_card = ctk.CTkFrame(self.dump_row, fg_color=CARD, corner_radius=16,
+                                 border_width=1, border_color=BORDER)
+        dump_card.pack(fill="x", pady=6)
+        nm = ctk.CTkFrame(dump_card, fg_color="transparent")
+        nm.pack(fill="x", padx=14, pady=(12, 6))
+        ctk.CTkLabel(nm, text="Tên khóa", font=(FT, 12, "bold"), text_color=TEXT2).pack(side="left")
         self.name_var = ctk.StringVar(value=(self.course_name or group) if upd else group)
-        ctk.CTkEntry(nm, textvariable=self.name_var, font=(FT, 13), width=260).pack(side="left", padx=10)
+        ctk.CTkEntry(nm, textvariable=self.name_var, font=(FT, 13), height=36, corner_radius=10,
+                     fg_color=CARD2, border_color=BORDER).pack(side="left", fill="x", expand=True, padx=(10, 0))
         dump_label = ("3.   Tải bổ sung các chương đã chọn  →" if upd else "3.   Tải dữ liệu các chương đã chọn  →")
-        self.b_dump = btn(self.dump_row, dump_label, self.do_dump, height=44); self.b_dump.pack(fill="x", pady=8)
-        self.dump_status = ctk.CTkLabel(self.dump_row, text="", font=(FT, 12, "bold"), text_color=PRIMARY); self.dump_status.pack(anchor="w")
-        self.dump_pb = ctk.CTkProgressBar(self.dump_row, height=12, corner_radius=6, progress_color=PRIMARY); self.dump_pb.set(0)
+        self.b_dump = btn(dump_card, dump_label, self.do_dump, kind="accent", height=44)
+        self.b_dump.pack(fill="x", padx=14, pady=(4, 8))
+        self.dump_status = ctk.CTkLabel(dump_card, text="", font=(FT, 12, "bold"), text_color=ACCENT)
+        self.dump_status.pack(anchor="w", padx=14)
+        self.dump_pb = ctk.CTkProgressBar(dump_card, height=10, corner_radius=6,
+                                          progress_color=ACCENT, fg_color=CARD2)
+        self.dump_pb.set(0)
+        ctk.CTkFrame(dump_card, height=10, fg_color="transparent").pack()
 
     def do_dump(self):
         if self._dumping: return
@@ -1358,7 +1419,12 @@ class App:
             self.course_name = name; out = C.BASE / "courses" / name
         self._dumping = True
         self.b_dump.configure(state="disabled", text="⏳   Đang lấy dữ liệu...")
-        self.dump_status.configure(text=f"Đang lấy dữ liệu: 0/{len(sel)} chương"); self.dump_pb.pack(fill="x", pady=(2, 6)); self.dump_pb.set(0)
+        self.dump_status.configure(text=f"Đang lấy dữ liệu: 0/{len(sel)} chương")
+        try:
+            self.dump_pb.pack(fill="x", padx=14, pady=(2, 10))
+        except Exception:
+            self.dump_pb.pack(fill="x", pady=(2, 6))
+        self.dump_pb.set(0)
         self.write(f"Đang lấy dữ liệu {len(sel)} chương vào: {out}")
         self.sb.dump([{"id": c["id"], "title": c["title"]} for c in sel], out, all_titles=self.live_titles or None)
 
@@ -1853,17 +1919,21 @@ class App:
     def show_transcribe(self):
         self.clear(); self.purpose = "import"
         nm = self.course_name or "SkoolCourse"
-        self.head(f"Tạo phụ đề: {nm}", "Bóc lời giảng video thành văn bản tiếng Anh (.txt/.srt). Chạy ngầm bằng Windows — sống qua cả khi tắt/mở máy; bài đã có phụ đề sẽ bỏ qua.")
+        self.head(f"Tạo phụ đề: {nm}", "Bóc lời giảng → .txt/.srt. Windows Task chạy ngầm (sống qua reboot); bài đã có phụ đề được bỏ qua.")
         card = self.card()
-        self.trans_lbl = ctk.CTkLabel(card, text="⏳  Đang kiểm tra…", font=(FT, 13), text_color=TEXT2); self.trans_lbl.pack(anchor="w", padx=16, pady=(12, 6))
-        self.trans_pb = ctk.CTkProgressBar(card, height=12, corner_radius=6, progress_color=PRIMARY); self.trans_pb.set(0); self.trans_pb.pack(fill="x", padx=16, pady=(0, 12))
+        self.trans_lbl = ctk.CTkLabel(card, text="⏳  Đang kiểm tra…", font=(FT, 13), text_color=TEXT2)
+        self.trans_lbl.pack(anchor="w", padx=16, pady=(14, 6))
+        self.trans_pb = ctk.CTkProgressBar(card, height=12, corner_radius=6,
+                                           progress_color=ACCENT, fg_color=CARD2)
+        self.trans_pb.set(0)
+        self.trans_pb.pack(fill="x", padx=16, pady=(0, 14))
         act = self.card()
-        r = ctk.CTkFrame(act, fg_color="transparent"); r.pack(fill="x", padx=14, pady=12)
-        btn(r, "▶  Bắt đầu tạo phụ đề (chạy ngầm)", self.start_transcribe, width=280).pack(side="left")
-        ctk.CTkLabel(r, text="Chạy ngầm độc lập — có thể đóng app.", font=(FT, 11), text_color=TEXT2).pack(side="left", padx=10)
-        nav = ctk.CTkFrame(self.content, fg_color="transparent"); nav.pack(fill="x", pady=10)
-        btn(nav, "←  Về trình tải", self.show_manager, kind="ghost", width=150).pack(side="left")
-        btn(nav, "Dịch tiếng Việt  →", self.show_translate, kind="secondary", width=180).pack(side="right")
+        r = ctk.CTkFrame(act, fg_color="transparent"); r.pack(fill="x", padx=14, pady=14)
+        btn(r, "▶  Bắt đầu tạo phụ đề (ngầm)", self.start_transcribe, kind="accent", width=260).pack(side="left")
+        ctk.CTkLabel(r, text="Độc lập — có thể đóng app.", font=(FT, 11), text_color=TEXT2).pack(side="left", padx=10)
+        nav = ctk.CTkFrame(self.content, fg_color="transparent"); nav.pack(fill="x", pady=12)
+        btn(nav, "←  Về trình tải", self.show_manager, kind="ghost", width=140).pack(side="left")
+        btn(nav, "Dịch tiếng Việt  →", self.show_translate, kind="secondary", width=170).pack(side="right")
         self._trans_scan_async()
 
     def _trans_scan_async(self):
@@ -1885,21 +1955,30 @@ class App:
     def show_translate(self):
         self.clear(); self.purpose = "import"
         nm = self.course_name or "SkoolCourse"
-        self.head(f"Dịch sang tiếng Việt: {nm}", "Sau khi đã có phụ đề, tạo bản tiếng Việt + phụ đề song ngữ Anh–Việt cho khóa.")
+        self.head(f"Dịch sang tiếng Việt: {nm}", "Sau phụ đề: tạo Transcript_VI.md + phụ đề song ngữ Anh–Việt.")
         try:
-            import ai_tools; google = ai_tools.have_google()
-        except Exception: google = False
+            import ai_tools
+            google = ai_tools.have_google()
+        except Exception:
+            google = False
         card = self.card()
-        ctk.CTkLabel(card, text=("Dịch vụ: Google (miễn phí) ✓" if google else "✗ Chưa có deep-translator — chạy: pip install deep-translator"),
-                     font=(FT, 13), text_color=(TEXT2 if google else DANGER)).pack(anchor="w", padx=16, pady=12)
-        self.tl_lbl = ctk.CTkLabel(card, text="", font=(FT, 12), text_color=TEXT2, justify="left", wraplength=520); self.tl_lbl.pack(anchor="w", padx=16, pady=(0, 12))
+        row = ctk.CTkFrame(card, fg_color="transparent")
+        row.pack(fill="x", padx=16, pady=14)
+        self.pill(row, "Google ✓" if google else "Thiếu deep-translator",
+                  "ok" if google else "danger").pack(side="left")
+        ctk.CTkLabel(row, text=("Dịch miễn phí qua Google" if google else "pip install deep-translator"),
+                     font=(FT, 12), text_color=TEXT2).pack(side="left", padx=10)
+        self.tl_lbl = ctk.CTkLabel(card, text="", font=(FT, 12), text_color=TEXT2,
+                                   justify="left", wraplength=560)
+        self.tl_lbl.pack(anchor="w", padx=16, pady=(0, 12))
         act = self.card()
-        r = ctk.CTkFrame(act, fg_color="transparent"); r.pack(fill="x", padx=14, pady=12)
-        btn(r, "▶  Dịch sang tiếng Việt", self.start_translate, width=220).pack(side="left")
-        ctk.CTkLabel(r, text="Tạo Transcript_VI.md + PhuDe_SongNgu.srt trong thư mục khóa.", font=(FT, 11), text_color=TEXT2).pack(side="left", padx=10)
-        nav = ctk.CTkFrame(self.content, fg_color="transparent"); nav.pack(fill="x", pady=10)
-        btn(nav, "←  Về Phụ đề", self.show_transcribe, kind="ghost", width=140).pack(side="left")
-        btn(nav, "📁  Mở thư mục", self.open_folder, kind="secondary", width=150).pack(side="right")
+        r = ctk.CTkFrame(act, fg_color="transparent"); r.pack(fill="x", padx=14, pady=14)
+        btn(r, "▶  Dịch sang tiếng Việt", self.start_translate, kind="accent", width=220).pack(side="left")
+        ctk.CTkLabel(r, text="Transcript_VI.md + PhuDe_SongNgu.srt", font=(FT, 11),
+                     text_color=TEXT2).pack(side="left", padx=10)
+        nav = ctk.CTkFrame(self.content, fg_color="transparent"); nav.pack(fill="x", pady=12)
+        btn(nav, "←  Về Phụ đề", self.show_transcribe, kind="ghost", width=130).pack(side="left")
+        btn(nav, "📁  Mở thư mục", self.open_folder, kind="secondary", width=140).pack(side="right")
 
     def start_translate(self):
         if self.proc: messagebox.showinfo("Đang bận", "Một tác vụ đang chạy."); return
@@ -2307,7 +2386,12 @@ class App:
     def show_cloud(self):
         self.set_nav("cloud")
         self.clear()
-        self.head("Cloud upload", "Đồng bộ knowledge (md/txt/srt/resources). Provider: R2 · Google Drive · OneDrive. Mặc định không upload video.")
+        self.head("Cloud upload", "Đồng bộ knowledge (md/txt/srt/resources) — R2 · Drive · OneDrive. Mặc định không upload video.")
+        # provider tips
+        tip = ctk.CTkFrame(self.content, fg_color=ACCENT_SOFT, corner_radius=12)
+        tip.pack(fill="x", pady=(0, 8))
+        ctk.CTkLabel(tip, text="💡  Knowledge mode = text + resources. Full mode mới đẩy video (nặng).",
+                     font=(FT, 12), text_color=ACCENT).pack(anchor="w", padx=14, pady=10)
         try:
             from cloud.sync import load_cloud_settings
             cfg = load_cloud_settings() or {}
@@ -2607,7 +2691,7 @@ class App:
     def show_web_tools(self):
         self.set_nav("web")
         self.clear()
-        self.head("Web Viewer & Health", "Xem knowledge trên trình duyệt (local) · quét sức khỏe kho · lên lịch kiểm tra hàng ngày.")
+        self.head("Web Viewer & Health", "Duyệt knowledge local · health check · lịch hàng ngày · xuất site tĩnh.")
         # Web
         card = self.card()
         ctk.CTkLabel(card, text="🌐 Local Web Viewer", font=(FT, 13, "bold"), text_color=TEXT).pack(anchor="w", padx=14, pady=(12, 4))
