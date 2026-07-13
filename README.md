@@ -182,6 +182,8 @@ python app\preflight.py --course "X"           # chỉ kiểm tra môi trường
 python app\doctor.py                           # doctor full (core + BASE + phase modules)
 python app\doctor.py --set-base "E:\SkoolProject"
 python app\queue_engine.py --requeue-failed    # thu lai job failed/stopped
+python app\cleanup.py --course "X" --fails     # xem video_fails.json
+python app\cleanup.py --course "X" --apply     # xoa file .part/.ytdl thua
 python app\export.py   --course "X" --docx     # gộp & xuất Word (Nhóm A)
 python app\ai_tools.py --course "X" --translate --summary   # dịch + tóm tắt/to-do (cần API key / deep-translator)
 python app\updates.py  --course "X" --scan-local            # sức khỏe local / diff helper

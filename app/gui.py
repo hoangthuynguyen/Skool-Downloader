@@ -187,7 +187,7 @@ class App:
                   "status4", "pct_lbl", "pb4", "run_lbl", "done_row", "trans_lbl", "trans_pb", "tl_lbl",
                   "dump_status", "dump_pb", "b_start", "b_all", "b_dump", "b_list", "b_open", "chap_box", "dump_row",
                   "dash_list", "dash_summary", "dash_search_box", "q_list", "q_status", "chat_box", "chat_input", "chat_src",
-                  "cloud_status"):
+                  "cloud_status", "mgr_fail_box", "doctor_box"):
             if hasattr(self, a): delattr(self, a)
 
     def toggle_admin(self, *_):
@@ -1122,9 +1122,109 @@ class App:
         if hasattr(self, "run_lbl"): self.run_lbl.configure(text="✓  Hoàn tất", text_color=SUCCESS)
         if getattr(self, "opt_sub", None) and self.opt_sub.get(): self.write("Bật phụ đề chạy ngầm..."); self.run_sub_on()
         self._maybe_cloud_after(self.course_name)
+        self._show_fails_panel(self.content)
         btn(self.done_row, "📁  Mở thư mục dự án", self.open_folder, kind="secondary", width=200).pack(side="left", padx=(0, 8))
         btn(self.done_row, "📄  Xuất & Báo cáo", self.show_report, kind="secondary", width=180).pack(side="left", padx=(0, 8))
         btn(self.done_row, "↻  Dashboard", self.show_dashboard, width=140).pack(side="left")
+
+    def _load_fails(self, course_name=None):
+        try:
+            import cleanup as CL
+            return CL.load_fails(self.course_root(course_name if course_name is not None else self.course_name))
+        except Exception:
+            return []
+
+    def _show_fails_panel(self, parent=None):
+        """Hien panel bai that bai + goi y (token / bot / rate)."""
+        parent = parent or self.content
+        fails = self._load_fails()
+        if not fails:
+            return
+        try:
+            import cleanup as CL
+            groups = CL.summarize_fails(fails)
+        except Exception:
+            groups = []
+        card = ctk.CTkFrame(parent, fg_color="#FFF7ED", corner_radius=12, border_width=1, border_color="#FDBA74")
+        card.pack(fill="x", pady=8)
+        ctk.CTkLabel(card, text=f"⚠  {len(fails)} bài tải thất bại (video_fails.json)",
+                     font=(FT, 13, "bold"), text_color="#9A3412").pack(anchor="w", padx=14, pady=(10, 4))
+        for g in groups[:6]:
+            line = f"• [{g['code']}] ×{g['count']} — {g['message']}"
+            ctk.CTkLabel(card, text=line, font=(FT, 12), text_color="#7C2D12",
+                         wraplength=520, justify="left").pack(anchor="w", padx=18, pady=1)
+            if g.get("fix"):
+                ctk.CTkLabel(card, text=f"   → {g['fix']}", font=(FT, 11), text_color=TEXT2,
+                             wraplength=500, justify="left").pack(anchor="w", padx=18)
+        row = ctk.CTkFrame(card, fg_color="transparent"); row.pack(fill="x", padx=12, pady=(8, 10))
+        codes = {g["code"] for g in groups}
+        if "token" in codes:
+            btn(row, "🔑 Cứu native", self.rescue_from_fails, kind="warn", width=130, height=32).pack(side="left", padx=2)
+        if "bot" in codes:
+            btn(row, "Node.js / cookies", self.show_check, kind="secondary", width=140, height=32).pack(side="left", padx=2)
+        btn(row, "↻ Tải lại", self._retry_download_after_fails, kind="secondary", width=100, height=32).pack(side="left", padx=2)
+        btn(row, "🗑 Dọn file dở", self.cleanup_partials, kind="ghost", width=120, height=32).pack(side="left", padx=2)
+        self.write(f"⚠ {len(fails)} bài fail — xem panel phía trên / video_fails.json")
+
+    def rescue_from_fails(self):
+        """Cuu native: uu tien scan hien tai, fallback mo update flow."""
+        root = self.course_root(self.course_name)
+        def work():
+            try:
+                return P.scan(root)
+            except Exception as e:
+                return e
+        def cb(s):
+            if isinstance(s, Exception) or not s:
+                messagebox.showinfo("Cứu native", "Không quét được. Dùng «Cập nhật» rồi dump lại chương."); return
+            self.last_scan = s
+            if s.get("native_expired"):
+                self.rescue_native()
+            else:
+                # co fail token nhung scan chua danh dau — van mo dump update
+                messagebox.showinfo(
+                    "Cứu native",
+                    "Mở trình duyệt để dump lại token chương còn thiếu.\n"
+                    "Chọn các chương cần thiết rồi tải lại.")
+                self.purpose = "update"
+                try:
+                    import updates as U
+                    self.known_titles = U.saved_chapter_titles(root)
+                except Exception:
+                    self.known_titles = self._saved_titles(root)
+                self.show_step2()
+        self.run_async(work, cb)
+
+    def _retry_download_after_fails(self):
+        """Tai lai (until-clean) sau khi user da fix env/token."""
+        if self.proc:
+            messagebox.showinfo("Đang bận", "Đang có tác vụ chạy."); return
+        args = self._course_args() + ["--until-clean"]
+        self.write("↻ Tải lại các bài còn thiếu…")
+        self.start([PY, "main.py"] + args, "TẢI LẠI", on_done=self.show_manager)
+
+    def cleanup_partials(self):
+        root = self.course_root(self.course_name)
+        def work():
+            try:
+                import cleanup as CL
+                listed = CL.find_stale_downloads(root, min_age_sec=0)
+                if not listed:
+                    return {"found": 0}
+                return CL.cleanup_stale(root, apply=True, min_age_sec=60,
+                                        log=lambda s: self.ui_q.put(lambda m=s: self.write(m)))
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("Dọn rác", str(r)); return
+            if r.get("found") == 0:
+                messagebox.showinfo("Dọn rác", "Không có file .part/.ytdl thừa."); return
+            messagebox.showinfo("Dọn rác", f"Đã xóa {r.get('deleted', 0)}/{r.get('found', 0)} file · giải phóng {r.get('bytes', 0)} bytes")
+        if not messagebox.askyesno("Dọn file dở", "Xóa các file tải dở (.part, .ytdl) cũ hơn 1 phút?\nKhông ảnh hưởng video đã tải xong."):
+            return
+        self.write("🗑 Đang dọn file tải dở…")
+        self.run_async(work, cb)
 
     # ====================== TRÌNH TẢI (theo chương / bài) ======================
     def show_manager(self):
@@ -1139,12 +1239,16 @@ class App:
         btn(row, "■  Dừng", self.do_stop, kind="danger", width=100).pack(side="left", padx=8)
         self.opt_clean = ctk.BooleanVar(value=True)
         ctk.CTkCheckBox(row, text="🔁 Tự thử lại đến khi đủ", variable=self.opt_clean, font=(FT, 12), text_color=TEXT2, fg_color=PRIMARY, hover_color=PRIMARY_H).pack(side="left", padx=8)
+        btn(row, "🗑 Dọn dở", self.cleanup_partials, kind="ghost", width=90, height=32).pack(side="right", padx=4)
         self.mgr_status = ctk.CTkLabel(bar, text="⏳  Đang đọc danh sách chương…", font=(FT, 12), text_color=TEXT2, justify="left", wraplength=520); self.mgr_status.pack(anchor="w", padx=16, pady=(2, 10))
+        self.mgr_fail_box = ctk.CTkFrame(self.content, fg_color="transparent")
+        self.mgr_fail_box.pack(fill="x", pady=(0, 4))
         self.mgr_scroll = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=14, border_width=1, border_color=BORDER); self.mgr_scroll.pack(fill="x", pady=(2, 6))
         nav = ctk.CTkFrame(self.content, fg_color="transparent"); nav.pack(fill="x", pady=10)
         btn(nav, "←  Dashboard", self.show_dashboard, kind="ghost", width=120).pack(side="left")
         btn(nav, "Tạo phụ đề  →", self.show_transcribe, kind="secondary", width=160).pack(side="right")
         self._mgr_scan_async()
+        self._mgr_refresh_fails()
 
     def _mgr_scan_async(self):
         def cb(t):
@@ -1250,7 +1354,43 @@ class App:
 
     def _mgr_after_dl(self):
         self.mgr_busy = None; self._mgr_scan_async()
+        self._mgr_refresh_fails()
         self._maybe_cloud_after(self.course_name)
+
+    def _mgr_refresh_fails(self):
+        if not (hasattr(self, "mgr_fail_box") and self.mgr_fail_box.winfo_exists()):
+            return
+        for w in self.mgr_fail_box.winfo_children():
+            w.destroy()
+        fails = self._load_fails()
+        if not fails:
+            return
+        try:
+            import cleanup as CL
+            groups = CL.summarize_fails(fails)
+            parts = [f"{g['code']}×{g['count']}" for g in groups[:4]]
+            summary = ", ".join(parts)
+        except Exception:
+            summary = f"{len(fails)} lỗi"
+        ban = ctk.CTkFrame(self.mgr_fail_box, fg_color="#FFF7ED", corner_radius=10, border_width=1, border_color="#FDBA74")
+        ban.pack(fill="x")
+        ctk.CTkLabel(ban, text=f"⚠ {len(fails)} bài fail ({summary})", font=(FT, 12, "bold"),
+                     text_color="#9A3412").pack(side="left", padx=12, pady=8)
+        btn(ban, "Chi tiết", lambda: self._show_fails_dialog(fails), kind="warn", width=90, height=28).pack(side="right", padx=8, pady=6)
+
+    def _show_fails_dialog(self, fails=None):
+        fails = fails if fails is not None else self._load_fails()
+        if not fails:
+            messagebox.showinfo("Fails", "Không có video_fails.json."); return
+        try:
+            import cleanup as CL
+            groups = CL.summarize_fails(fails)
+            lines = [f"{len(fails)} bài thất bại:\n"]
+            for g in groups:
+                lines.append(f"[{g['code']}] ×{g['count']} — {g['message']}\n→ {g['fix']}\n")
+            messagebox.showwarning("Bài tải thất bại", "\n".join(lines)[:1500])
+        except Exception as e:
+            messagebox.showerror("Fails", str(e))
 
     def _mgr_update_status(self):
         if not (hasattr(self, "mgr_status") and self.mgr_status.winfo_exists()): return
@@ -1260,7 +1400,10 @@ class App:
         done = sum(c["done"] for c in self.mgr_tree); tot = sum(c["total"] for c in self.mgr_tree)
         size = sum(L["size"] for c in self.mgr_tree for L in c["lessons"])
         msg = f"Đã tải {done}/{tot} bài  ·  {fmt_size(size)}." + (" ✓ Đủ." if (tot and done >= tot) else f"  Còn {tot - done} bài.")
-        self.mgr_status.configure(text=msg, text_color=TEXT2)
+        fails = self._load_fails()
+        if fails:
+            msg += f"  ·  ⚠ {len(fails)} fail"
+        self.mgr_status.configure(text=msg, text_color=TEXT2 if not fails else WARNING)
 
     def refresh_manager(self):
         if getattr(self, "_mgr_refreshing", False): return

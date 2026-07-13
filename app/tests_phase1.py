@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json, os, sys, tempfile
 from pathlib import Path
+# json used by cleanup tests
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -181,6 +182,31 @@ def test_export_site_and_embed():
     print("  PASS  export site + embed module")
 
 
+def test_cleanup_fails():
+    import cleanup as CL
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        # fake fails
+        (root / "video_fails.json").write_text(json.dumps([
+            {"folder": "/a", "code": "token", "message": "het han", "fix": "dump"},
+            {"folder": "/b", "code": "token", "message": "het han", "fix": "dump"},
+            {"folder": "/c", "code": "rate", "message": "429", "fix": "cho"},
+        ]), encoding="utf-8")
+        fails = CL.load_fails(root)
+        assert len(fails) == 3
+        g = CL.summarize_fails(fails)
+        assert g[0]["code"] == "token" and g[0]["count"] == 2
+        # stale part
+        p = root / "video.mp4.part"
+        p.write_bytes(b"x" * 10)
+        found = CL.find_stale_downloads(root, min_age_sec=0)
+        assert any(str(i["path"]).endswith(".part") for i in found)
+        r = CL.cleanup_stale(root, apply=True, min_age_sec=0, log=lambda *_: None)
+        assert r["deleted"] >= 1
+        assert not p.exists()
+    print("  PASS  cleanup + fails summary")
+
+
 def test_video_classify_and_lesson_path():
     import videos as V
     import config as C
@@ -239,14 +265,14 @@ def test_config_base_and_doctor_requeue():
 
 
 def main():
-    print("Phase 1–7 smoke tests")
+    print("Phase 1–8 smoke tests")
     fails = 0
     for fn in (test_progress_badge, test_queue_persist, test_cloud_policy,
                test_updates_diff, test_rag_score, test_tfidf_and_multi,
                test_queue_workers_settings, test_parallel_claim,
                test_search_and_report, test_onedrive_module, test_health_and_web,
                test_export_site_and_embed, test_config_base_and_doctor_requeue,
-               test_video_classify_and_lesson_path):
+               test_video_classify_and_lesson_path, test_cleanup_fails):
         try:
             fn()
         except Exception as e:
