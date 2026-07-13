@@ -61,6 +61,8 @@ Double-click **`SkoolArchiver.cmd`** → mở app cửa sổ. Lần đầu trên
 | **☁ Cloud** | **R2** · **Google Drive** · **OneDrive**; knowledge mode; sync 1 khóa / tất cả | `python -m cloud.sync --course X` · `--all` · `--test` |
 | **💬 Chat RAG** | TF-IDF vector + keyword; **multi-course**; Claude trả lời kèm nguồn | `python -m rag.chat --course X --ask "..."` · `--multi "A,B"` |
 | **🔍 Tìm kiếm** | Tìm transcript/mô tả toàn kho (không cần Claude); báo cáo tiến độ MD | `python search_lib.py "webhook"` · `--report` |
+| **🌐 Web Viewer** | Duyệt knowledge trên trình duyệt local (stdlib, port 8765) | `python web_viewer.py` |
+| **❤ Health schedule** | Quét kho hàng ngày → `_health.json`; Task Scheduler / launchd | `python health_check.py --write --notify` |
 
 **Hoàn thiện việc tải (Nhóm B):**
 
@@ -162,6 +164,10 @@ python -m rag.chat     --course "X" --ask "..." # hỏi đáp RAG
 python -m rag.chat     --multi "A,B" --ask "..."
 python app\search_lib.py "webhook"             # tìm toàn kho (không cần Claude)
 python app\search_lib.py --report              # _Warehouse_Report.md
+python app\web_viewer.py                       # http://127.0.0.1:8765
+python app\health_check.py --write --notify    # health + ghi file (+ toast Windows)
+# Windows lịch hàng ngày:  app\install_health_task.ps1
+# macOS launchd:           bash app/install_health_launchd.sh
 ```
 
 

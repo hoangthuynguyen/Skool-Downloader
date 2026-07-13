@@ -87,10 +87,13 @@ class App:
             ("☰  Hàng đợi", self.show_queue),
             ("💬  Chat RAG", self.show_chat),
             ("☁  Cloud", self.show_cloud),
+            ("🌐  Web Viewer", self.show_web_tools),
             ("📄  Xuất & Báo cáo", self.show_report),
         ):
             btn(nav, label, cmd, kind="ghost", text_color="white", hover_color=SIDE_HI,
                 anchor="w", height=32, font=(FT, 12)).pack(fill="x", pady=1)
+        self._web_proc = None
+
         self.badge = ctk.CTkLabel(side, text="", font=(FT, 12, "bold"), text_color="white"); self.badge.pack(side="bottom", anchor="w", padx=22, pady=(0, 8))
         btn(side, "⚙  Kiểm tra môi trường", self.show_check, kind="ghost", text_color="white", hover_color=SIDE_HI, anchor="w").pack(side="bottom", fill="x", padx=14, pady=(0, 6))
 
@@ -1890,6 +1893,162 @@ class App:
         if not v: return
         self.cloud_save()
         self._cloud_sync_course(v, dry_run=True)
+
+    # ====================== WEB VIEWER + HEALTH (Phase 4) ======================
+    def show_web_tools(self):
+        self.clear()
+        self.head("Web Viewer & Health", "Xem knowledge trên trình duyệt (local) · quét sức khỏe kho · lên lịch kiểm tra hàng ngày.")
+        # Web
+        card = self.card()
+        ctk.CTkLabel(card, text="🌐 Local Web Viewer", font=(FT, 13, "bold"), text_color=TEXT).pack(anchor="w", padx=14, pady=(12, 4))
+        ctk.CTkLabel(card, text="Duyệt khóa / bài (mô tả + transcript), tìm kiếm, health. Chỉ lắng nghe máy bạn (127.0.0.1).",
+                     font=(FT, 12), text_color=TEXT2, wraplength=540, justify="left").pack(anchor="w", padx=14, pady=(0, 8))
+        row = ctk.CTkFrame(card, fg_color="transparent"); row.pack(fill="x", padx=14, pady=(0, 4))
+        ctk.CTkLabel(row, text="Port:", font=(FT, 12), text_color=TEXT).pack(side="left")
+        self.web_port = ctk.StringVar(value="8765")
+        ctk.CTkEntry(row, textvariable=self.web_port, width=80, font=("Consolas", 12)).pack(side="left", padx=8)
+        brow = ctk.CTkFrame(card, fg_color="transparent"); brow.pack(fill="x", padx=14, pady=(6, 12))
+        btn(brow, "▶  Mở Web Viewer", self.web_start, kind="success", width=160).pack(side="left")
+        btn(brow, "■  Dừng", self.web_stop, kind="danger", width=90).pack(side="left", padx=8)
+        btn(brow, "Mở trình duyệt", self.web_open_browser, kind="secondary", width=140).pack(side="left")
+        self.web_status = ctk.CTkLabel(card, text=self._web_status_text(), font=(FT, 12), text_color=TEXT2)
+        self.web_status.pack(anchor="w", padx=14, pady=(0, 12))
+
+        # Health
+        hcard = self.card()
+        ctk.CTkLabel(hcard, text="❤ Health check", font=(FT, 13, "bold"), text_color=TEXT).pack(anchor="w", padx=14, pady=(12, 4))
+        ctk.CTkLabel(hcard, text="Quét mọi khóa: bài thiếu, token hết hạn. Ghi courses/_health.json + _health.md.",
+                     font=(FT, 12), text_color=TEXT2, wraplength=540, justify="left").pack(anchor="w", padx=14, pady=(0, 8))
+        hrow = ctk.CTkFrame(hcard, fg_color="transparent"); hrow.pack(fill="x", padx=14, pady=(0, 12))
+        btn(hrow, "▶  Chạy health ngay", self.health_run_now, kind="success", width=170).pack(side="left")
+        btn(hrow, "Bật lịch hàng ngày", self.health_install_schedule, kind="secondary", width=160).pack(side="left", padx=8)
+        btn(hrow, "Tắt lịch", self.health_uninstall_schedule, kind="ghost", width=100).pack(side="left")
+        self.health_lbl = ctk.CTkLabel(hcard, text="", font=(FT, 12), text_color=TEXT2, wraplength=540, justify="left")
+        self.health_lbl.pack(anchor="w", padx=14, pady=(0, 12))
+
+        btn(self.content, "←  Dashboard", self.show_dashboard, kind="ghost", width=120).pack(anchor="w", pady=10)
+
+    def _web_status_text(self):
+        p = getattr(self, "_web_proc", None)
+        if p and p.poll() is None:
+            port = getattr(self, "_web_port_running", "8765")
+            return f"● Đang chạy — http://127.0.0.1:{port}/"
+        return "○ Chưa chạy"
+
+    def web_start(self):
+        if getattr(self, "_web_proc", None) and self._web_proc.poll() is None:
+            messagebox.showinfo("Đang chạy", "Web Viewer đã chạy. Bấm Mở trình duyệt hoặc Dừng trước."); return
+        try:
+            port = int(self.web_port.get().strip() if hasattr(self, "web_port") else 8765)
+        except Exception:
+            port = 8765
+        self._web_port_running = port
+        cmd = [PY, "web_viewer.py", "--port", str(port), "--no-browser"]
+        try:
+            self._web_proc = subprocess.Popen(
+                cmd, cwd=HERE, env=dict(os.environ, PYTHONUTF8="1"),
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=NO_WIN,
+            )
+        except Exception as e:
+            messagebox.showerror("Web Viewer", str(e)); return
+        self.write(f"🌐 Web Viewer: http://127.0.0.1:{port}/")
+        if hasattr(self, "web_status") and self.web_status.winfo_exists():
+            self.web_status.configure(text=self._web_status_text())
+        self.root.after(700, self.web_open_browser)
+
+    def web_stop(self):
+        p = getattr(self, "_web_proc", None)
+        if p and p.poll() is None:
+            try:
+                p.terminate()
+            except Exception:
+                pass
+            self.write("🌐 Đã dừng Web Viewer")
+        self._web_proc = None
+        if hasattr(self, "web_status") and self.web_status.winfo_exists():
+            self.web_status.configure(text=self._web_status_text())
+
+    def web_open_browser(self):
+        port = getattr(self, "_web_port_running", None) or (
+            self.web_port.get().strip() if hasattr(self, "web_port") else "8765")
+        url = f"http://127.0.0.1:{port}/"
+        try:
+            import webbrowser
+            webbrowser.open(url)
+        except Exception as e:
+            messagebox.showerror("Trình duyệt", str(e))
+
+    def health_run_now(self):
+        self.write("❤ Đang health check…")
+        def work():
+            try:
+                import health_check as H
+                r = H.run_health()
+                H.write_health(r)
+                return r
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("Health", str(r)); return
+            sm = r.get("summary") or {}
+            msg = (f"{sm.get('n_courses')} khóa · {sm.get('done')}/{sm.get('total')} bài · "
+                   f"thiếu {sm.get('missing')} · hết hạn {sm.get('expired')} · "
+                   f"cần chú ý {sm.get('needs_attention')}")
+            self.write(f"❤ {msg}")
+            if hasattr(self, "health_lbl") and self.health_lbl.winfo_exists():
+                self.health_lbl.configure(text=msg + "\n→ courses/_health.json · _health.md")
+            messagebox.showinfo("Health", msg)
+        self.run_async(work, cb)
+
+    def health_install_schedule(self):
+        if os.name == "nt":
+            ps = HERE / "install_health_task.ps1"
+            if not ps.exists():
+                messagebox.showerror("Lịch", f"Thiếu {ps}"); return
+            try:
+                subprocess.Popen(
+                    ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ps)],
+                    creationflags=NO_WIN,
+                )
+                self.write("❤ Đã gọi cài Scheduled Task (Health hàng ngày 09:00)")
+                messagebox.showinfo("Lịch", "Đã đăng ký task Windows: SkoolArchiver-Health (09:00 hàng ngày).")
+            except Exception as e:
+                messagebox.showerror("Lịch", str(e))
+        else:
+            sh = HERE / "install_health_launchd.sh"
+            try:
+                os.chmod(sh, 0o755)
+                subprocess.check_call(["/bin/bash", str(sh)])
+                self.write("❤ Đã cài LaunchAgent health (macOS 09:00)")
+                messagebox.showinfo("Lịch", "Đã load LaunchAgent com.skoolarchiver.health (09:00).")
+            except Exception as e:
+                messagebox.showerror(
+                    "Lịch",
+                    f"Không cài auto được: {e}\n\nChạy tay:\n  bash app/install_health_launchd.sh\n"
+                    "hoặc cron: 0 9 * * * python3 app/health_check.py --write",
+                )
+
+    def health_uninstall_schedule(self):
+        if os.name == "nt":
+            ps = HERE / "uninstall_health_task.ps1"
+            try:
+                subprocess.Popen(
+                    ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ps)],
+                    creationflags=NO_WIN,
+                )
+                messagebox.showinfo("Lịch", "Đã gỡ task SkoolArchiver-Health (nếu có).")
+            except Exception as e:
+                messagebox.showerror("Lịch", str(e))
+        else:
+            try:
+                plist = Path.home() / "Library/LaunchAgents/com.skoolarchiver.health.plist"
+                subprocess.call(["launchctl", "unload", str(plist)])
+                if plist.exists():
+                    plist.unlink()
+                messagebox.showinfo("Lịch", "Đã unload LaunchAgent (nếu có).")
+            except Exception as e:
+                messagebox.showerror("Lịch", str(e))
 
     # ====================== RAG CHAT (S5 + Phase 2 vector/multi) ======================
     def show_chat(self, preselect=None):

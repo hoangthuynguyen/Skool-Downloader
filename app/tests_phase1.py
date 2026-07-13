@@ -152,13 +152,27 @@ def test_onedrive_module():
     print("  PASS  onedrive module import")
 
 
+def test_health_and_web():
+    import health_check as H
+    r = H.run_health()
+    assert "summary" in r and "courses" in r
+    assert "n_courses" in r["summary"]
+    import web_viewer as W
+    assert W._esc("<x>") == "&lt;x&gt;"
+    data = W.list_courses_data()
+    assert isinstance(data, list)
+    # handler routes exist
+    assert hasattr(W.Handler, "do_GET")
+    print("  PASS  health + web viewer")
+
+
 def main():
-    print("Phase 1+2+3 smoke tests")
+    print("Phase 1–4 smoke tests")
     fails = 0
     for fn in (test_progress_badge, test_queue_persist, test_cloud_policy,
                test_updates_diff, test_rag_score, test_tfidf_and_multi,
                test_queue_workers_settings, test_parallel_claim,
-               test_search_and_report, test_onedrive_module):
+               test_search_and_report, test_onedrive_module, test_health_and_web):
         try:
             fn()
         except Exception as e:
