@@ -95,6 +95,13 @@ def main():
                     help="Chi tai bai chua co video (diff-only).")
     ap.add_argument("--smart-update", action="store_true",
                     help="Smart update: missing-only + uu tien chuong moi tu _update_diff.json.")
+    ap.add_argument("--workers", type=int, default=None,
+                    help="Sprint E: so bai video tai song song (1-4). Mac dinh VIDEO_WORKERS.")
+    ap.add_argument("--notify", action="store_true",
+                    help="Sprint F: toast he thong sau khi xong (mac dinh bat neu NOTIFY_ON_DONE).")
+    ap.add_argument("--no-notify", action="store_true", help="Tat toast.")
+    ap.add_argument("--resume", action="store_true",
+                    help="Sprint G: dung last_course trong .settings.json.")
     ap.add_argument("--index", action="store_true", help="Sau pipeline: build RAG index (catalog+tfidf).")
     ap.add_argument("--no-index", action="store_true", help="Tat auto index sau pipeline.")
     # multi-course queue (S2) — uy thac queue_engine
@@ -146,6 +153,17 @@ def main():
             print(f"=== Queue xong ({n} job) ===")
         return
 
+    if a.resume and not a.course and not a.root:
+        try:
+            import session_state as SS
+            lc, _ = SS.get_last_course()
+            if lc:
+                print(f"(resume) last_course={lc}")
+                C.set_course(lc)
+            else:
+                print("(resume) chua co last_course — dung SkoolCourse")
+        except Exception as e:
+            print(f"[resume] {e}")
     if a.root:        C.set_root(a.root)
     elif a.course:    C.set_course(a.course)
     if a.dry_run:               C.DRY_RUN = True
@@ -175,20 +193,33 @@ def main():
         except Exception as e:
             print(f"[smart-update] fallback missing-only: {e}")
             C.ONLY_MISSING = True
+    if a.workers is not None:
+        C.VIDEO_WORKERS = max(1, min(int(a.workers), 4))
     do_index = bool(a.index) or (getattr(C, "AUTO_INDEX", True) and not a.no_index and not a.only)
+    do_notify = bool(a.notify) or (getattr(C, "NOTIFY_ON_DONE", True) and not a.no_notify)
+
+    # ghi last_course (Sprint G)
+    try:
+        import session_state as SS
+        SS.set_last_course(C.COURSE)
+    except Exception:
+        pass
 
     print(f"=== KHOA: {C.COURSE or C.ROOT.name}  ({C.ROOT}) ===\n")
+    video_fails = None
 
     if a.only:
         if a.only == "videos":
             if a.chapter or a.chapters or a.lesson or a.retry_failed or a.missing_only or a.smart_update:
                 folders.run()   # bao dam co folder truoc khi tai chon loc
-            run_videos(until_clean=a.until_clean, rounds=a.rounds, wait=a.round_wait)
+            video_fails = run_videos(until_clean=a.until_clean, rounds=a.rounds, wait=a.round_wait)
         else:
             STEPS[a.only]()
         # --only: chi index khi user goi --index (AUTO_INDEX chi full pipeline)
         if a.index:
             _maybe_index()
+        if do_notify and a.only in ("videos", None):
+            _maybe_notify(video_fails)
         return
 
     if not a.skip_preflight:
@@ -198,12 +229,14 @@ def main():
 
     folders.run()
     extras.run()                 # resource het han 8h -> lam som
-    run_videos(until_clean=a.until_clean, rounds=a.rounds, wait=a.round_wait)  # native 24h truoc, roi loom/youtube
+    video_fails = run_videos(until_clean=a.until_clean, rounds=a.rounds, wait=a.round_wait)
     if a.transcribe: transcribe.run()
     audit.run()
     if do_index or a.index:
         _maybe_index()
     print("=== HOAN TAT PIPELINE ===")
+    if do_notify:
+        _maybe_notify(video_fails)
 
 
 def _maybe_index():
@@ -214,6 +247,19 @@ def _maybe_index():
         build_catalog(C.ROOT)
     except Exception as e:
         print(f"[index] bo qua: {e}")
+
+
+def _maybe_notify(fails):
+    """Sprint F: toast khi xong / sach fail."""
+    try:
+        import notify as N
+        # fails la list tuple (folder, code, msg, fix) tu videos.run
+        n = 0 if fails is None else len(fails)
+        N.notify_pipeline_result(C.COURSE or C.ROOT.name, fails=[] if fails is None else fails)
+        if n == 0:
+            print("(notify) sach fail / hoan tat")
+    except Exception as e:
+        print(f"[notify] {e}")
 
 if __name__ == "__main__":
     main()

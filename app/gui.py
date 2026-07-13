@@ -950,12 +950,28 @@ class App:
         self.dash_search_box = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=14,
                                             border_width=1, border_color=BORDER)
 
+        # Sprint G — resume last course
+        try:
+            import session_state as SS
+            lc, lat = SS.get_last_course()
+        except Exception:
+            lc, lat = None, None
+        if lc or lat:
+            resume = ctk.CTkFrame(self.content, fg_color=ACCENT_SOFT, corner_radius=12)
+            resume.pack(fill="x", pady=(0, 8))
+            label = lc or "SkoolCourse"
+            ctk.CTkLabel(resume, text=f"↩  Gần nhất: {label}" + (f"  ·  {lat}" if lat else ""),
+                         font=(FT, 12), text_color=ACCENT).pack(side="left", padx=14, pady=10)
+            btn(resume, "Tiếp tục", self.dash_resume_last, kind="accent", width=100, height=30).pack(
+                side="right", padx=10, pady=8)
+
         # toolbar
         bar = ctk.CTkFrame(self.content, fg_color="transparent")
         bar.pack(fill="x", pady=(0, 8))
         btn(bar, "➕  Thêm khóa mới", self.go_import, kind="accent", width=150).pack(side="left")
         btn(bar, "↻  Làm mới", self._dash_refresh, kind="secondary", width=110).pack(side="left", padx=6)
         btn(bar, "🔄  Quét cập nhật", self.batch_local_health, kind="secondary", width=140).pack(side="left", padx=2)
+        btn(bar, "★ BM", self.show_bookmarks, kind="soft", width=70).pack(side="left", padx=2)
         btn(bar, "+ Hàng đợi", self.dash_enqueue_selected, kind="primary", width=130).pack(side="right")
 
         ctk.CTkLabel(self.content, text="KHÓA HỌC", font=(FT, 11, "bold"),
@@ -1238,7 +1254,79 @@ class App:
 
     def _dash_open(self, item):
         self.pick_var.set(item)
-        self.mode = "existing"; self.course_name = self.item_course(item); self.show_manager()
+        self.mode = "existing"
+        self.course_name = self.item_course(item)
+        try:
+            import session_state as SS
+            SS.set_last_course(self.course_name)
+        except Exception:
+            pass
+        self.show_manager()
+
+    def dash_resume_last(self):
+        try:
+            import session_state as SS
+            lc, _ = SS.get_last_course()
+        except Exception as e:
+            messagebox.showerror("Resume", str(e)); return
+        items = self.existing_courses()
+        if not items:
+            messagebox.showinfo("Resume", "Chưa có khóa."); return
+        # map last_course -> display item
+        target = None
+        for it in items:
+            if self.item_course(it) == lc or it == lc:
+                target = it; break
+            if lc is None and it.startswith("SkoolCourse"):
+                target = it; break
+        if not target:
+            messagebox.showinfo("Resume", f"Không tìm thấy khóa gần nhất: {lc or 'SkoolCourse'}"); return
+        self._dash_open(target)
+
+    def show_bookmarks(self):
+        try:
+            import session_state as SS
+            bms = SS.list_bookmarks()
+        except Exception as e:
+            messagebox.showerror("Bookmarks", str(e)); return
+        if not bms:
+            messagebox.showinfo("Bookmarks", "Chưa có bookmark.\nMở trình tải → ★ gắn bài."); return
+        # simple picker dialog
+        win = ctk.CTkToplevel(self.root)
+        win.title("Bookmarks")
+        win.geometry("520x360")
+        win.transient(self.root)
+        ctk.CTkLabel(win, text="★ Bookmarks", font=(FT, 14, "bold")).pack(anchor="w", padx=14, pady=(12, 6))
+        box = ctk.CTkScrollableFrame(win, fg_color=CARD)
+        box.pack(fill="both", expand=True, padx=12, pady=8)
+        for b in bms[:30]:
+            row = ctk.CTkFrame(box, fg_color="transparent"); row.pack(fill="x", pady=2)
+            txt = f"[{b.get('course')}] {b.get('title') or b.get('path')}"
+            ctk.CTkLabel(row, text=txt if len(txt) < 55 else txt[:52] + "…",
+                         font=(FT, 12), anchor="w").pack(side="left", fill="x", expand=True)
+            def open_bm(rec=b):
+                p = rec.get("path") or ""
+                if p and Path(p).exists():
+                    self._open_path(Path(p))
+                else:
+                    # mo khoa
+                    for it in self.existing_courses():
+                        if self.item_course(it) == rec.get("course"):
+                            self._dash_open(it); break
+                try:
+                    win.destroy()
+                except Exception:
+                    pass
+            def del_bm(rec=b):
+                try:
+                    import session_state as SS
+                    SS.remove_bookmark(rec.get("id"))
+                    row.destroy()
+                except Exception as e:
+                    messagebox.showerror("BM", str(e))
+            btn(row, "Mở", open_bm, kind="accent", width=50, height=26).pack(side="right", padx=2)
+            btn(row, "×", del_bm, kind="ghost", width=32, height=26).pack(side="right")
+        btn(win, "Đóng", win.destroy, kind="secondary", width=100).pack(pady=10)
 
     def _dash_show_fails(self, item):
         """Mo khoa + hien dialog fail (tu Dashboard)."""
@@ -1707,11 +1795,25 @@ class App:
         self._maybe_cloud_after(self.course_name)
         # auto index (Sprint A) — nen, khong block
         self._maybe_auto_index()
+        self._notify_download_result()
         self._show_fails_panel(self.content)
         btn(self.done_row, "📁  Mở thư mục", self.open_folder, kind="secondary", width=140).pack(side="left", padx=(0, 6))
         btn(self.done_row, "📦 Pack", lambda: self.export_knowledge_pack(), kind="soft", width=90).pack(side="left", padx=(0, 6))
         btn(self.done_row, "📄 Xuất", self.show_report, kind="secondary", width=100).pack(side="left", padx=(0, 6))
         btn(self.done_row, "↻ Dashboard", self.show_dashboard, kind="accent", width=130).pack(side="left")
+
+    def _notify_download_result(self):
+        """Sprint F: toast khi xong / sach fail."""
+        try:
+            if not getattr(C, "NOTIFY_ON_DONE", True):
+                return
+            import notify as N
+            fails = self._load_fails()
+            N.notify_pipeline_result(self.course_name or "SkoolCourse", fails=fails or [])
+            if not fails:
+                self.write("🔔 Đã thông báo: sạch fail")
+        except Exception as e:
+            self.write(f"[notify] {e}")
 
     def _maybe_auto_index(self):
         """Index RAG sau tai neu AUTO_INDEX (khong hoi)."""
@@ -1821,6 +1923,7 @@ class App:
         if not fails:
             messagebox.showinfo("Fails", "Không có video_fails.json."); return
         args = self._course_args() + ["--only", "videos", "--retry-failed", "--until-clean", "--skip-preflight"]
+        args += self._worker_args()
         if codes:
             args += ["--fail-codes", ",".join(codes)]
         n = len(fails)
@@ -1849,7 +1952,7 @@ class App:
             return
         args = self._course_args() + [
             "--only", "videos", "--smart-update", "--until-clean", "--skip-preflight",
-        ]
+        ] + self._worker_args()
         self.write(f"⚡ Smart update: {plan.get('summary')}")
         self.start([PY, "main.py"] + args, "SMART UPDATE", on_done=self._mgr_after_dl)
 
@@ -1948,6 +2051,19 @@ class App:
         btn(row, "⚡ Thiếu", self.smart_update_download, kind="accent", width=80, height=32).pack(side="right", padx=4)
         btn(row, "📦 Pack", lambda: self.export_knowledge_pack(), kind="soft", width=80, height=32).pack(side="right", padx=4)
         btn(row, "🗑 Dọn dở", self.cleanup_partials, kind="secondary", width=96, height=32).pack(side="right", padx=4)
+        # Sprint E workers
+        wrow = ctk.CTkFrame(bar, fg_color="transparent"); wrow.pack(fill="x", padx=14, pady=(0, 4))
+        ctk.CTkLabel(wrow, text="Workers (song song):", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        try:
+            cur_w = str(max(1, min(int(getattr(C, "VIDEO_WORKERS", 1) or 1), 4)))
+        except Exception:
+            cur_w = "1"
+        self.mgr_workers = ctk.StringVar(value=cur_w)
+        ctk.CTkOptionMenu(wrow, variable=self.mgr_workers, values=["1", "2", "3", "4"], width=64,
+                          fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
+                          text_color=TEXT).pack(side="left", padx=8)
+        ctk.CTkLabel(wrow, text="(1 = tuần tự · 2–4 = song song, cẩn rate-limit)",
+                     font=(FT, 11), text_color=TEXT2).pack(side="left")
         self.mgr_status = ctk.CTkLabel(bar, text="⏳  Đang đọc danh sách chương…", font=(FT, 12),
                                        text_color=TEXT2, justify="left", wraplength=560)
         self.mgr_status.pack(anchor="w", padx=16, pady=(2, 12))
@@ -2026,12 +2142,25 @@ class App:
     def _mgr_render_lesson(self, L):
         lrow = ctk.CTkFrame(self.mgr_scroll, fg_color="transparent"); lrow.pack(fill="x", padx=(38, 4), pady=0)
         ic = ctk.CTkLabel(lrow, text=("✓" if L["done"] else "•"), text_color=(SUCCESS if L["done"] else TEXT2), width=18, font=(FT, 13)); ic.pack(side="left")
-        t = L["title"] or "(bài)"; t = t if len(t) <= 42 else t[:41] + "…"
-        ctk.CTkLabel(lrow, text=t, font=(FT, 12), text_color=TEXT, width=300, anchor="w").pack(side="left")
-        host = (L["host"] or "").replace("www.", "")[:16]
-        ctk.CTkLabel(lrow, text=host, font=("Consolas", 10), text_color=TEXT2, width=120, anchor="w").pack(side="left")
-        btn(lrow, "⬇", (lambda r=L["rel"], tt=(L["title"] or "bài"): self.dl_lesson(r, tt)), kind="ghost", width=32, height=26).pack(side="right", padx=4)
+        t = L["title"] or "(bài)"; t = t if len(t) <= 38 else t[:37] + "…"
+        ctk.CTkLabel(lrow, text=t, font=(FT, 12), text_color=TEXT, width=280, anchor="w").pack(side="left")
+        host = (L["host"] or "").replace("www.", "")[:14]
+        ctk.CTkLabel(lrow, text=host, font=("Consolas", 10), text_color=TEXT2, width=100, anchor="w").pack(side="left")
+        btn(lrow, "⬇", (lambda r=L["rel"], tt=(L["title"] or "bài"): self.dl_lesson(r, tt)), kind="ghost", width=32, height=26).pack(side="right", padx=2)
+        btn(lrow, "★", (lambda L=L: self._bookmark_lesson(L)), kind="ghost", width=28, height=26).pack(side="right", padx=1)
         self.mgr_widgets[("lesson", L["rel"])] = {"ic": ic}
+
+    def _bookmark_lesson(self, L):
+        try:
+            import session_state as SS
+            folder = L.get("folder")
+            path = str(folder) if folder is not None else L.get("rel") or ""
+            rec = SS.add_bookmark(self.course_name or "SkoolCourse", path,
+                                  title=L.get("title") or "")
+            self.write(f"★ Bookmark: {rec.get('title')}")
+            messagebox.showinfo("Bookmark", f"Đã gắn ★\n{rec.get('title')}")
+        except Exception as e:
+            messagebox.showerror("Bookmark", str(e))
 
     def _mgr_toggle(self, name):
         self.mgr_expanded.discard(name) if name in self.mgr_expanded else self.mgr_expanded.add(name)
@@ -2040,23 +2169,34 @@ class App:
     def _course_args(self):
         return (["--course", self.course_name] if self.course_name else [])
 
+    def _worker_args(self):
+        """Sprint E: --workers tu OptionMenu manager."""
+        try:
+            w = int(self.mgr_workers.get()) if hasattr(self, "mgr_workers") else 1
+            w = max(1, min(w, 4))
+            if w > 1:
+                return ["--workers", str(w)]
+        except Exception:
+            pass
+        return []
+
     def dl_all(self):
         if self.proc: messagebox.showinfo("Đang bận", "Đang tải — bấm Dừng trước đã."); return
-        args = self._course_args()
+        args = self._course_args() + self._worker_args()
         if getattr(self, "opt_clean", None) and self.opt_clean.get(): args.append("--until-clean")
         self.mgr_busy = "toàn bộ khóa"; self._mgr_busy_status()
         self.start([PY, "main.py"] + args, "TẢI TOÀN BỘ", on_done=self._mgr_after_dl)
 
     def dl_chapter(self, title, name):
         if self.proc: messagebox.showinfo("Đang bận", "Đang tải — bấm Dừng trước đã."); return
-        args = self._course_args() + ["--only", "videos", "--chapter", title]
+        args = self._course_args() + ["--only", "videos", "--chapter", title] + self._worker_args()
         if getattr(self, "opt_clean", None) and self.opt_clean.get(): args.append("--until-clean")
         self.mgr_busy = f"chương “{name}”"; self._mgr_busy_status()
         self.start([PY, "main.py"] + args, f"TẢI CHƯƠNG: {name}", on_done=self._mgr_after_dl)
 
     def dl_lesson(self, rel, title):
         if self.proc: messagebox.showinfo("Đang bận", "Đang tải — bấm Dừng trước đã."); return
-        args = self._course_args() + ["--only", "videos", "--lesson", rel]
+        args = self._course_args() + ["--only", "videos", "--lesson", rel] + self._worker_args()
         self.mgr_busy = f"bài “{title}”"; self._mgr_busy_status()
         self.start([PY, "main.py"] + args, f"TẢI BÀI: {title}", on_done=self._mgr_after_dl)
 
@@ -2069,6 +2209,7 @@ class App:
         self._mgr_refresh_fails()
         self._maybe_cloud_after(self.course_name)
         self._maybe_auto_index()
+        self._notify_download_result()
 
     def _mgr_refresh_fails(self):
         if not (hasattr(self, "mgr_fail_box") and self.mgr_fail_box.winfo_exists()):
@@ -2160,7 +2301,8 @@ class App:
     def show_transcribe(self):
         self.clear(); self.purpose = "import"
         nm = self.course_name or "SkoolCourse"
-        self.head(f"Tạo phụ đề: {nm}", "Bóc lời giảng → .txt/.srt. Windows Task chạy ngầm (sống qua reboot); bài đã có phụ đề được bỏ qua.")
+        self.head(f"Tạo phụ đề: {nm}",
+                  "Sprint H: chỉ bóc bài còn thiếu .txt/.srt. Task ngầm sống qua reboot.")
         card = self.card()
         self.trans_lbl = ctk.CTkLabel(card, text="⏳  Đang kiểm tra…", font=(FT, 13), text_color=TEXT2)
         self.trans_lbl.pack(anchor="w", padx=16, pady=(14, 6))
@@ -2170,8 +2312,9 @@ class App:
         self.trans_pb.pack(fill="x", padx=16, pady=(0, 14))
         act = self.card()
         r = ctk.CTkFrame(act, fg_color="transparent"); r.pack(fill="x", padx=14, pady=14)
-        btn(r, "▶  Bắt đầu tạo phụ đề (ngầm)", self.start_transcribe, kind="accent", width=260).pack(side="left")
-        ctk.CTkLabel(r, text="Độc lập — có thể đóng app.", font=(FT, 11), text_color=TEXT2).pack(side="left", padx=10)
+        btn(r, "▶  Phụ đề chỉ thiếu (ngầm)", self.start_transcribe, kind="accent", width=230).pack(side="left")
+        btn(r, "▶  Chạy 1 lần (CLI)", self.run_transcribe_once, kind="secondary", width=150).pack(side="left", padx=8)
+        ctk.CTkLabel(r, text="Bỏ qua bài đã có phụ đề.", font=(FT, 11), text_color=TEXT2).pack(side="left", padx=6)
         nav = ctk.CTkFrame(self.content, fg_color="transparent"); nav.pack(fill="x", pady=12)
         btn(nav, "←  Về trình tải", self.show_manager, kind="ghost", width=140).pack(side="left")
         btn(nav, "Dịch tiếng Việt  →", self.show_translate, kind="secondary", width=170).pack(side="right")
@@ -2188,9 +2331,17 @@ class App:
 
     def start_transcribe(self):
         self.run_sub_on()
-        self.write("Đã bật tạo phụ đề chạy ngầm (Windows Task) cho khóa.")
+        self.write("Đã bật tạo phụ đề chạy ngầm (chỉ bài thiếu) cho khóa.")
         if hasattr(self, "trans_lbl") and self.trans_lbl.winfo_exists():
             self.trans_lbl.configure(text="▶  Đã bật chạy ngầm — phụ đề sẽ xuất hiện dần. Quay lại trang này để xem tiến độ.")
+
+    def run_transcribe_once(self):
+        """Sprint H: chay main --only transcribe (chi thieu)."""
+        if self.proc:
+            messagebox.showinfo("Đang bận", "Đang có tác vụ chạy."); return
+        args = self._course_args() + ["--only", "transcribe", "--skip-preflight"]
+        self.write("▶ Transcribe chỉ bài thiếu…")
+        self.start([PY, "main.py"] + args, "TRANSCRIBE THIẾU", on_done=self.show_transcribe)
 
     # ====================== DỊCH TIẾNG VIỆT ======================
     def show_translate(self):
@@ -3099,9 +3250,10 @@ class App:
         ctk.CTkLabel(hcard, text="Quét mọi khóa: bài thiếu, token hết hạn. Ghi courses/_health.json + _health.md.",
                      font=(FT, 12), text_color=TEXT2, wraplength=540, justify="left").pack(anchor="w", padx=14, pady=(0, 8))
         hrow = ctk.CTkFrame(hcard, fg_color="transparent"); hrow.pack(fill="x", padx=14, pady=(0, 12))
-        btn(hrow, "▶  Chạy health ngay", self.health_run_now, kind="success", width=170).pack(side="left")
-        btn(hrow, "Bật lịch hàng ngày", self.health_install_schedule, kind="secondary", width=160).pack(side="left", padx=8)
-        btn(hrow, "Tắt lịch", self.health_uninstall_schedule, kind="ghost", width=100).pack(side="left")
+        btn(hrow, "▶  Chạy health ngay", self.health_run_now, kind="success", width=150).pack(side="left")
+        btn(hrow, "📋 Digest", self.health_digest_now, kind="accent", width=100).pack(side="left", padx=6)
+        btn(hrow, "Bật lịch hàng ngày", self.health_install_schedule, kind="secondary", width=150).pack(side="left", padx=6)
+        btn(hrow, "Tắt lịch", self.health_uninstall_schedule, kind="ghost", width=90).pack(side="left")
         self.health_lbl = ctk.CTkLabel(hcard, text="", font=(FT, 12), text_color=TEXT2, wraplength=540, justify="left")
         self.health_lbl.pack(anchor="w", padx=14, pady=(0, 12))
 
@@ -3228,6 +3380,37 @@ class App:
             if hasattr(self, "health_lbl") and self.health_lbl.winfo_exists():
                 self.health_lbl.configure(text=msg + "\n→ courses/_health.json · _health.md")
             messagebox.showinfo("Health", msg)
+        self.run_async(work, cb)
+
+    def health_digest_now(self):
+        """Sprint I: health + digest delta."""
+        self.write("📋 Đang tạo Health Digest…")
+        def work():
+            try:
+                import health_check as H
+                prev = H.load_previous_health()
+                r = H.run_health()
+                H.write_health(r)
+                path, delta = H.write_digest(r, prev=prev)
+                return r, str(path), delta
+            except Exception as e:
+                return e
+        def cb(res):
+            if isinstance(res, Exception):
+                messagebox.showerror("Digest", str(res)); return
+            r, path, delta = res
+            sm = r.get("summary") or {}
+            extra = ""
+            if delta.get("has_prev"):
+                extra = (f"\nΔ done{delta['d_done']:+d} missing{delta['d_missing']:+d} "
+                         f"fails{delta['d_fails']:+d}")
+            msg = (f"{sm.get('n_courses')} khóa · thiếu {sm.get('missing')} · "
+                   f"fail {sm.get('fails', 0)} · chú ý {sm.get('needs_attention')}{extra}\n\n{path}")
+            self.write(f"📋 Digest → {path}")
+            if hasattr(self, "health_lbl") and self.health_lbl.winfo_exists():
+                self.health_lbl.configure(text=msg)
+            if messagebox.askyesno("Digest", f"{msg}\n\nMở thư mục?"):
+                self._open_path(Path(path).parent)
         self.run_async(work, cb)
 
     def health_install_schedule(self):

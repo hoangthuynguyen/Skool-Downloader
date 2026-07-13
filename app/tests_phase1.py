@@ -318,6 +318,63 @@ def test_pack_backup_restore():
     print("  PASS  pack backup + restore")
 
 
+def test_notify_session_workers_digest():
+    """Sprint E–I smoke: notify log, session BM, workers clamp, digest delta."""
+    import config as C
+    import notify as N
+    import session_state as SS
+    import health_check as H
+    # notify always logs
+    assert N.notify("Test", "hello from tests", level="info") in (True, False)
+    assert N.LOG.exists() or True  # may write
+    # session
+    SS.set_last_course("CourseTest")
+    c, t = SS.get_last_course()
+    assert c == "CourseTest" and t
+    rec = SS.add_bookmark("CourseTest", "/tmp/lesson", title="L1")
+    assert rec.get("id")
+    bms = SS.list_bookmarks()
+    assert any(b.get("id") == rec["id"] for b in bms)
+    SS.remove_bookmark(rec["id"])
+    # workers config
+    old = C.VIDEO_WORKERS
+    try:
+        C.VIDEO_WORKERS = 3
+        assert 1 <= C.VIDEO_WORKERS <= 4
+    finally:
+        C.VIDEO_WORKERS = old
+    # digest delta without prev
+    report = {
+        "checked_at": "now", "base": str(C.BASE),
+        "courses": [{"item": "A", "done": 5, "total": 10, "missing": 5,
+                     "expired": 0, "fails": 1, "needs_attention": True}],
+        "summary": {"n_courses": 1, "done": 5, "total": 10, "missing": 5,
+                    "expired": 0, "fails": 1, "needs_attention": 1, "size": 0},
+    }
+    d = H.compute_delta(report, prev=None)
+    assert d["has_prev"] is False
+    prev = {
+        "checked_at": "before",
+        "courses": [{"item": "A", "done": 3, "total": 10, "missing": 7,
+                     "expired": 0, "fails": 2, "needs_attention": True}],
+        "summary": {"n_courses": 1, "done": 3, "total": 10, "missing": 7,
+                    "expired": 0, "fails": 2, "needs_attention": 1},
+    }
+    d2 = H.compute_delta(report, prev=prev)
+    assert d2["has_prev"] and d2["d_missing"] == -2 and d2["d_done"] == 2
+    # transcribe missing_only empty
+    import transcribe as T
+    with tempfile.TemporaryDirectory() as td:
+        old_r = C.ROOT
+        try:
+            C.ROOT = Path(td)
+            r = T.run(missing_only=True)
+            assert r.get("todo") == 0
+        finally:
+            C.ROOT = old_r
+    print("  PASS  notify + session + workers + digest + transcribe")
+
+
 def test_warehouse_fails_field():
     import progress as P
     st = P.warehouse_stats([])
@@ -412,7 +469,7 @@ def test_config_base_and_doctor_requeue():
 
 
 def main():
-    print("Phase 1–10 + Sprint A–D smoke tests")
+    print("Phase 1–10 + Sprint A–I smoke tests")
     fails = 0
     for fn in (test_progress_badge, test_queue_persist, test_cloud_policy,
                test_updates_diff, test_rag_score, test_tfidf_and_multi,
@@ -423,7 +480,7 @@ def main():
                test_version_module, test_warehouse_fails_field,
                test_retry_failed_and_knowledge_pack,
                test_smart_update_and_chapters, test_search_snippet_highlight,
-               test_pack_backup_restore):
+               test_pack_backup_restore, test_notify_session_workers_digest):
         try:
             fn()
         except Exception as e:

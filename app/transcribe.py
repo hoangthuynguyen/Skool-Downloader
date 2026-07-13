@@ -147,11 +147,24 @@ def pending_videos(root=None, min_age=0):
         out.append(v)
     return out
 
-def run():
-    print("=== TRANSCRIBE ===")
+def missing_count(root=None):
+    """Sprint H: so video con thieu transcript."""
+    return len(pending_videos(root or C.ROOT, min_age=0))
+
+
+def run(missing_only=True):
+    """Transcribe. missing_only=True (mac dinh Sprint H): chi video chua co .txt."""
+    print("=== TRANSCRIBE ===" + (" (chi thieu)" if missing_only else ""))
     vids = list_videos()
-    todo = [v for v in vids if not done_txt(v) and not skipped(v)]
-    print(f"Tong video: {len(vids)} | can transcribe: {len(todo)}")
+    if missing_only:
+        todo = [v for v in vids if not done_txt(v) and not skipped(v)]
+    else:
+        todo = list(vids)
+    already = len(vids) - len(todo) if missing_only else 0
+    print(f"Tong video: {len(vids)} | can transcribe: {len(todo)} | da co phu de: {already}")
+    if not todo:
+        print("--- TRANSCRIBE: khong con bai thieu ---\n")
+        return {"done": 0, "todo": 0, "already": already}
     done = noaudio = skip = retry = 0
     for i, v in enumerate(todo, 1):
         print(f"[{i}/{len(todo)}] {v.relative_to(C.ROOT)}", flush=True)
@@ -161,4 +174,6 @@ def run():
         elif status == "skip": skip += 1; print(f"   [bo qua] {detail}", flush=True)
         else: retry += 1; print(f"   [LOI tam] {detail}", flush=True)
     print(f"--- TRANSCRIBE: done={done} noaudio={noaudio} skip={skip} loi-tam={retry} "
-          f"da-co={len(vids)-len(todo)} ---\n")
+          f"da-co={already} ---\n")
+    return {"done": done, "todo": len(todo), "already": already,
+            "noaudio": noaudio, "skip": skip, "retry": retry}

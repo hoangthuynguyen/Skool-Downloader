@@ -1,8 +1,18 @@
-import os, sys, time, subprocess
+import os, sys, time, subprocess, threading
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 import common as K
 import config as C
+
+_PRINT_LOCK = threading.Lock()
+
+
+def _plog(*args, **kwargs):
+    """Print an toan khi parallel workers."""
+    with _PRINT_LOCK:
+        print(*args, **kwargs)
+        sys.stdout.flush()
 
 def passes(url):
     return bool(url) and (not C.ONLY_HOSTS or any(h in url for h in C.ONLY_HOSTS))
@@ -173,8 +183,8 @@ def classify(text, url):
         return ("ffmpeg", "Thieu/loi ffmpeg", "Chay setup.ps1 (ffdl install --add-path)")
     return ("unknown", "Loi khong xac dinh", "Xem log o tren; chay lai. Lap lai -> bao ky thuat")
 
-def _run_ytdlp(url, folder):
-    """Chay yt-dlp, vua hien live vua giu lai phan duoi (de phan loai loi). Tra ve (rc, tail_text)."""
+def _run_ytdlp(url, folder, quiet=False):
+    """Chay yt-dlp. quiet=True: khong stream live (parallel). Tra ve (rc, tail_text)."""
     try:
         proc = subprocess.Popen(ytdlp_cmd(url, folder), stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True,
@@ -183,26 +193,29 @@ def _run_ytdlp(url, folder):
         return -1, f"[loi goi yt-dlp] {e}"
     tail = deque(maxlen=80)
     for line in proc.stdout:
-        sys.stdout.write(line)
+        if not quiet:
+            with _PRINT_LOCK:
+                sys.stdout.write(line)
+                sys.stdout.flush()
         tail.append(line)
     proc.wait()
     return proc.returncode, "".join(tail)
 
-def download(url, folder):
+def download(url, folder, quiet=False):
     """Tra ve (ok: bool, reason: (ma, mo ta, fix) | None)."""
     folder.mkdir(parents=True, exist_ok=True)
     last = ("unknown", "Loi khong xac dinh", "Chay lai")
     for attempt in range(1, C.MAX_TRIES + 1):
         K.wait_online()
-        rc, tail = _run_ytdlp(url, folder)
+        rc, tail = _run_ytdlp(url, folder, quiet=quiet)
         if rc == 0 and done_file(folder):
             return True, None
         last = classify(tail, url)
         if last[0] not in RECOVER:
-            print(f"   [{last[1]}] -> {last[2]}", flush=True)
+            _plog(f"   [{last[1]}] -> {last[2]}")
             break
         if attempt < C.MAX_TRIES:
-            print(f"   [thu lai {attempt}/{C.MAX_TRIES}] {last[1]}; nghi {C.RETRY_WAIT}s...", flush=True)
+            _plog(f"   [thu lai {attempt}/{C.MAX_TRIES}] {last[1]}; nghi {C.RETRY_WAIT}s...")
             time.sleep(C.RETRY_WAIT)
     return False, last
 
@@ -262,39 +275,108 @@ def run():
             f"{len(C.ONLY_CHAPTERS)} ch." if getattr(C, "ONLY_CHAPTERS", None) else "tat ca"
         )
         print(f"(loc: chuong={ch_disp} bai={C.ONLY_LESSON or 'tat ca'})")
-    print(f"Tong video luot nay: {total}\n")
+    workers = max(1, min(int(getattr(C, "VIDEO_WORKERS", 1) or 1), 4))
+    print(f"Tong video luot nay: {total}" + (f"  · workers={workers}" if workers > 1 else "") + "\n")
     _warn_expired_tokens(plan)
-    idx = tai = skip = loi = miss = 0
+
+    # gop danh sach viec (Sprint E parallel)
+    jobs = []  # (folder, url, chap_name)
+    miss = 0
+    for chap, lessons, ct in plan:
+        if chap is None:
+            n = sum(1 for _, x in lessons if passes(x.get("url")))
+            miss += n
+            print(f"[!] khong khop folder '{ct}' -> bo {n}\n")
+            continue
+        for folder, node in lessons:
+            url = node.get("url")
+            if not url or not passes(url) or not lesson_ok(folder):
+                continue
+            jobs.append((folder, url, chap.name))
+
+    total_jobs = len(jobs)
+    idx = tai = skip = loi = 0
     fails = []   # (folder, ma, mo ta, fix)
+    quiet = workers > 1
+    counter_lock = threading.Lock()
+    done_count = [0]
+
+    def _one(item):
+        folder, url, chap_name = item
+        host = url.split("/")[2] if "://" in url else url[:24]
+        if done_file(folder):
+            return ("skip", folder, chap_name, host, None)
+        if C.DRY_RUN:
+            return ("dry", folder, chap_name, host, None)
+        ok, reason = download(url, folder, quiet=quiet)
+        if ok:
+            return ("ok", folder, chap_name, host, None)
+        return ("fail", folder, chap_name, host, reason)
+
     try:
-        for chap, lessons, ct in plan:
-            if chap is None:
-                n = sum(1 for _, x in lessons if passes(x.get("url")))
-                idx += n; miss += n; print(f"[!] khong khop folder '{ct}' -> bo {n}\n"); continue
-            print(f"=== [{chap.name}] ===")
-            for folder, node in lessons:
-                url = node.get("url")
-                if not url or not passes(url) or not lesson_ok(folder): continue
+        if workers <= 1:
+            last_chap = None
+            for folder, url, chap_name in jobs:
+                if chap_name != last_chap:
+                    print(f"=== [{chap_name}] ===")
+                    last_chap = chap_name
                 idx += 1
-                pct = round(idx * 100 / total, 1) if total else 0
+                pct = round(idx * 100 / total_jobs, 1) if total_jobs else 0
                 host = url.split("/")[2] if "://" in url else url[:24]
-                print(f"[{idx}/{total} = {pct}%] {folder.name}  <{host}>", flush=True)
-                if done_file(folder): skip += 1; print("   da co -> skip", flush=True); continue
-                if C.DRY_RUN: continue
-                ok, reason = download(url, folder)
-                if ok: tai += 1
+                print(f"[{idx}/{total_jobs} = {pct}%] {folder.name}  <{host}>", flush=True)
+                status, _fd, _ch, _host, reason = _one((folder, url, chap_name))
+                if status == "skip":
+                    skip += 1
+                    print("   da co -> skip", flush=True)
+                elif status == "dry":
+                    pass
+                elif status == "ok":
+                    tai += 1
                 else:
                     loi += 1
                     ma, mo, fix = reason
                     fails.append((str(folder), ma, mo, fix))
                     print(f"   [THAT BAI] {mo}", flush=True)
-            print()
+            if last_chap:
+                print()
+        else:
+            print(f">> Parallel download workers={workers} (log gon)\n")
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futs = {pool.submit(_one, j): j for j in jobs}
+                for fut in as_completed(futs):
+                    try:
+                        status, folder, chap_name, host, reason = fut.result()
+                    except Exception as e:
+                        loi += 1
+                        j = futs[fut]
+                        fails.append((str(j[0]), "unknown", str(e), "Chay lai"))
+                        _plog(f"[ERR] {j[0].name}: {e}")
+                        continue
+                    with counter_lock:
+                        done_count[0] += 1
+                        n = done_count[0]
+                    pct = round(n * 100 / total_jobs, 1) if total_jobs else 0
+                    tag = folder.name if hasattr(folder, "name") else str(folder)
+                    if status == "skip":
+                        skip += 1
+                        _plog(f"[{n}/{total_jobs} = {pct}%] skip  {tag}")
+                    elif status == "dry":
+                        _plog(f"[{n}/{total_jobs} = {pct}%] dry   {tag}")
+                    elif status == "ok":
+                        tai += 1
+                        _plog(f"[{n}/{total_jobs} = {pct}%] OK    {tag}  <{host}>")
+                    else:
+                        loi += 1
+                        ma, mo, fix = reason or ("unknown", "?", "?")
+                        fails.append((str(folder), ma, mo, fix))
+                        _plog(f"[{n}/{total_jobs} = {pct}%] FAIL  {tag}  {mo}")
+            idx = total_jobs
     except KeyboardInterrupt:
         print("\n[Dung] - chay lai se resume.\n")
 
-    print(f"--- VIDEO: tai={tai} skip={skip} loi={loi} folder-thieu={miss} ({idx}/{total}) ---")
+    print(f"--- VIDEO: tai={tai} skip={skip} loi={loi} folder-thieu={miss} "
+          f"({idx or total_jobs}/{total_jobs or total}) workers={workers} ---")
     if fails:
-        # gom theo nguyen nhan -> in cach xu ly 1 lan moi nhom
         groups = {}
         for folder, ma, mo, fix in fails:
             groups.setdefault((ma, mo, fix), []).append(folder)
@@ -302,9 +384,10 @@ def run():
         for (ma, mo, fix), folders in sorted(groups.items(), key=lambda x: -len(x[1])):
             print(f"\n  [{mo}]  x{len(folders)}")
             print(f"     -> Can lam: {fix}")
-            for x in folders[:30]: print(f"     - {x}")
-            if len(folders) > 30: print(f"     ... va {len(folders)-30} bai nua")
-        # ghi de GUI / lan chay sau doc
+            for x in folders[:30]:
+                print(f"     - {x}")
+            if len(folders) > 30:
+                print(f"     ... va {len(folders)-30} bai nua")
         try:
             import json
             out = Path(C.ROOT) / "video_fails.json"
@@ -315,11 +398,11 @@ def run():
         except Exception as e:
             print(f"[warn] khong ghi video_fails.json: {e}")
     else:
-        # xoa file fails cu neu lan nay sach
         try:
             p = Path(C.ROOT) / "video_fails.json"
             if p.exists():
                 p.unlink()
+                print(">> Da xoa video_fails.json (sach fail)")
         except Exception:
             pass
     print()
