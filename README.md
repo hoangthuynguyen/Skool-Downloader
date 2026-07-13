@@ -2,6 +2,7 @@
 
 Công cụ lưu trữ **toàn bộ một khóa học Skool** về máy: cây thư mục theo chương/bài, video (native Skool + Loom + YouTube), mô tả bài, tài liệu (resources) và **phụ đề tiếng Anh (Whisper)** — chạy bằng **một lệnh**, có **kiểm tra môi trường trước khi chạy** và **báo lỗi kèm cách xử lý**.
 
+> Phiên bản hiện tại: **1.9.0** (`python app/main.py --version` · `python app/selftest.py`).  
 > Đã kiểm chứng trên khóa *AI Automations by Jack* (584 bài, ~170 GB).
 
 ---
@@ -181,6 +182,8 @@ Xong. Video + tài liệu + mô tả nằm trong `courses\<Tên khóa>\`, báo c
 python app\preflight.py --course "X"           # chỉ kiểm tra môi trường
 python app\doctor.py                           # doctor full (core + BASE + phase modules)
 python app\doctor.py --set-base "E:\SkoolProject"
+python app\selftest.py                         # doctor + unit smoke
+python app\main.py --version
 python app\queue_engine.py --requeue-failed    # thu lai job failed/stopped
 python app\cleanup.py --course "X" --fails     # xem video_fails.json
 python app\cleanup.py --course "X" --apply     # xoa file .part/.ytdl thua

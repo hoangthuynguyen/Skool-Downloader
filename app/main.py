@@ -73,6 +73,7 @@ def list_courses():
 def main():
     K.setup_console()
     ap = argparse.ArgumentParser(description="Skool course archiver")
+    ap.add_argument("--version", action="store_true", help="In phien ban roi thoat.")
     ap.add_argument("--course", help="Ten khoa duoi BASE/courses/. Bo trong = dung BASE/SkoolCourse (cu).")
     ap.add_argument("--root", help="Override truc tiep thu muc lam viec (thay cho --course).")
     ap.add_argument("--only", choices=list(STEPS), help="Chi chay 1 buoc.")
@@ -96,6 +97,14 @@ def main():
     ap.add_argument("--cookies-file", help="Duong dan cookies.txt cho yt-dlp.")
     ap.add_argument("--cookies-browser", help="Lay cookies tu trinh duyet (firefox).")
     a = ap.parse_args()
+
+    if a.version:
+        try:
+            import version as V
+            print(V.version_string())
+        except Exception:
+            print("Skool Archiver")
+        return
 
     if a.list_courses:
         list_courses(); return

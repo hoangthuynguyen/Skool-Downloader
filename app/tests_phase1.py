@@ -182,6 +182,13 @@ def test_export_site_and_embed():
     print("  PASS  export site + embed module")
 
 
+def test_version_module():
+    import version as V
+    assert V.__version__
+    assert "Skool" in V.version_string()
+    print("  PASS  version module")
+
+
 def test_cleanup_fails():
     import cleanup as CL
     with tempfile.TemporaryDirectory() as td:
@@ -265,14 +272,15 @@ def test_config_base_and_doctor_requeue():
 
 
 def main():
-    print("Phase 1–8 smoke tests")
+    print("Phase 1–9 smoke tests")
     fails = 0
     for fn in (test_progress_badge, test_queue_persist, test_cloud_policy,
                test_updates_diff, test_rag_score, test_tfidf_and_multi,
                test_queue_workers_settings, test_parallel_claim,
                test_search_and_report, test_onedrive_module, test_health_and_web,
                test_export_site_and_embed, test_config_base_and_doctor_requeue,
-               test_video_classify_and_lesson_path, test_cleanup_fails):
+               test_video_classify_and_lesson_path, test_cleanup_fails,
+               test_version_module):
         try:
             fn()
         except Exception as e:

@@ -70,15 +70,26 @@ class App:
         self._cfg_lock = threading.Lock()  # serialize khi tam set config.C (tao folder)
         self._in_err = False             # tranh de quy man hinh loi
 
-        root.title("Skool Archiver"); root.geometry("900x680"); root.minsize(640, 480)
+        try:
+            import version as V
+            _ver = V.__version__
+        except Exception:
+            _ver = ""
+        root.title(f"Skool Archiver {_ver}".strip()); root.geometry("900x680"); root.minsize(640, 480)
         root.configure(fg_color=BG)
         root.grid_columnconfigure(1, weight=1); root.grid_rowconfigure(0, weight=1)
 
         # ---------- sidebar ----------
         side = ctk.CTkFrame(root, width=206, corner_radius=0, fg_color=SIDE)
         side.grid(row=0, column=0, sticky="nsw"); side.grid_propagate(False)
+        try:
+            import version as V
+            _side_ver = f"v{V.__version__}"
+        except Exception:
+            _side_ver = ""
         ctk.CTkLabel(side, text="📦  Skool Archiver", font=(FT, 18, "bold"), text_color="white").pack(anchor="w", padx=22, pady=(26, 4))
-        ctk.CTkLabel(side, text="Lưu trữ khóa học Skool", font=(FT, 11), text_color=ON_SIDE).pack(anchor="w", padx=22, pady=(0, 12))
+        ctk.CTkLabel(side, text=f"Lưu trữ khóa học Skool  {_side_ver}".strip(),
+                     font=(FT, 11), text_color=ON_SIDE).pack(anchor="w", padx=22, pady=(0, 12))
         self.step_box = ctk.CTkFrame(side, fg_color="transparent"); self.step_box.pack(fill="x", padx=14)
         # Nav Phase 1 (S1–S5)
         nav = ctk.CTkFrame(side, fg_color="transparent"); nav.pack(fill="x", padx=10, pady=(14, 0))
@@ -620,6 +631,11 @@ class App:
                 self.dash_summary.configure(text=f"Lỗi quét: {entries}")
             return
         self.dash_entries = entries
+        total_fails = 0
+        try:
+            import cleanup as CL
+        except Exception:
+            CL = None
         for e in entries:
             it = e["item"]
             s = e.get("scan") or {}
@@ -631,25 +647,39 @@ class App:
             except Exception:
                 continue
             badge = e.get("badge") or P.status_badge(s)
-            w["badge"].configure(text=badge.get("label") or "?")
-            w["prog"].configure(text=self._fmt_prog(s))
-            tot = s.get("total") or 0; done = s.get("done") or 0
-            w["pb"].set((done / tot) if tot else 0)
-            # badge update meta
+            badge_txt = badge.get("label") or "?"
+            n_fail = 0
+            if CL:
+                try:
+                    n_fail = len(CL.load_fails(e["root"]))
+                except Exception:
+                    n_fail = 0
+            total_fails += n_fail
+            # uu tien: token het han (badge) · fail · update meta
+            if n_fail and badge.get("code") != "token":
+                badge_txt = f"⚠ {n_fail} fail"
             try:
                 import updates as U
                 meta = U.read_update_meta(e["root"])
-                if meta and meta.get("has_updates"):
-                    w["badge"].configure(text="🆕 " + (badge.get("label") or "Cập nhật"))
+                if meta and meta.get("has_updates") and n_fail == 0 and badge.get("code") != "token":
+                    badge_txt = "🆕 " + (badge.get("label") or "Cập nhật")
             except Exception:
                 pass
+            w["badge"].configure(text=badge_txt)
+            prog_txt = self._fmt_prog(s)
+            if n_fail:
+                prog_txt += f" · ⚠ {n_fail} fail"
+            w["prog"].configure(text=prog_txt)
+            tot = s.get("total") or 0; done = s.get("done") or 0
+            w["pb"].set((done / tot) if tot else 0)
         st = P.warehouse_stats(entries)
         if hasattr(self, "dash_summary") and self.dash_summary.winfo_exists():
             left = st["total"] - st["done"]
             self.dash_summary.configure(
                 text=(f"{st['courses']} khóa  ·  {st['done']}/{st['total']} bài  ·  {fmt_size(st['size'])}"
                       + (f"  ·  còn {left} bài" if left else "  ·  ✓ đủ")
-                      + (f"  ·  🔑 {st['expired']} hết hạn" if st["expired"] else ""))
+                      + (f"  ·  🔑 {st['expired']} hết hạn" if st["expired"] else "")
+                      + (f"  ·  ⚠ {total_fails} fail" if total_fails else ""))
             )
 
     def _dash_refresh(self):
@@ -1577,6 +1607,21 @@ class App:
     def open_folder(self):
         self._open_path(self.course_root())
 
+    def _log_course_fails(self, course_name=None):
+        """Ghi tom tat video_fails sau job queue (khong mo UI panel)."""
+        try:
+            import cleanup as CL
+            root = self.course_root(course_name)
+            fails = CL.load_fails(root)
+            if not fails:
+                return
+            groups = CL.summarize_fails(fails)
+            parts = [f"{g['code']}×{g['count']}" for g in groups[:5]]
+            label = course_name or "SkoolCourse"
+            self.write(f"⚠ [{label}] {len(fails)} fail: {', '.join(parts)}")
+        except Exception:
+            pass
+
     def _maybe_cloud_after(self, course_name=None):
         """Neu cloud.after_download bat + da cau hinh R2 -> sync knowledge nen."""
         try:
@@ -1835,6 +1880,9 @@ class App:
                 self.ui_q.put(self._queue_soft_refresh)
                 if j.get("status") == "done":
                     self.ui_q.put(lambda c=j.get("course"): self._maybe_cloud_after(c))
+                    self.ui_q.put(lambda c=j.get("course"): self._log_course_fails(c))
+                elif j.get("status") == "failed":
+                    self.ui_q.put(lambda c=j.get("course"): self._log_course_fails(c))
             elif t == "finished":
                 self.ui_q.put(lambda: self.write(f"✓ Hàng đợi xong ({ev.get('ran')} job)"))
                 self.ui_q.put(self._queue_soft_refresh)
@@ -2101,9 +2149,16 @@ class App:
         btn(row, "💾 Lưu BASE", self.doctor_save_base, width=120).pack(side="left")
         ctk.CTkLabel(card, text="Hoặc đặt biến môi trường SKOOL_BASE. Sau khi đổi BASE, mở lại Dashboard.",
                      font=(FT, 11), text_color=TEXT2, wraplength=540, justify="left").pack(anchor="w", padx=14, pady=(0, 12))
+        try:
+            import version as V
+            ver = V.version_string()
+        except Exception:
+            ver = "Skool Archiver"
+        ctk.CTkLabel(card, text=ver, font=("Consolas", 11), text_color=TEXT2).pack(anchor="w", padx=14, pady=(0, 10))
 
         brow = ctk.CTkFrame(self.content, fg_color="transparent"); brow.pack(fill="x", pady=6)
         btn(brow, "▶  Chạy Doctor", self.doctor_run, kind="success", width=140).pack(side="left")
+        btn(brow, "Self-test", self.run_selftest, kind="secondary", width=110).pack(side="left", padx=8)
         btn(brow, "Preflight", self.show_check, kind="secondary", width=110).pack(side="left", padx=8)
         btn(brow, "Mở BASE", lambda: self._open_path(C.BASE), kind="secondary", width=100).pack(side="left")
 
@@ -2153,6 +2208,12 @@ class App:
                 self.doctor_box.configure(state="disabled")
             self.write(f"Doctor: {rep.get('fail')} FAIL, {rep.get('warn')} WARN")
         self.run_async(work, cb)
+
+    def run_selftest(self):
+        if self.proc:
+            messagebox.showinfo("Đang bận", "Đợi tác vụ hiện tại xong."); return
+        self.write("🧪 Self-test (doctor --quick)…")
+        self.start([PY, "selftest.py", "--quick"], "SELFTEST", on_done=lambda: self.write("✓ Self-test xong — xem Nhật ký"))
 
     # ====================== WEB VIEWER + HEALTH (Phase 4) ======================
     def show_web_tools(self):
