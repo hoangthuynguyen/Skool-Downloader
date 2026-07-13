@@ -8,7 +8,17 @@ def passes(url):
     return bool(url) and (not C.ONLY_HOSTS or any(h in url for h in C.ONLY_HOSTS))
 
 def chap_ok(ct):
-    return (not C.ONLY_CHAPTER) or ct == C.ONLY_CHAPTER
+    """Loc 1 chuong (ONLY_CHAPTER) hoac nhieu chuong (ONLY_CHAPTERS — Sprint B)."""
+    if C.ONLY_CHAPTER and ct != C.ONLY_CHAPTER:
+        return False
+    chapters = getattr(C, "ONLY_CHAPTERS", None)
+    if chapters:
+        # chap titles trong plan da san (K.san)
+        want = {str(x).strip().lower() for x in chapters if str(x).strip()}
+        if not want:
+            return True
+        return (ct or "").strip().lower() in want or (ct or "") in chapters
+    return True
 
 def _norm_path(p):
     try:
@@ -82,14 +92,17 @@ def in_failed_set(folder, fset):
 
 
 def lesson_ok(folder):
-    """So khop duong dan bai — chuan hoa / vs \\ ; hoac loc ONLY_FAILED."""
+    """So khop duong dan bai — ONLY_FAILED / ONLY_MISSING / ONLY_LESSON."""
     if C.ONLY_FAILED:
         fset = _failed_set()
         if not fset:
             return False
         if not in_failed_set(folder, fset):
             return False
-        # van ton trong ONLY_LESSON neu co
+    if getattr(C, "ONLY_MISSING", False):
+        # chi bai chua co video (diff-only / smart update)
+        if done_file(folder):
+            return False
     if not C.ONLY_LESSON:
         return True
     only = str(C.ONLY_LESSON).replace("\\", "/").strip("/").lower()
@@ -231,6 +244,10 @@ def run():
         if not fset:
             print("Khong co video_fails.json / khong khop code -> bo qua\n")
             return []
+    if getattr(C, "ONLY_MISSING", False):
+        print("(smart/missing-only: chi bai chua co video)")
+    if getattr(C, "ONLY_CHAPTERS", None):
+        print(f"(chapters delta: {len(C.ONLY_CHAPTERS)} chuong)")
     chapters = K.load_best(C.VID_PATTERN, count_urls)
     if not chapters: print("Khong co vid_*.json -> bo qua\n"); return []
     plan = []; total = 0
@@ -240,8 +257,11 @@ def run():
         lessons = K.walk(course.get("children") or [], chap or C.ROOT)
         total += sum(1 for fd, n in lessons if passes(n.get("url")) and lesson_ok(fd))
         plan.append((chap, lessons, ct))
-    if C.ONLY_CHAPTER or C.ONLY_LESSON:
-        print(f"(loc: chuong={C.ONLY_CHAPTER or 'tat ca'} bai={C.ONLY_LESSON or 'tat ca'})")
+    if C.ONLY_CHAPTER or C.ONLY_LESSON or getattr(C, "ONLY_CHAPTERS", None):
+        ch_disp = C.ONLY_CHAPTER or (
+            f"{len(C.ONLY_CHAPTERS)} ch." if getattr(C, "ONLY_CHAPTERS", None) else "tat ca"
+        )
+        print(f"(loc: chuong={ch_disp} bai={C.ONLY_LESSON or 'tat ca'})")
     print(f"Tong video luot nay: {total}\n")
     _warn_expired_tokens(plan)
     idx = tai = skip = loi = miss = 0

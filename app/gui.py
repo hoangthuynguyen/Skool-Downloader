@@ -1148,7 +1148,8 @@ class App:
         def work():
             try:
                 import search_lib as S
-                return S.search_all(q, top_k=15, ensure_index=False)
+                return S.search_all(q, top_k=15, ensure_index=False, with_snippet=True,
+                                    mark="【", mark_close="】")
             except Exception as e:
                 return e
         def cb(r):
@@ -1170,19 +1171,32 @@ class App:
                          font=(FT, 12), text_color=TEXT2).pack(anchor="w", padx=12, pady=(0, 10))
             return
         for h in hits[:12]:
-            row = ctk.CTkFrame(self.dash_search_box, fg_color="transparent"); row.pack(fill="x", padx=10, pady=2)
+            block = ctk.CTkFrame(self.dash_search_box, fg_color=CARD2, corner_radius=8)
+            block.pack(fill="x", padx=10, pady=3)
+            row = ctk.CTkFrame(block, fg_color="transparent"); row.pack(fill="x", padx=8, pady=(6, 2))
             label = f"[{h.get('course')}] {h.get('chapter')} / {h.get('title')}"
-            ctk.CTkLabel(row, text=label if len(label) < 70 else label[:67] + "…",
-                         font=(FT, 12), text_color=TEXT, anchor="w").pack(side="left", fill="x", expand=True)
+            ctk.CTkLabel(row, text=label if len(label) < 64 else label[:61] + "…",
+                         font=(FT, 12, "bold"), text_color=TEXT, anchor="w").pack(side="left", fill="x", expand=True)
             course = h.get("course")
-            # map course name -> display item
-            def open_hit(c=course):
+            folder = h.get("folder") or h.get("path")
+            def open_course(c=course):
                 items = self.existing_courses()
                 for it in items:
                     if self.item_course(it) == c or it == c or (c == "SkoolCourse" and it.startswith("SkoolCourse")):
                         self._dash_open(it); return
                 messagebox.showinfo("Khóa", f"Không map được khóa: {c}")
-            btn(row, "Mở", open_hit, kind="ghost", width=50, height=26).pack(side="right")
+            def open_lesson(f=folder, c=course):
+                if f and Path(f).exists():
+                    self._open_path(Path(f))
+                    return
+                open_course(c)
+            btn(row, "📁 Bài", open_lesson, kind="accent", width=64, height=26).pack(side="right", padx=(4, 0))
+            btn(row, "Khóa", open_course, kind="ghost", width=50, height=26).pack(side="right")
+            sn = (h.get("snippet") or h.get("preview") or "").strip()
+            if sn:
+                ctk.CTkLabel(block, text=sn if len(sn) < 180 else sn[:177] + "…",
+                             font=(FT, 11), text_color=TEXT2, wraplength=520, justify="left",
+                             anchor="w").pack(fill="x", padx=10, pady=(0, 6))
         ctk.CTkLabel(self.dash_search_box, text="", height=4).pack()
 
     def dash_export_report(self):
@@ -1813,6 +1827,32 @@ class App:
         self.write(f"↻ Chỉ tải {n} bài fail…")
         self.start([PY, "main.py"] + args, "TẢI LẠI FAIL", on_done=self._after_retry_failed)
 
+    def smart_update_download(self):
+        """Sprint B: chi tai bai thieu (+ uu tien chuong moi neu co _update_diff)."""
+        if self.proc:
+            messagebox.showinfo("Đang bận", "Đang có tác vụ chạy."); return
+        root = self.course_root(self.course_name)
+        try:
+            import updates as U
+            plan = U.plan_smart_update(root)
+        except Exception as e:
+            messagebox.showerror("Smart update", str(e)); return
+        if not plan.get("has_work"):
+            messagebox.showinfo("Smart update", plan.get("summary") or "Không còn bài thiếu."); return
+        msg = (
+            f"{plan.get('summary')}\n\n"
+            f"Chương có gap: {', '.join((plan.get('chapters_with_gaps') or [])[:6]) or '—'}\n"
+            f"Chapter filter: {plan.get('chapter_filter') or 'tất cả thiếu'}\n\n"
+            "Chỉ tải bài chưa có video (diff-only)?"
+        )
+        if not messagebox.askyesno("⚡ Smart update", msg):
+            return
+        args = self._course_args() + [
+            "--only", "videos", "--smart-update", "--until-clean", "--skip-preflight",
+        ]
+        self.write(f"⚡ Smart update: {plan.get('summary')}")
+        self.start([PY, "main.py"] + args, "SMART UPDATE", on_done=self._mgr_after_dl)
+
     def _after_retry_failed(self):
         self.show_manager()
         # goi y index
@@ -1905,6 +1945,7 @@ class App:
                         font=(FT, 12), text_color=TEXT2, fg_color=ACCENT, hover_color=ACCENT_H,
                         border_color=BORDER).pack(side="left", padx=8)
         btn(row, "↻ Fail", self.retry_failed_only, kind="warn", width=80, height=32).pack(side="right", padx=4)
+        btn(row, "⚡ Thiếu", self.smart_update_download, kind="accent", width=80, height=32).pack(side="right", padx=4)
         btn(row, "📦 Pack", lambda: self.export_knowledge_pack(), kind="soft", width=80, height=32).pack(side="right", padx=4)
         btn(row, "🗑 Dọn dở", self.cleanup_partials, kind="secondary", width=96, height=32).pack(side="right", padx=4)
         self.mgr_status = ctk.CTkLabel(bar, text="⏳  Đang đọc danh sách chương…", font=(FT, 12),
@@ -2693,6 +2734,18 @@ class App:
         else:
             ctk.CTkLabel(sync_card, text="(Chưa có khóa)", font=(FT, 12), text_color=TEXT2).pack(padx=14, pady=12)
 
+        # Sprint D — knowledge pack backup / restore
+        bak = self.card()
+        ctk.CTkLabel(bak, text="📦 Knowledge pack — backup / restore",
+                     font=(FT, 12, "bold"), text_color=TEXT2).pack(anchor="w", padx=14, pady=(12, 4))
+        ctk.CTkLabel(bak, text="Zip text/resources (không video) → courses/_backups/. Tuỳ chọn upload cloud.",
+                     font=(FT, 11), text_color=TEXT2, wraplength=520, justify="left").pack(anchor="w", padx=14, pady=(0, 6))
+        brow2 = ctk.CTkFrame(bak, fg_color="transparent"); brow2.pack(fill="x", padx=14, pady=(4, 12))
+        btn(brow2, "📦 Backup local", self.cloud_backup_local, kind="accent", width=130).pack(side="left")
+        btn(brow2, "☁ Backup + upload", self.cloud_backup_upload, kind="success", width=140).pack(side="left", padx=6)
+        btn(brow2, "📋 List", self.cloud_list_backups, kind="secondary", width=80).pack(side="left", padx=4)
+        btn(brow2, "↩ Restore…", self.cloud_restore_pack, kind="warn", width=110).pack(side="left", padx=6)
+
         btn(self.content, "←  Dashboard", self.show_dashboard, kind="ghost", width=120).pack(anchor="w", pady=10)
 
     def cloud_save(self):
@@ -2800,6 +2853,119 @@ class App:
         if not v: return
         self.cloud_save()
         self._cloud_sync_course(v, dry_run=True)
+
+    def _cloud_selected_item(self):
+        v = ""
+        if hasattr(self, "cloud_course"):
+            v = (self.cloud_course.get() or "").strip()
+        if not v:
+            v = (self.pick_var.get() if hasattr(self, "pick_var") else "") or ""
+        return v
+
+    def cloud_backup_local(self):
+        self._do_pack_backup(upload=False)
+
+    def cloud_backup_upload(self):
+        self.cloud_save()
+        self._do_pack_backup(upload=True)
+
+    def _do_pack_backup(self, upload=False):
+        item = self._cloud_selected_item()
+        if not item:
+            messagebox.showinfo("Backup", "Chọn một khóa ở menu Cloud."); return
+        root = self.item_root(item)
+        course = self.item_course(item) or item
+        self.write(f"📦 Backup knowledge «{item}»{' + upload' if upload else ''}…")
+        def work():
+            try:
+                from cloud.pack_backup import backup_knowledge
+                return backup_knowledge(
+                    root, course_name=course, upload=upload,
+                    log=lambda s: self.ui_q.put(lambda m=s: self.write(m)),
+                )
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("Backup", str(r)); return
+            msg = f"Local:\n{r.get('local')}\n({r.get('bytes')} bytes)"
+            if r.get("uploaded"):
+                msg += f"\n\nCloud [{r.get('provider')}]:\n{r.get('remote_key')}"
+            elif r.get("error"):
+                msg += f"\n\nUpload lỗi: {r.get('error')}"
+            messagebox.showinfo("Backup xong", msg)
+            if messagebox.askyesno("Mở thư mục?", "Mở courses/_backups/?"):
+                try:
+                    from cloud.pack_backup import backups_dir
+                    self._open_path(backups_dir())
+                except Exception:
+                    self._open_path(Path(r.get("local")).parent)
+        self.run_async(work, cb)
+
+    def cloud_list_backups(self):
+        item = self._cloud_selected_item()
+        course = self.item_course(item) if item else None
+        def work():
+            try:
+                from cloud.pack_backup import list_backups
+                return list_backups(course)
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("Backups", str(r)); return
+            if not r:
+                messagebox.showinfo("Backups", "Chưa có file trong courses/_backups/."); return
+            lines = [f"{x['mtime']}  {x['bytes']//1024} KB  {x['name']}" for x in r[:20]]
+            messagebox.showinfo("Backups", f"{len(r)} file:\n\n" + "\n".join(lines)[:1800])
+        self.run_async(work, cb)
+
+    def cloud_restore_pack(self):
+        from tkinter import filedialog
+        item = self._cloud_selected_item()
+        if not item:
+            messagebox.showinfo("Restore", "Chọn khóa đích trên Cloud."); return
+        try:
+            from cloud.pack_backup import backups_dir
+            init = str(backups_dir())
+        except Exception:
+            init = str(C.BASE / "courses")
+        path = filedialog.askopenfilename(
+            title="Chọn knowledge pack .zip",
+            initialdir=init,
+            filetypes=[("Knowledge pack", "*.zip"), ("All", "*.*")],
+        )
+        if not path:
+            return
+        root = self.item_root(item)
+        course = self.item_course(item) or item
+        if not messagebox.askyesno(
+            "Restore pack",
+            f"Giải nén knowledge vào:\n{root}\n\n"
+            "Chỉ file text/resources (không đụng video).\nTiếp tục?",
+        ):
+            return
+        self.write(f"↩ Restore pack → {item}…")
+        def work():
+            try:
+                from cloud.pack_backup import restore_knowledge
+                return restore_knowledge(
+                    path, root, course_name=course,
+                    log=lambda s: self.ui_q.put(lambda m=s: self.write(m)),
+                )
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("Restore", str(r)); return
+            messagebox.showinfo(
+                "Restore xong",
+                f"extracted={r.get('extracted')} skipped={r.get('skipped')}\n{r.get('dest')}",
+            )
+            if messagebox.askyesno("Index RAG?", "Build lại index chat sau restore?"):
+                self.course_name = course if course != "SkoolCourse" else None
+                self._run_index_current()
+        self.run_async(work, cb)
 
     # ====================== DOCTOR + BASE (Phase 6) ======================
     def show_doctor(self):

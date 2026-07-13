@@ -177,19 +177,116 @@ def read_update_meta(root):
         return None
 
 
+def plan_smart_update(root):
+    """Sprint B: ke hoach tai chi bai thieu / chapter delta.
+
+    Tra ve:
+      missing_count, chapters_with_gaps (san titles), new_chapters,
+      missing_folders, chapter_filter (None | set titles de ONLY_CHAPTERS),
+      summary, has_work
+    """
+    root = Path(root)
+    scan = P.scan(root)
+    missing = list(scan.get("missing") or [])
+    expired = list(scan.get("native_expired") or [])
+    meta = read_update_meta(root) or {}
+    new_chaps = []
+    for c in meta.get("new_chapters") or []:
+        t = c.get("title") if isinstance(c, dict) else str(c)
+        if t:
+            new_chaps.append(K.san(t))
+
+    by_chap = {}
+    folders = []
+    for m in missing:
+        ct = m.get("chapter") or "?"
+        by_chap.setdefault(ct, []).append(m)
+        fd = m.get("folder")
+        if fd is not None:
+            folders.append(str(fd))
+
+    gaps = sorted(by_chap.keys())
+    # neu co chuong moi trong meta va chuong do con thieu -> uu tien loc chapter delta
+    chapter_filter = None
+    if new_chaps:
+        # san titles trong gaps co the khac raw — so sanh san
+        gap_san = {K.san(g) for g in gaps}
+        overlap = [t for t in new_chaps if t in gap_san or t in gaps]
+        if overlap:
+            chapter_filter = set(overlap)
+        elif new_chaps and not missing:
+            # dump moi chua scan thieu — van goi y loc chuong moi
+            chapter_filter = set(new_chaps)
+
+    n_miss = len(missing)
+    parts = []
+    if new_chaps:
+        parts.append(f"{len(new_chaps)} chương mới (meta)")
+    if n_miss:
+        parts.append(f"{n_miss} bài thiếu video")
+        parts.append(f"{len(gaps)} chương có gap")
+    if expired:
+        parts.append(f"{len(expired)} native hết hạn")
+    if not parts:
+        parts.append("Đủ video — không cần smart update")
+
+    return {
+        "root": str(root),
+        "missing_count": n_miss,
+        "expired_count": len(expired),
+        "chapters_with_gaps": gaps,
+        "missing_by_chapter": {k: len(v) for k, v in by_chap.items()},
+        "new_chapters": new_chaps,
+        "missing_folders": folders,
+        "chapter_filter": sorted(chapter_filter) if chapter_filter else None,
+        "summary": " · ".join(parts),
+        "has_work": bool(n_miss),
+        "scan": {
+            "total": scan.get("total"), "done": scan.get("done"),
+            "size": scan.get("size"), "has_data": scan.get("has_data"),
+        },
+    }
+
+
+def apply_smart_update_flags(root, prefer_new_chapters=True):
+    """Set C.ONLY_MISSING (+ optional ONLY_CHAPTERS) theo plan. Tra ve plan."""
+    plan = plan_smart_update(root)
+    C.ONLY_MISSING = True
+    C.ONLY_FAILED = False
+    if prefer_new_chapters and plan.get("chapter_filter"):
+        C.ONLY_CHAPTERS = set(plan["chapter_filter"])
+    else:
+        C.ONLY_CHAPTERS = None
+    return plan
+
+
 def main():
     K.setup_console()
-    ap = argparse.ArgumentParser(description="Update checker v2")
+    ap = argparse.ArgumentParser(description="Update checker v2 + smart plan (Sprint B)")
     ap.add_argument("--course", help="Ten khoa duoi courses/")
     ap.add_argument("--root", help="Override thu muc khoa")
     ap.add_argument("--chapters-file", help="JSON list chuong remote [{id,title}]")
     ap.add_argument("--scan-local", action="store_true", help="Chi quet local health")
+    ap.add_argument("--smart-plan", action="store_true",
+                    help="In ke hoach smart update (missing + chapter delta)")
     a = ap.parse_args()
     if a.root:
         C.set_root(a.root)
     elif a.course:
         C.set_course(a.course)
     root = C.ROOT
+    if a.smart_plan:
+        p = plan_smart_update(root)
+        print(json.dumps({
+            "summary": p["summary"],
+            "has_work": p["has_work"],
+            "missing_count": p["missing_count"],
+            "chapters_with_gaps": p["chapters_with_gaps"],
+            "new_chapters": p["new_chapters"],
+            "chapter_filter": p["chapter_filter"],
+            "scan": p["scan"],
+        }, ensure_ascii=False, indent=2))
+        return
     if a.scan_local or not a.chapters_file:
         h = local_health(root)
         print(json.dumps({

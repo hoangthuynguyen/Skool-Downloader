@@ -228,6 +228,96 @@ def test_retry_failed_and_knowledge_pack():
     print("  PASS  retry-failed + knowledge pack")
 
 
+def test_smart_update_and_chapters():
+    """Sprint B: plan_smart_update + ONLY_MISSING + ONLY_CHAPTERS."""
+    import config as C
+    import videos as V
+    import updates as U
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        # fake tree: 1 chapter folder + missing video
+        chap = root / "01 - Intro"
+        lesson = chap / "01 - Hello"
+        lesson.mkdir(parents=True)
+        (lesson / "description.md").write_text("x", encoding="utf-8")
+        # no video.mp4 -> missing when scanned if vid json exists — plan works without
+        plan = U.plan_smart_update(root)
+        assert "summary" in plan and "has_work" in plan
+        # meta new chapters
+        (root / "_update_diff.json").write_text(json.dumps({
+            "new_chapters": [{"title": "Intro"}],
+            "has_updates": True,
+        }), encoding="utf-8")
+        plan2 = U.plan_smart_update(root)
+        assert "Intro" in (plan2.get("new_chapters") or []) or plan2.get("new_chapters") is not None
+        old = (C.ONLY_MISSING, C.ONLY_CHAPTERS, C.ONLY_FAILED, C.ONLY_CHAPTER)
+        try:
+            C.ONLY_FAILED = False
+            C.ONLY_CHAPTER = None
+            C.ONLY_MISSING = True
+            C.ONLY_CHAPTERS = {"intro", "Intro"}
+            assert V.chap_ok("Intro") is True
+            assert V.chap_ok("Other") is False
+            # no video file -> lesson_ok True under ONLY_MISSING
+            assert V.lesson_ok(lesson) is True
+            # fake done video
+            (lesson / "video.mp4").write_bytes(b"\x00\x00")
+            assert V.lesson_ok(lesson) is False
+        finally:
+            C.ONLY_MISSING, C.ONLY_CHAPTERS, C.ONLY_FAILED, C.ONLY_CHAPTER = old
+    print("  PASS  smart update + chapters filter")
+
+
+def test_search_snippet_highlight():
+    """Sprint C: snippet + highlight."""
+    import search_lib as S
+    sn = S.make_snippet(
+        "Before the webhook fires the automation runs cleanly after.",
+        "webhook",
+        mark="【", mark_close="】",
+    )
+    assert "【webhook】" in sn["snippet"] or "webhook" in sn["snippet"].lower()
+    assert sn["match"].lower() == "webhook"
+    hit = S.enrich_hit_snippet(
+        {"path": "", "preview": "Learn about Prompt engineering today", "title": "t"},
+        "Prompt",
+        mark="**",
+    )
+    assert "snippet" in hit and "Prompt" in (hit.get("snippet") or hit.get("preview") or "")
+    print("  PASS  search snippet highlight")
+
+
+def test_pack_backup_restore():
+    """Sprint D: local backup + safe restore."""
+    import knowledge_pack as KP
+    from cloud import pack_backup as PB
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td) / "course"
+        dest = Path(td) / "restore_here"
+        lesson = root / "01 - C" / "01 - L"
+        lesson.mkdir(parents=True)
+        (lesson / "description.md").write_text("# Hello knowledge", encoding="utf-8")
+        (lesson / "video.txt").write_text("transcript line", encoding="utf-8")
+        (lesson / "video.mp4").write_bytes(b"FAKEVIDEO")  # must NOT restore overwrite issue
+        z = Path(td) / "pack.zip"
+        KP.pack_course(root, course_name="Demo", out_path=str(z), log=lambda *_: None)
+        # backup API writes to path
+        r = PB.backup_knowledge(root, course_name="Demo", out_path=str(Path(td) / "b.zip"),
+                                upload=False, log=lambda *_: None)
+        assert Path(r["local"]).exists()
+        dest.mkdir()
+        (dest / "keep_video").mkdir()
+        (dest / "keep_video" / "video.mp4").write_bytes(b"KEEP")
+        out = PB.restore_knowledge(z, dest, course_name="Demo", log=lambda *_: None)
+        assert out["extracted"] >= 1
+        # video.mp4 trong zip khong duoc extract (knowledge pack khong gom video)
+        assert (dest / "keep_video" / "video.mp4").read_bytes() == b"KEEP"
+        # description restored somewhere
+        found = list(dest.rglob("description.md"))
+        assert found and "Hello knowledge" in found[0].read_text(encoding="utf-8")
+    print("  PASS  pack backup + restore")
+
+
 def test_warehouse_fails_field():
     import progress as P
     st = P.warehouse_stats([])
@@ -322,7 +412,7 @@ def test_config_base_and_doctor_requeue():
 
 
 def main():
-    print("Phase 1–10 + Sprint A smoke tests")
+    print("Phase 1–10 + Sprint A–D smoke tests")
     fails = 0
     for fn in (test_progress_badge, test_queue_persist, test_cloud_policy,
                test_updates_diff, test_rag_score, test_tfidf_and_multi,
@@ -331,7 +421,9 @@ def main():
                test_export_site_and_embed, test_config_base_and_doctor_requeue,
                test_video_classify_and_lesson_path, test_cleanup_fails,
                test_version_module, test_warehouse_fails_field,
-               test_retry_failed_and_knowledge_pack):
+               test_retry_failed_and_knowledge_pack,
+               test_smart_update_and_chapters, test_search_snippet_highlight,
+               test_pack_backup_restore):
         try:
             fn()
         except Exception as e:

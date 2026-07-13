@@ -2,7 +2,7 @@
 
 Công cụ lưu trữ **toàn bộ một khóa học Skool** về máy: cây thư mục theo chương/bài, video (native Skool + Loom + YouTube), mô tả bài, tài liệu (resources) và **phụ đề tiếng Anh (Whisper)** — chạy bằng **một lệnh**, có **kiểm tra môi trường trước khi chạy** và **báo lỗi kèm cách xử lý**.
 
-> Phiên bản hiện tại: **2.4.0** — fail-driven retry · knowledge pack · auto-index (`python app/main.py --version`).  
+> Phiên bản hiện tại: **2.5.0** — smart update · search highlight · pack backup/restore (`python app/main.py --version`).  
 > Đã kiểm chứng trên khóa *AI Automations by Jack* (584 bài, ~170 GB).
 
 ---
@@ -20,6 +20,8 @@ Archiver/
 │  ├─ Web Viewer.cmd             ← duyệt knowledge local
 │  ├─ Health check.cmd           ← quét sức khỏe kho
 │  ├─ Knowledge pack.cmd         ← zip text/resources (không video)
+│  ├─ Smart update.cmd           ← diff-only / smart-update
+│  ├─ Pack backup.cmd            ← backup/restore knowledge pack
 │  ├─ Xuat site tinh.cmd         ← export HTML offline
 │  ├─ Cai / Go transcribe nen.cmd
 ├─ extractor.js                  ← dán vào Console trình duyệt để dump
@@ -190,7 +192,16 @@ python app\cleanup.py --course "X" --fails     # xem video_fails.json
 python app\cleanup.py --course "X" --apply     # xoa file .part/.ytdl thua
 python app\main.py --course "X" --only videos --retry-failed --until-clean
 python app\main.py --course "X" --retry-failed --fail-codes rate,network
+python app\main.py --course "X" --only videos --missing-only --until-clean
+python app\main.py --course "X" --only videos --smart-update --until-clean
+python app\main.py --course "X" --only videos --chapters "Chap A||Chap B"
+python app\updates.py --course "X" --smart-plan
 python app\knowledge_pack.py --course "X"      # zip text/resources (khong video)
+python -m cloud.pack_backup --course "X" --backup
+python -m cloud.pack_backup --course "X" --backup --upload
+python -m cloud.pack_backup --list
+python -m cloud.pack_backup --restore path\to\pack.zip --course "X"
+python app\search_lib.py "webhook" --snippet   # highlight + folder bai
 python app\main.py --course "X" --index        # build RAG index sau pipeline
 python app\export.py   --course "X" --docx     # gộp & xuất Word (Nhóm A)
 python app\ai_tools.py --course "X" --translate --summary   # dịch + tóm tắt/to-do (cần API key / deep-translator)

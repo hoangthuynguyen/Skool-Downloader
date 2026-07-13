@@ -117,9 +117,11 @@ STRIP_EMOJI = True
 # ===================== VIDEO =====================
 DRY_RUN = False
 ONLY_HOSTS = []
-ONLY_CHAPTER = None
+ONLY_CHAPTER = None          # 1 chuong (ten da san)
+ONLY_CHAPTERS = None         # set ten chuong (san) — multi-chapter delta
 ONLY_LESSON = None
 ONLY_FAILED = False          # True: chi tai lai folder co trong video_fails.json
+ONLY_MISSING = False         # True: chi bai chua co video (smart update)
 FAIL_CODES = None            # None = moi code; set(["rate","network"]) de loc
 JS_RUNTIME = "node"
 YT_COOKIES_FILE = ""

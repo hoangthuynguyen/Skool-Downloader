@@ -1,6 +1,6 @@
 """Phien ban Skool Archiver (Phase ship)."""
-__version__ = "2.4.0"
-__codename__ = "sprint-a"
+__version__ = "2.5.0"
+__codename__ = "sprint-bcd"
 
 # Phase milestones (gan dung commit history)
 HISTORY = (
@@ -19,6 +19,7 @@ HISTORY = (
     "2.2.0 wizard dump + env check + remaining screens",
     "2.3.0 density compact/comfortable + doctor polish",
     "2.4.0 fail-driven retry + knowledge pack + auto-index",
+    "2.5.0 smart update + search highlight + pack backup/restore",
 )
 
 

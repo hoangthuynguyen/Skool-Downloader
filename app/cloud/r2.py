@@ -54,6 +54,16 @@ def upload_file(cfg, local_path, key, extra_args=None):
     return key
 
 
+def download_file(cfg, key, local_path):
+    """Tai object R2 ve local (Sprint D restore)."""
+    c = _client(cfg)
+    bucket = (cfg.get("bucket") or "").strip()
+    local_path = Path(local_path)
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    c.download_file(bucket, key, str(local_path))
+    return local_path
+
+
 def object_exists(cfg, key):
     c = _client(cfg)
     bucket = (cfg.get("bucket") or "").strip()

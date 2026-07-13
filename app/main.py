@@ -86,10 +86,15 @@ def main():
     ap.add_argument("--round-wait", type=int, default=300, help="Giay nghi giua cac vong --until-clean (mac dinh 300).")
     ap.add_argument("--native-only", action="store_true", help="Chi tai video native Skool (de cuu bai het token).")
     ap.add_argument("--chapter", help="Chi tai 1 chuong (ten chuong da san). Dung cho GUI tai theo chuong.")
+    ap.add_argument("--chapters", help="Nhieu chuong (ten san, cach bang ||). Sprint B chapter delta.")
     ap.add_argument("--lesson", help="Chi tai 1 bai (duong dan tuong doi vs course root).")
     ap.add_argument("--retry-failed", action="store_true",
                     help="Chi tai lai bai co trong video_fails.json (fail-driven).")
     ap.add_argument("--fail-codes", help="Loc code fail, vd: rate,network,token (mac dinh: tat ca).")
+    ap.add_argument("--missing-only", action="store_true",
+                    help="Chi tai bai chua co video (diff-only).")
+    ap.add_argument("--smart-update", action="store_true",
+                    help="Smart update: missing-only + uu tien chuong moi tu _update_diff.json.")
     ap.add_argument("--index", action="store_true", help="Sau pipeline: build RAG index (catalog+tfidf).")
     ap.add_argument("--no-index", action="store_true", help="Tat auto index sau pipeline.")
     # multi-course queue (S2) — uy thac queue_engine
@@ -149,18 +154,34 @@ def main():
     if a.cookies_browser:       C.YT_COOKIES_BROWSER = a.cookies_browser
     if a.native_only:           C.ONLY_HOSTS = [NATIVE_HOST]
     if a.chapter:               C.ONLY_CHAPTER = a.chapter
+    if a.chapters:
+        parts = [x.strip() for x in a.chapters.split("||") if x.strip()]
+        if parts:
+            C.ONLY_CHAPTERS = set(parts)
     if a.lesson:                C.ONLY_LESSON = a.lesson
     if a.retry_failed:
         C.ONLY_FAILED = True
         if a.fail_codes:
             C.FAIL_CODES = {x.strip().lower() for x in a.fail_codes.split(",") if x.strip()}
+    if a.missing_only:
+        C.ONLY_MISSING = True
+    if a.smart_update:
+        try:
+            import updates as U
+            plan = U.apply_smart_update_flags(C.ROOT, prefer_new_chapters=True)
+            print(f"(smart-update) {plan.get('summary')}")
+            if plan.get("chapter_filter"):
+                print(f"  chapter_filter: {plan['chapter_filter']}")
+        except Exception as e:
+            print(f"[smart-update] fallback missing-only: {e}")
+            C.ONLY_MISSING = True
     do_index = bool(a.index) or (getattr(C, "AUTO_INDEX", True) and not a.no_index and not a.only)
 
     print(f"=== KHOA: {C.COURSE or C.ROOT.name}  ({C.ROOT}) ===\n")
 
     if a.only:
         if a.only == "videos":
-            if a.chapter or a.lesson or a.retry_failed:
+            if a.chapter or a.chapters or a.lesson or a.retry_failed or a.missing_only or a.smart_update:
                 folders.run()   # bao dam co folder truoc khi tai chon loc
             run_videos(until_clean=a.until_clean, rounds=a.rounds, wait=a.round_wait)
         else:
