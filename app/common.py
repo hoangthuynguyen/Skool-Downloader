@@ -1,4 +1,4 @@
-import json, re, socket, sys, time
+import json, os, re, socket, sys, time
 from pathlib import Path
 import config as C
 
@@ -10,6 +10,59 @@ def setup_console():
             stream.reconfigure(encoding="utf-8", errors="replace")
         except Exception:
             pass
+
+
+def ensure_tool_path():
+    """Bo sung PATH cho node/ffmpeg khi mo tu Finder/.app (PATH mac dinh thieu Homebrew).
+
+    Goi som o gui.py / main.py / start.sh. Idempotent.
+    """
+    extra = []
+    # Homebrew (Apple Silicon + Intel)
+    for d in ("/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", "/usr/local/sbin"):
+        if Path(d).is_dir():
+            extra.append(d)
+    # nvm (neu co ban active)
+    nvm = Path.home() / ".nvm" / "versions" / "node"
+    if nvm.is_dir():
+        try:
+            versions = sorted(nvm.iterdir(), key=lambda p: p.name, reverse=True)
+            for v in versions:
+                b = v / "bin"
+                if (b / "node").exists() or (b / "node.exe").exists():
+                    extra.append(str(b))
+                    break
+        except Exception:
+            pass
+    # ffmpeg-downloader user install
+    for d in (
+        Path.home() / "Library" / "Application Support" / "ffmpeg-downloader" / "ffmpeg",
+        Path.home() / "AppData" / "Local" / "ffmpeg-downloader" / "ffmpeg",
+    ):
+        if d.is_dir():
+            extra.append(str(d))
+    # fnm / volta / asdf common
+    for d in (
+        Path.home() / ".fnm" / "current" / "bin",
+        Path.home() / ".volta" / "bin",
+        Path.home() / ".local" / "bin",
+    ):
+        if d.is_dir():
+            extra.append(str(d))
+    cur = os.environ.get("PATH") or ""
+    parts = [p for p in cur.split(os.pathsep) if p]
+    for d in reversed(extra):
+        if d not in parts:
+            parts.insert(0, d)
+    os.environ["PATH"] = os.pathsep.join(parts)
+    return os.environ["PATH"]
+
+
+# Tu dong khi import (GUI/pipeline deu huong loi)
+try:
+    ensure_tool_path()
+except Exception:
+    pass
 
 EMOJI = re.compile("[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF"
                    "\u2190-\u21FF\u2B00-\u2BFF\u2300-\u23FF\uFE0F\u200D]")
@@ -84,12 +137,95 @@ def wait_online():
         if t % 60 == 0: print(f"   [MANG] Van chua co mang... ({t}s)", flush=True)
     print("   [MANG] Co mang lai - tiep tuc.", flush=True)
 
-def ffmpeg_dir():
+def _first_existing(*cands):
+    for c in cands:
+        if not c:
+            continue
+        p = Path(c)
+        if p.is_file():
+            return str(p)
+    return None
+
+
+def node_bin():
+    """Duong dan node (JS runtime cho yt-dlp/YouTube), hoac None."""
+    import shutil
+    try:
+        ensure_tool_path()
+    except Exception:
+        pass
+    w = shutil.which("node")
+    if w:
+        return w
+    # nvm latest
+    nvm = Path.home() / ".nvm" / "versions" / "node"
+    nvm_node = None
+    if nvm.is_dir():
+        try:
+            for v in sorted(nvm.iterdir(), key=lambda p: p.name, reverse=True):
+                cand = v / "bin" / "node"
+                if cand.is_file():
+                    nvm_node = str(cand)
+                    break
+        except Exception:
+            pass
+    return _first_existing(
+        nvm_node,
+        "/opt/homebrew/bin/node",
+        "/usr/local/bin/node",
+        str(Path.home() / ".volta" / "bin" / "node"),
+        str(Path.home() / ".local" / "bin" / "node"),
+        r"C:\Program Files\nodejs\node.exe",
+    )
+
+
+def ffmpeg_bin():
+    """Duong dan executable ffmpeg, hoac None."""
+    import shutil
+    try:
+        ensure_tool_path()
+    except Exception:
+        pass
+    # 1) ffmpeg-downloader (cai trong user data — hoat dong ca khi PATH thieu)
     try:
         import ffmpeg_downloader as ffdl
         p = getattr(ffdl, "ffmpeg_path", None)
-        if p: return str(Path(p).parent)
-    except Exception: pass
+        if p and Path(p).is_file():
+            return str(Path(p))
+        if callable(getattr(ffdl, "installed", None)) and ffdl.installed():
+            try:
+                from ffmpeg_downloader._path import get_dir
+                cand = Path(get_dir()) / "ffmpeg" / "ffmpeg"
+                if cand.is_file():
+                    return str(cand)
+            except Exception:
+                pass
+            for cand in (
+                Path.home() / "AppData" / "Local" / "ffmpeg-downloader" / "ffmpeg" / "ffmpeg.exe",
+                Path.home() / "Library" / "Application Support" / "ffmpeg-downloader" / "ffmpeg" / "ffmpeg",
+            ):
+                if cand.is_file():
+                    return str(cand)
+    except Exception:
+        pass
+    # 2) PATH (da ensure_tool_path)
+    w = shutil.which("ffmpeg")
+    if w:
+        return w
+    # 3) vi tri mac dinh
+    return _first_existing(
+        "/opt/homebrew/bin/ffmpeg",
+        "/usr/local/bin/ffmpeg",
+        "/usr/bin/ffmpeg",
+        r"C:\ffmpeg\bin\ffmpeg.exe",
+    )
+
+
+def ffmpeg_dir():
+    """Thu muc chua binary ffmpeg (de yt-dlp --ffmpeg-location), hoac None."""
+    b = ffmpeg_bin()
+    if b:
+        return str(Path(b).parent)
     return None
 
 # ---- tao + danh so folder chuong (cho khoa moi chua co folder nao) ----

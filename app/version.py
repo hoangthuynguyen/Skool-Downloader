@@ -1,6 +1,6 @@
 """Phien ban Skool Downloader (Phase ship)."""
-__version__ = "2.15.1"
-__codename__ = "live-progress"
+__version__ = "2.15.5"
+__codename__ = "classroom-ux"
 
 # Phase milestones (gan dung commit history)
 HISTORY = (
@@ -33,6 +33,10 @@ HISTORY = (
     "2.14.2 fix macOS GUI hang (CLT Tk) + full SkoolDownloader rename",
     "2.15.0 pick output folder + live download progress (course/folder/video/lesson)",
     "2.15.1 video stats on UI (size/host/status) + usage guide update",
+    "2.15.2 Finder/.app PATH fix for node+ffmpeg + Downloads shortcut refresh",
+    "2.15.3 robust Skool browser recover + better chapter list (no blank lessons)",
+    "2.15.4 browser via storage_state (fix closed-page on list chapters)",
+    "2.15.5 classroom UX: keep Chrome open, live URL, auto-list chapters",
 )
 
 

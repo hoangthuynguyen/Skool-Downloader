@@ -139,15 +139,55 @@ def done_file(folder):
         except OSError: pass
     return False
 
-FFDIR = K.ffmpeg_dir()
+def _ffmpeg_location():
+    try:
+        K.ensure_tool_path()
+    except Exception:
+        pass
+    return K.ffmpeg_dir()
+
+
+def _js_runtime_arg():
+    """yt-dlp --js-runtimes node[:/path] — uu tien duong dan tuyet doi (Finder PATH thieu)."""
+    rt = getattr(C, "JS_RUNTIME", None)
+    if rt is None:
+        rt = "node"
+    if not rt:
+        return None
+    try:
+        K.ensure_tool_path()
+    except Exception:
+        pass
+    s = str(rt).strip()
+    if s == "node" or s.startswith("node:"):
+        if s.startswith("node:") and len(s) > 5:
+            return s
+        nb = None
+        try:
+            nb = K.node_bin()
+        except Exception:
+            nb = None
+        if nb:
+            return f"node:{nb}"
+        return "node"
+    return s
+
 
 def ytdlp_cmd(url, folder):
+    try:
+        K.ensure_tool_path()
+    except Exception:
+        pass
     cmd = [sys.executable, "-m", "yt_dlp", "-o", str(folder / "video.%(ext)s"),
            "--no-playlist", "--continue", "--no-overwrites",
            "--retries", "10", "--fragment-retries", "20", "--retry-sleep", "5",
            "--socket-timeout", "30", "--newline"]
-    if FFDIR: cmd += ["--ffmpeg-location", FFDIR]
-    if C.JS_RUNTIME: cmd += ["--js-runtimes", C.JS_RUNTIME]   # vuot YouTube bot-check
+    ffdir = _ffmpeg_location()
+    if ffdir:
+        cmd += ["--ffmpeg-location", ffdir]
+    jsr = _js_runtime_arg()
+    if jsr:
+        cmd += ["--js-runtimes", jsr]   # vuot YouTube bot-check
     if C.YT_COOKIES_FILE and Path(C.YT_COOKIES_FILE).exists():
         cmd += ["--cookies", C.YT_COOKIES_FILE]
     elif C.YT_COOKIES_BROWSER:

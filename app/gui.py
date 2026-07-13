@@ -503,6 +503,7 @@ class App:
         for a in ("mgr_scroll", "mgr_status", "chap_scroll", "chap_hdr", "sum_lbl", "native_banner",
                   "status4", "pct_lbl", "pb4", "run_lbl", "done_row", "trans_lbl", "trans_pb", "tl_lbl",
                   "cur_lesson_lbl", "step4_live", "mgr_live",
+                  "browser_hint", "browser_url_lbl",
                   "dump_status", "dump_pb", "b_start", "b_all", "b_dump", "b_list", "b_open", "chap_box", "dump_row",
                   "dash_list", "dash_summary", "dash_search_box", "q_list", "q_status", "chat_box", "chat_input", "chat_src",
                   "cloud_status", "mgr_fail_box", "doctor_box", "stat_row"):
@@ -778,12 +779,35 @@ class App:
 
     # ====================== KIỂM TRA MÔI TRƯỜNG ======================
     def _ffmpeg_ok(self):
+        try:
+            import common as K
+            K.ensure_tool_path()
+            if K.ffmpeg_bin():
+                return True
+        except Exception:
+            pass
         import shutil
-        if shutil.which("ffmpeg"): return True
+        if shutil.which("ffmpeg"):
+            return True
         try:
             import ffmpeg_downloader as ffdl
-            return bool(getattr(ffdl, "ffmpeg_path", None))
-        except Exception: return False
+            if getattr(ffdl, "ffmpeg_path", None):
+                return True
+            if callable(getattr(ffdl, "installed", None)) and ffdl.installed():
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _node_ok(self):
+        try:
+            import common as K
+            K.ensure_tool_path()
+            return bool(K.node_bin())
+        except Exception:
+            pass
+        import shutil
+        return bool(shutil.which("node"))
 
     def _chromium_ok(self):
         """Tim cache Chromium cua Playwright tren Windows / macOS / Linux."""
@@ -817,9 +841,28 @@ class App:
         def has(m): return importlib.util.find_spec(m) is not None
         sc = Path(PY).parent
         items = [("Python", True, f"{sys.version_info.major}.{sys.version_info.minor}", None)]
-        node = shutil.which("node")
-        items.append(("Node.js (cho YouTube)", bool(node), node or "thiếu", None if node else ("Tải Node.js", "node")))
-        ff = self._ffmpeg_ok(); items.append(("ffmpeg", ff, "OK" if ff else "thiếu", None if ff else ("Cài ffmpeg", [str(sc / "ffdl.exe"), "install", "--add-path"])))
+        try:
+            import common as K
+            K.ensure_tool_path()
+            node = K.node_bin()
+            ff_detail = K.ffmpeg_bin() or "thiếu"
+        except Exception:
+            node = shutil.which("node")
+            ff_detail = "OK" if self._ffmpeg_ok() else "thiếu"
+        items.append((
+            "Node.js (cho YouTube)",
+            bool(node),
+            node or "thiếu",
+            None if node else ("Tải Node.js", "node"),
+        ))
+        ff = self._ffmpeg_ok()
+        # macOS/Linux: python -m ffmpeg_downloader; Windows: ffdl.exe
+        if os.name == "nt":
+            ff_fix = [str(sc / "ffdl.exe"), "install", "--add-path"]
+        else:
+            ff_fix = [PY, "-m", "ffmpeg_downloader", "install", "-y"]
+        items.append(("ffmpeg", ff, ff_detail if ff else "thiếu",
+                      None if ff else ("Cài ffmpeg", ff_fix)))
         for mod, label, pn in [("yt_dlp", "yt-dlp", "yt-dlp"), ("faster_whisper", "faster-whisper", "faster-whisper"), ("playwright", "Playwright", "playwright"), ("customtkinter", "CustomTkinter", "customtkinter")]:
             ok = has(mod); items.append((label, ok, "OK" if ok else "thiếu", None if ok else (f"Cài {label}", [PY, "-m", "pip", "install", "-U", pn])))
         ch = self._chromium_ok(); items.append(("Trình duyệt Chromium", ch, "OK" if ch else "thiếu", None if ch else ("Cài Chromium", [PY, "-m", "playwright", "install", "chromium"])))
@@ -2527,39 +2570,67 @@ class App:
         cn = self.course_name or "SkoolCourse"
         heads = {
             "import": ("Lấy khóa mới từ Skool",
-                       "Làm theo 3 bước. App mở trình duyệt riêng — đăng nhập, mở đúng khóa, app lấy danh sách chương."),
+                       "Chrome của app phải để MỞ. Đăng nhập → Classroom → nút 2 (hoặc app tự đọc)."),
             "update": (f"Kiểm tra cập nhật: {cn}",
-                       "Mở đúng khóa → Lấy danh sách. Chương MỚI được tick sẵn — chỉ dump/tải phần mới."),
+                       "Mở đúng khóa → Classroom → Lấy danh sách. Chương MỚI tick sẵn."),
             "rescue": (f"Cứu bài native hết hạn: {cn}",
-                       "Mở đúng khóa → Lấy danh sách. App dump lại token các chương cần cứu rồi tải native."),
+                       "Mở đúng khóa → Classroom → Lấy danh sách để dump token mới."),
         }
         h, sub = heads.get(self.purpose, heads["import"])
         self.head(h, sub)
 
-        # step guide cards
-        guide = ctk.CTkFrame(self.content, fg_color="transparent")
-        guide.pack(fill="x", pady=(0, 8))
-        for i, (title, desc) in enumerate((
-            ("1  Đăng nhập", "Mở Skool trong cửa sổ app"),
-            ("2  Danh sách", "Đọc chương từ Classroom"),
-            ("3  Dump", "Lưu JSON + tải về"),
-        ), 1):
-            g = ctk.CTkFrame(guide, fg_color=CARD, corner_radius=12, border_width=1, border_color=BORDER)
-            g.pack(side="left", expand=True, fill="both", padx=4)
-            ctk.CTkLabel(g, text=title, font=(FT, 12, "bold"), text_color=ACCENT).pack(anchor="w", padx=12, pady=(10, 0))
-            ctk.CTkLabel(g, text=desc, font=(FT, 11), text_color=TEXT2).pack(anchor="w", padx=12, pady=(2, 12))
+        # Huong dan ro rang — Chrome KHONG tu dong dong
+        tip = ctk.CTkFrame(self.content, fg_color=ACCENT_SOFT, corner_radius=14,
+                           border_width=1, border_color=ACCENT)
+        tip.pack(fill="x", pady=(0, 10))
+        ctk.CTkLabel(
+            tip,
+            text=(
+                "📌 Cách làm (Chrome không tự đóng — đó là đúng):\n"
+                "  ① Bấm «1. Mở Skool» → cửa sổ «Google Chrome for Testing» hiện ra\n"
+                "  ② Trong Chrome: đăng nhập Skool → vào đúng community/khóa → tab Classroom\n"
+                "     URL đúng:  https://www.skool.com/ten-khoa/classroom\n"
+                "  ③ Để Chrome mở, quay lại app → bấm «2. Lấy danh sách»\n"
+                "     (hoặc đợi app tự nhận Classroom và hiện danh sách chương bên dưới)"
+            ),
+            font=(FT, 12), text_color=TEXT, justify="left", anchor="w",
+        ).pack(anchor="w", padx=14, pady=12)
+
+        # Trang thai Chrome live
+        st = self.card()
+        ctk.CTkLabel(st, text="Trạng thái cửa sổ Chrome", font=(FT, 12, "bold"),
+                     text_color=TEXT2).pack(anchor="w", padx=14, pady=(12, 2))
+        self.browser_hint = ctk.CTkLabel(
+            st, text="Chưa mở trình duyệt — bấm nút 1.",
+            font=(FT, 13), text_color=WARNING, wraplength=640, justify="left",
+        )
+        self.browser_hint.pack(anchor="w", padx=14, pady=(0, 2))
+        self.browser_url_lbl = ctk.CTkLabel(
+            st, text="URL: —", font=("Consolas", 11), text_color=TEXT2,
+            wraplength=640, justify="left",
+        )
+        self.browser_url_lbl.pack(anchor="w", padx=14, pady=(0, 12))
 
         f = self.card()
         fin = ctk.CTkFrame(f, fg_color="transparent")
         fin.pack(fill="x", padx=12, pady=12)
         self.b_open = btn(fin, "1.   Mở Skool & đăng nhập", self.do_open, kind="accent", height=44)
         self.b_open.pack(fill="x", pady=4)
-        lbl2 = "2.   Lấy danh sách & " + ("cứu native" if self.purpose == "rescue" else "chương")
+        lbl2 = "2.   Lấy danh sách chương  (giữ Chrome mở)"
+        if self.purpose == "rescue":
+            lbl2 = "2.   Lấy danh sách & cứu native"
         self.b_list = btn(fin, lbl2, self.do_list, kind="secondary", height=44, state="disabled")
         self.b_list.pack(fill="x", pady=4)
 
+        # Cho san o hien chuong
         self.chap_box = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=16,
                                      border_width=1, border_color=BORDER)
+        self.chap_box.pack(fill="x", pady=8)
+        ctk.CTkLabel(
+            self.chap_box,
+            text="Danh sách chương sẽ hiện ở đây sau khi lấy được từ Classroom…",
+            font=(FT, 12), text_color=TEXT2,
+        ).pack(anchor="w", padx=14, pady=16)
         self.dump_row = ctk.CTkFrame(self.content, fg_color="transparent")
         btn(self.content, "←  Dashboard", self.show_dashboard, kind="ghost", width=120).pack(anchor="w", pady=10)
 
@@ -2567,16 +2638,46 @@ class App:
         if self.sb is None:
             self.write("Đang mở trình duyệt (lần đầu hơi lâu)...")
             try:
-                from skool_browser import SkoolBrowser; self.sb = SkoolBrowser()
+                from skool_browser import SkoolBrowser
+                self.sb = SkoolBrowser()
+                # ready event se tu goi open(); khong can goi them
             except Exception as e:
                 messagebox.showerror("Lỗi", f"Không mở được trình duyệt: {e}")
         else:
             self.sb.open()
+        if hasattr(self, "b_list") and self.b_list.winfo_exists():
+            try:
+                self.b_list.configure(state="normal")
+            except Exception:
+                pass
 
     def do_list(self):
-        if self.sb:
-            self.write("Đang đọc danh sách chương...")
-            self.sb.list_chapters()
+        if self.sb is None:
+            messagebox.showinfo(
+                "Chưa mở trình duyệt",
+                "Bấm «1. Mở Skool & đăng nhập» trước, đợi cửa sổ Chromium mở,\n"
+                "vào Classroom của khóa, rồi bấm nút 2.",
+            )
+            return
+        self.write("Đang đọc danh sách chương… (cần đang ở trang …/ten-khoa/classroom)")
+        if hasattr(self, "b_list") and self.b_list.winfo_exists():
+            try:
+                self.b_list.configure(state="disabled")
+            except Exception:
+                pass
+        self.sb.list_chapters()
+        # mo lai nut sau 2s (event chapters/error se cap nhat)
+        try:
+            self.root.after(2500, self._reenable_list_btn)
+        except Exception:
+            pass
+
+    def _reenable_list_btn(self):
+        if hasattr(self, "b_list") and self.b_list.winfo_exists():
+            try:
+                self.b_list.configure(state="normal")
+            except Exception:
+                pass
 
     def render_chapters(self, group, chapters):
         for w in self.chap_box.winfo_children():
@@ -3175,8 +3276,16 @@ class App:
         for w in self.mgr_scroll.winfo_children(): w.destroy()
         self.mgr_widgets = {}
         if not self.mgr_tree:
-            ctk.CTkLabel(self.mgr_scroll, text="(Chưa có dữ liệu chương — dùng “Thêm khóa mới” hoặc “Kiểm tra cập nhật” để lấy danh sách trước.)",
-                         font=(FT, 12), text_color=TEXT2, wraplength=520, justify="left").pack(anchor="w", padx=12, pady=12)
+            ctk.CTkLabel(
+                self.mgr_scroll,
+                text=(
+                    "Chưa có bài/chương trong khóa này.\n\n"
+                    "• Khóa mới: Dashboard → «Thêm khóa mới» → mở Classroom → nút 2 lấy chương → Dump.\n"
+                    "• Khóa đã dump: kiểm tra đúng thư mục lưu (BASE) chứa file vid_*.json.\n"
+                    "• BASE hiện tại:  " + str(C.BASE)
+                ),
+                font=(FT, 12), text_color=TEXT2, wraplength=560, justify="left",
+            ).pack(anchor="w", padx=12, pady=12)
             self._mgr_update_status(); return
         for ch in self.mgr_tree:
             self._mgr_render_chapter(ch)
@@ -3776,19 +3885,92 @@ class App:
         except Exception:
             pass
 
+    def _set_browser_status_ui(self, url="", hint="", on_classroom=False, alive=True):
+        if url:
+            self._last_browser_url = url
+        if hasattr(self, "browser_hint") and self.browser_hint.winfo_exists():
+            color = SUCCESS if on_classroom else (WARNING if alive else DANGER)
+            self.browser_hint.configure(
+                text=hint or ("Chrome đang mở" if alive else "Chrome chưa mở"),
+                text_color=color,
+            )
+        if hasattr(self, "browser_url_lbl") and self.browser_url_lbl.winfo_exists():
+            self.browser_url_lbl.configure(text=f"URL: {url or getattr(self, '_last_browser_url', None) or '—'}")
+        if on_classroom and hasattr(self, "b_list") and self.b_list.winfo_exists():
+            try:
+                self.b_list.configure(state="normal")
+            except Exception:
+                pass
+
     def on_browser_event(self, e):
         t = e.get("type")
-        if t == "ready": self.write("Trình duyệt sẵn sàng."); self.sb.open()
+        if t == "ready":
+            self.write("Trình duyệt sẵn sàng.")
+            if self.sb:
+                self.sb.open()
         elif t == "opened":
-            self.write("Đã mở Skool. Đăng nhập & mở trang Classroom, rồi bấm nút 2.")
-            if hasattr(self, "b_list") and self.b_list.winfo_exists(): self.b_list.configure(state="normal")
-        elif t == "log": self.write(e["msg"])
-        elif t == "need_classroom": messagebox.showinfo("Mở trang Classroom", e["msg"])
+            self.write(
+                "✓ Chrome đã mở (không tự đóng). "
+                "Đăng nhập → Classroom (…/ten-khoa/classroom) → nút 2, hoặc đợi app tự đọc."
+            )
+            self._reenable_list_btn()
+            self._set_browser_status_ui(
+                hint="Chrome đang mở — KHÔNG đóng. Vào Classroom rồi bấm nút 2.",
+                alive=True,
+            )
+        elif t == "browser_status":
+            self._set_browser_status_ui(
+                url=e.get("url") or "",
+                hint=e.get("hint") or "",
+                on_classroom=bool(e.get("on_classroom")),
+                alive=bool(e.get("alive", True)),
+            )
+        elif t == "log":
+            self.write(e["msg"])
+        elif t == "need_classroom":
+            self._reenable_list_btn()
+            self._set_browser_status_ui(
+                hint="Chưa thấy Classroom — mở tab Classroom trong Chrome rồi bấm nút 2.",
+                alive=True,
+            )
+            messagebox.showinfo("Cần trang Classroom", e["msg"])
+        elif t == "error":
+            self._reenable_list_btn()
+            self.write(f"[LỖI trình duyệt] {e.get('msg')}")
+            messagebox.showerror(
+                "Trình duyệt",
+                f"{e.get('msg')}\n\n"
+                "Gợi ý: đóng hết «Chrome for Testing», bấm lại «1. Mở Skool».\n"
+                "Nhớ: Chrome phải để mở khi bấm nút 2.",
+            )
         elif t == "chapters":
-            self.live_titles = [c["title"] for c in e["chapters"]]
-            self.write(f"Tìm thấy {len(e['chapters'])} chương.")
-            if self.purpose == "rescue": self._rescue_dump(e["group"], e["chapters"])
-            else: self.render_chapters(e["group"], e["chapters"])
+            self._reenable_list_btn()
+            chs = e.get("chapters") or []
+            self.live_titles = [c["title"] for c in chs]
+            self.write(f"✓ Tìm thấy {len(chs)} chương — tick chương rồi bấm Dump bên dưới.")
+            self._set_browser_status_ui(
+                hint=f"✓ Đã lấy {len(chs)} chương — chọn chương và Dump. Chrome vẫn để mở.",
+                on_classroom=True,
+                alive=True,
+                url=getattr(self, "_last_browser_url", "") or "",
+            )
+            if not chs:
+                messagebox.showinfo("Trống", "Không có chương nào trong danh sách.")
+                return
+            # dam bao o chuong hien ra
+            try:
+                if hasattr(self, "chap_box") and self.chap_box.winfo_exists():
+                    self.chap_box.pack(fill="x", pady=8)
+            except Exception:
+                pass
+            if self.purpose == "rescue":
+                self._rescue_dump(e["group"], chs)
+            else:
+                self.render_chapters(e["group"], chs)
+            try:
+                self.content._parent_canvas.yview_moveto(0.35)  # type: ignore
+            except Exception:
+                pass
         elif t == "dump_progress":
             self.write(f"[{e['i']}/{e['n']}] {e['title']}")
             if (hasattr(self, "dump_status") and self.dump_status.winfo_exists()
@@ -4928,6 +5110,12 @@ class App:
 
 
 def main():
+    # Finder / .app: PATH thieu Homebrew — bo sung node + ffmpeg truoc khi check env
+    try:
+        import common as K
+        K.ensure_tool_path()
+    except Exception:
+        pass
     root = ctk.CTk()
     App(root)
     if os.environ.get("GUI_SMOKE_TEST"): root.after(900, root.destroy)

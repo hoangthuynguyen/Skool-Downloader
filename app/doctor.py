@@ -45,10 +45,11 @@ def run_doctor(fix_base=None):
         "Cai Node.js neu tai YouTube")
     ff = None
     try:
-        ff = K.ffmpeg_dir() or (shutil.which("ffmpeg") and "PATH")
+        ff = K.ffmpeg_bin() or K.ffmpeg_dir() or (shutil.which("ffmpeg") and "PATH")
     except Exception:
         ff = shutil.which("ffmpeg")
-    add("core", "ffmpeg", OK if ff else FAIL, str(ff or "thieu"), "setup.ps1 / brew install ffmpeg")
+    add("core", "ffmpeg", OK if ff else FAIL, str(ff or "thieu"),
+        "brew install ffmpeg  |  python -m ffmpeg_downloader install -y")
     add("core", "faster-whisper",
         OK if has_mod("faster_whisper") else (WARN if has_mod("whisper") else WARN),
         "ok" if has_mod("faster_whisper") else "thieu (chi can khi phu de)",

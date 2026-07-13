@@ -1,32 +1,125 @@
 """
-Dieu khien trinh duyet (Playwright) cho GUI: nguoi dung dang nhap Skool 1 lan,
-app doc danh sach chuong, va dump (tra JSON ve Python -> ghi ra courses/<khoa>/).
-Chay trong 1 LUONG rieng (Playwright sync API phai o cung 1 thread).
-Giao tiep voi GUI qua 2 hang doi: cmd_q (GUI->worker), evt_q (worker->GUI).
+Dieu khien trinh duyet (Playwright) cho GUI.
+
+Luu dang nhap bang storage_state.json (on dinh hon launch_persistent_context
+tren macOS — tranh SingletonLock / CDP dut khi user dieu huong).
+
+Chay 1 thread rieng. GUI <-> worker: cmd_q / evt_q.
 """
-import json, re, threading, queue
+from __future__ import annotations
+
+import json
+import queue
+import re
+import subprocess
+import threading
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-USER_DATA = HERE / ".browser"          # luu dang nhap (persistent) - .gitignore
+USER_DATA = HERE / ".browser"              # cache chrome (tuy chon)
+STATE_FILE = HERE / ".browser_state.json"  # cookies / localStorage Skool
+USER_DATA.mkdir(parents=True, exist_ok=True)
+
 
 def san_file(s):
-    s = re.sub(r"[\U0001F000-\U0001FAFF\U00002600-\U000027BF←-⇿⬀-⯿⌀-⏿️‍]", "", s or "")
+    s = re.sub(
+        "[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF"
+        "\u2190-\u21FF\u2B00-\u2BFF\u2300-\u23FF\uFE0F\u200D]",
+        "",
+        s or "",
+    )
     s = re.sub(r'[<>:"/\\|?*]', "", s).strip()
     s = re.sub(r"\s+", "_", s).strip("_")
     return s or "chuong"
 
-# JS: doc danh sach chuong tu trang classroom
+
+def _is_closed_err(e) -> bool:
+    s = str(e).lower()
+    return any(
+        x in s
+        for x in (
+            "has been closed",
+            "target closed",
+            "browser has been closed",
+            "context or browser has been closed",
+            "connection closed",
+            "target page, context or browser",
+            "browser closed",
+            "protocol error",
+            "session closed",
+        )
+    )
+
+
+# JS: danh sach chuong — nhieu fallback
 JS_LIST = r"""() => {
-  const el = document.getElementById('__NEXT_DATA__'); if (!el) return null;
-  const d = JSON.parse(el.textContent); const pp = d.props.pageProps || {};
-  const ac = pp.allCourses; if (!ac) return null;
-  const grp = (d.query && d.query.group) || location.pathname.split('/')[1];
-  return { group: grp, loggedIn: true,
-    chapters: ac.map((c, i) => ({ i: i+1, id: c.id, title: (c.metadata && c.metadata.title) || c.id })) };
+  function fromAllCourses(ac, grp) {
+    if (!ac || !Array.isArray(ac) || !ac.length) return null;
+    return {
+      group: grp,
+      loggedIn: true,
+      chapters: ac.map((c, i) => ({
+        i: i + 1,
+        id: c.id || c.courseId || (c.course && c.course.id) || String(i),
+        title: (c.metadata && c.metadata.title)
+          || (c.course && c.course.metadata && c.course.metadata.title)
+          || c.title || c.name || c.id || ('Chapter ' + (i + 1))
+      }))
+    };
+  }
+  function groupFromLoc() {
+    try {
+      const p = location.pathname.split('/').filter(Boolean);
+      if (p[0] && !['settings','@me','discovery','signin','signup','www'].includes(p[0]))
+        return p[0];
+    } catch (e) {}
+    return '';
+  }
+  const el = document.getElementById('__NEXT_DATA__');
+  let d = null;
+  try { if (el) d = JSON.parse(el.textContent); } catch (e) { d = null; }
+  const grp = (d && d.query && d.query.group) || groupFromLoc();
+  if (d) {
+    const pp = (d.props && d.props.pageProps) || {};
+    let hit = fromAllCourses(pp.allCourses, grp);
+    if (hit) return hit;
+    hit = fromAllCourses(pp.courses || pp.classroomCourses || pp.courseList, grp);
+    if (hit) return hit;
+    if (pp.group && pp.group.allCourses) {
+      hit = fromAllCourses(pp.group.allCourses, grp || pp.group.slug);
+      if (hit) return hit;
+    }
+    if (pp.course && pp.course.siblings) {
+      hit = fromAllCourses(pp.course.siblings, grp);
+      if (hit) return hit;
+    }
+  }
+  try {
+    const links = Array.from(document.querySelectorAll('a[href*="/classroom/"]'));
+    const seen = new Map();
+    for (const a of links) {
+      const m = (a.getAttribute('href') || '').match(/\/classroom\/([a-zA-Z0-9_-]+)/);
+      if (!m) continue;
+      const id = m[1];
+      if (!id || id === 'undefined' || seen.has(id)) continue;
+      // bo link chi toi /classroom (khong id)
+      let title = (a.textContent || '').trim().replace(/\s+/g, ' ');
+      if (!title || title.length < 2) title = id;
+      if (title.length > 120) title = title.slice(0, 117) + '...';
+      seen.set(id, title);
+    }
+    if (seen.size) {
+      return {
+        group: grp || groupFromLoc(),
+        loggedIn: true,
+        chapters: Array.from(seen.entries()).map(([id, title], i) => ({ i: i + 1, id, title }))
+      };
+    }
+  } catch (e) {}
+  return null;
 }"""
 
-# JS: dump 1 chuong (dang o trang chuong) -> tra ve {vid, meta} (stringified)
 JS_DUMP = r"""async () => {
   const GROUP = location.pathname.split('/')[1];
   const d = JSON.parse(document.getElementById('__NEXT_DATA__').textContent);
@@ -56,148 +149,470 @@ JS_DUMP = r"""async () => {
 
 class SkoolBrowser:
     def __init__(self):
-        self.cmd_q = queue.Queue()
-        self.evt_q = queue.Queue()
+        self.cmd_q: queue.Queue = queue.Queue()
+        self.evt_q: queue.Queue = queue.Queue()
         self.group = None
         self._p = None
+        self._browser = None
         self._ctx = None
-        self._t = threading.Thread(target=self._run, daemon=True)
+        self._page = None
+        self._auto_list_done = False  # chi tu-list 1 lan moi lan vao classroom
+        self._last_status_url = ""
+        self._t = threading.Thread(target=self._run, daemon=True, name="skool-browser")
         self._t.start()
 
-    def emit(self, **kw): self.evt_q.put(kw)
-    def send(self, **kw): self.cmd_q.put(kw)
-    def open(self):  self.send(type="open")
-    def list_chapters(self): self.send(type="list")
-    def dump(self, chapters, out_dir, all_titles=None):
-        """chapters = subset can lay [{id,title}]; all_titles = thu tu DAY DU cua khoa
-           (de _chapters.json + so thu tu file on dinh khi chi lay 1 phan khoa)."""
-        self.send(type="dump", chapters=chapters, out_dir=str(out_dir), all_titles=all_titles)
-    def quit(self): self.send(type="quit")
+    def emit(self, **kw):
+        self.evt_q.put(kw)
 
+    def send(self, **kw):
+        self.cmd_q.put(kw)
+
+    def open(self):
+        self.send(type="open")
+
+    def list_chapters(self):
+        self.send(type="list")
+
+    def dump(self, chapters, out_dir, all_titles=None):
+        self.send(
+            type="dump",
+            chapters=chapters,
+            out_dir=str(out_dir),
+            all_titles=all_titles,
+        )
+
+    def quit(self):
+        self.send(type="quit")
+
+    # ---------- worker ----------
     def _run(self):
         try:
             from playwright.sync_api import sync_playwright
         except Exception as e:
-            self.emit(type="error", msg=f"Chua cai Playwright: {e}"); return
+            self.emit(type="error", msg=f"Chua cai Playwright: {e}")
+            return
         try:
             with sync_playwright() as p:
                 self._p = p
                 self.emit(type="ready")
                 while True:
-                    cmd = self.cmd_q.get()
+                    try:
+                        cmd = self.cmd_q.get(timeout=1.2)
+                    except queue.Empty:
+                        # theo doi URL trinh duyet — GUI hien thi + tu lay chuong
+                        try:
+                            self._poll_status()
+                        except Exception:
+                            pass
+                        continue
                     if cmd.get("type") == "quit":
                         break
                     try:
                         self._handle(cmd)
                     except Exception as e:
-                        self.emit(type="error", msg=str(e))
-                if self._ctx is not None:
-                    try: self._ctx.close()
-                    except Exception: pass
+                        if _is_closed_err(e):
+                            self.emit(
+                                type="log",
+                                msg="Ket noi trinh duyet bi dut — dang mo lai...",
+                            )
+                            self._teardown(kill_chrome=True)
+                            try:
+                                self._handle(cmd)
+                            except Exception as e2:
+                                self.emit(
+                                    type="error",
+                                    msg=(
+                                        f"{e2}\n\n"
+                                        "Hay dong het cua so «Chrome for Testing», "
+                                        "bam «1. Mo Skool» roi thu lai."
+                                    ),
+                                )
+                        else:
+                            self.emit(type="error", msg=str(e))
+                self._teardown(kill_chrome=False)
         except Exception as e:
             self.emit(type="error", msg=f"Loi trinh duyet: {e}")
 
-    def _ensure_ctx(self):
-        """Tao (hoac tao lai neu da bi dong) persistent context."""
-        if self._ctx is None:
-            self._ctx = self._p.chromium.launch_persistent_context(
-                str(USER_DATA), headless=False,
-                viewport={"width": 1200, "height": 800},
-                args=["--disable-blink-features=AutomationControlled"])
-        return self._ctx
+    def _poll_status(self):
+        """Doc URL hien tai (khong dieu huong). Neu dang o /classroom -> bao GUI."""
+        page = self._page
+        if not self._page_ok(page):
+            if self._browser is None:
+                return
+            self.emit(
+                type="browser_status",
+                url="",
+                on_classroom=False,
+                alive=False,
+                hint="Trinh duyet chua mo hoac da dong. Bam nut 1.",
+            )
+            return
+        try:
+            url = page.url or ""
+        except Exception:
+            url = ""
+        on_class = bool(re.search(r"skool\.com/[^/]+/classroom/?(\?|$)", url or ""))
+        # chi emit khi doi URL de bot spam
+        if url != self._last_status_url:
+            self._last_status_url = url
+            hint = (
+                "✓ Dang o Classroom — bam nut 2 (hoac cho app tu doc danh sach)."
+                if on_class
+                else "Trong Chrome: dang nhap → chon community → tab Classroom. KHONG dong cua so Chrome."
+            )
+            self.emit(
+                type="browser_status",
+                url=url,
+                on_classroom=on_class,
+                alive=True,
+                hint=hint,
+            )
+            # Tu dong lay danh sach 1 lan khi vao dung Classroom
+            if on_class and not self._auto_list_done:
+                self._auto_list_done = True
+                self.emit(
+                    type="log",
+                    msg="Phat hien trang Classroom — tu dong lay danh sach chuong...",
+                )
+                try:
+                    self._do_list(from_auto=True)
+                except Exception as e:
+                    self._auto_list_done = False  # cho thu lai
+                    if _is_closed_err(e):
+                        raise
+                    self.emit(type="log", msg=f"Tu-list loi: {e}")
 
-    def _live_page(self):
-        """Luon tra ve 1 trang dang song (uu tien skool.com). Tu mo lai neu browser bi dong."""
-        for _ in range(2):
-            ctx = self._ensure_ctx()
+    def _kill_orphan_chrome(self):
+        """Giet Chrome dang giu profile .browser nhung mat CDP (nguyen nhan thuong gap)."""
+        try:
+            out = subprocess.check_output(
+                ["pgrep", "-f", r"user-data-dir=.*/(app/)?\.browser"],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            )
+            pids = [x for x in out.strip().split() if x.isdigit()]
+        except Exception:
+            pids = []
+        for pid in pids:
             try:
-                pages = [pg for pg in ctx.pages if not pg.is_closed()]
-                if not pages:
-                    return ctx.new_page()
-                # uu tien trang dang o classroom, roi trang skool bat ky, roi trang cuoi
-                for pg in pages:
-                    try:
-                        if "/classroom" in (pg.url or ""): return pg
-                    except Exception: pass
-                for pg in pages:
-                    try:
-                        if "skool.com" in (pg.url or ""): return pg
-                    except Exception: pass
-                return pages[-1]
+                subprocess.run(["kill", "-9", pid], check=False)
             except Exception:
-                self._ctx = None   # browser da dong -> tao lai vong sau
-        raise RuntimeError("Khong mo duoc trang (trinh duyet co the da dong).")
+                pass
+        # go singleton locks
+        for name in ("SingletonLock", "SingletonSocket", "SingletonCookie"):
+            p = USER_DATA / name
+            try:
+                if p.exists() or p.is_symlink():
+                    p.unlink()
+            except Exception:
+                pass
+        if pids:
+            time.sleep(0.6)
 
+    def _teardown(self, kill_chrome=False):
+        self._page = None
+        ctx, br = self._ctx, self._browser
+        self._ctx = None
+        self._browser = None
+        for obj, meth in ((ctx, "close"), (br, "close")):
+            if obj is None:
+                continue
+            try:
+                getattr(obj, meth)()
+            except Exception:
+                pass
+        if kill_chrome:
+            self._kill_orphan_chrome()
+
+    def _save_state(self):
+        if not self._ctx:
+            return
+        try:
+            self._ctx.storage_state(path=str(STATE_FILE))
+        except Exception:
+            pass
+
+    def _launch(self):
+        """Mo browser moi + context (load cookies neu co)."""
+        self._teardown(kill_chrome=True)
+        self.emit(type="log", msg="Dang mo Chromium...")
+        assert self._p is not None
+        self._browser = self._p.chromium.launch(
+            headless=False,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-first-run",
+                "--no-default-browser-check",
+            ],
+        )
+        kwargs = {
+            "viewport": {"width": 1280, "height": 860},
+            "locale": "en-US",
+        }
+        if STATE_FILE.exists() and STATE_FILE.stat().st_size > 10:
+            kwargs["storage_state"] = str(STATE_FILE)
+            self.emit(type="log", msg="Da nap phien dang nhap da luu.")
+        self._ctx = self._browser.new_context(**kwargs)
+        self._page = self._ctx.new_page()
+        self._page.set_default_timeout(45000)
+        return self._page
+
+    def _page_ok(self, page) -> bool:
+        if page is None:
+            return False
+        try:
+            if page.is_closed():
+                return False
+            page.evaluate("1+1")
+            return True
+        except Exception:
+            return False
+
+    def _get_page(self):
+        """Tra ve page song; relaunch neu can."""
+        if self._page_ok(self._page):
+            return self._page
+        # thu page khac trong context
+        if self._ctx is not None:
+            try:
+                for p in self._ctx.pages:
+                    if self._page_ok(p):
+                        self._page = p
+                        return p
+            except Exception:
+                pass
+        return self._launch()
+
+    def _goto(self, page, url: str, timeout: int = 60000):
+        last = None
+        for attempt in range(3):
+            try:
+                page = self._get_page() if attempt else page
+                if not self._page_ok(page):
+                    page = self._launch()
+                page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+                self._page = page
+                return page
+            except Exception as e:
+                last = e
+                if _is_closed_err(e) or attempt < 2:
+                    self.emit(type="log", msg=f"Goto that bai (lan {attempt+1}): {e}")
+                    self._teardown(kill_chrome=True)
+                    page = self._launch()
+                    time.sleep(0.4)
+                    continue
+                raise
+        raise RuntimeError(f"Khong goto duoc {url}: {last}")
+
+    def _eval(self, page, js: str):
+        last = None
+        for attempt in range(3):
+            try:
+                page = self._get_page() if attempt else page
+                if not self._page_ok(page):
+                    page = self._get_page()
+                return page.evaluate(js)
+            except Exception as e:
+                last = e
+                if _is_closed_err(e) and attempt < 2:
+                    self.emit(type="log", msg="Evaluate that bai — mo lai trinh duyet...")
+                    # giu URL neu duoc
+                    url = None
+                    try:
+                        url = page.url if page and not page.is_closed() else None
+                    except Exception:
+                        url = None
+                    self._teardown(kill_chrome=True)
+                    page = self._launch()
+                    if url and "skool.com" in (url or ""):
+                        try:
+                            page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                        except Exception:
+                            pass
+                    continue
+                raise
+        raise RuntimeError(f"evaluate failed: {last}")
+
+    # ---------- commands ----------
     def _handle(self, cmd):
-        page = self._live_page()
         t = cmd["type"]
         if t == "open":
-            self.emit(type="log", msg="Mo Skool... Hay dang nhap va mo trang Classroom cua khoa ban muon.")
-            if "skool.com" not in (page.url or ""):
-                page.goto("https://www.skool.com/", wait_until="domcontentloaded")
-            try: page.bring_to_front()
-            except Exception: pass
-            self.emit(type="opened")
+            self._do_open()
         elif t == "list":
-            # __NEXT_DATA__ chi co allCourses khi trang classroom-index duoc render tu server.
-            # SPA nav (bam dropdown) KHONG cap nhat no -> phai dieu huong THUC SU toi /classroom.
-            cur = page.url or ""
-            m = re.search(r"skool\.com/([^/?#]+)", cur)
-            if m and m.group(1) not in ("", "settings", "@me"):
-                grp = m.group(1)
-                self.emit(type="log", msg=f"Dang mo Classroom cua '{grp}'...")
-                page.goto(f"https://www.skool.com/{grp}/classroom",
-                          wait_until="domcontentloaded", timeout=30000)
-                try:
-                    page.wait_for_function(
-                        "() => { try { const d=JSON.parse(document.getElementById('__NEXT_DATA__').textContent);"
-                        " return !!(d.props.pageProps.allCourses);} catch(e){return false;} }", timeout=15000)
-                except Exception:
-                    pass
-            data = page.evaluate(JS_LIST)
-            if not data:
-                self.emit(type="need_classroom",
-                          msg="Chua thay danh sach chuong. Hay mo trang cua khoa (vao 1 community ban da tham gia) roi bam lai nut 2.")
-                return
-            self.group = data["group"]
-            self.emit(type="chapters", group=data["group"], chapters=data["chapters"])
+            self._do_list()
         elif t == "dump":
-            chapters = cmd["chapters"]; out = Path(cmd["out_dir"])
-            all_titles = cmd.get("all_titles")
-            out.mkdir(parents=True, exist_ok=True)
-            # _chapters.json giu thu tu DAY DU cua khoa (khong de subset ghi de mat thu tu).
-            order_titles = all_titles if all_titles else [c["title"] for c in chapters]
-            (out / "_chapters.json").write_text(
-                json.dumps(order_titles, ensure_ascii=False, indent=2), encoding="utf-8")
-            # so thu tu file = vi tri chuong trong khoa day du -> on dinh khi re-dump 1 phan.
-            pos = {t: i + 1 for i, t in enumerate(order_titles)}
-            grp = self.group or page.url.split("/")[3]
-            ok = 0
-            for idx, c in enumerate(chapters, 1):
-                self.emit(type="dump_progress", i=idx, n=len(chapters), title=c["title"])
+            self._do_dump(cmd)
+
+    def _do_open(self):
+        self._auto_list_done = False
+        self._last_status_url = ""
+        page = self._get_page()
+        self.emit(
+            type="log",
+            msg=(
+                "✓ Cua so Chrome se GIU MO (khong tu dong dong).\n"
+                "Trong Chrome: (1) dang nhap  (2) vao dung community/khoa  "
+                "(3) bam tab Classroom — URL .../ten-khoa/classroom\n"
+                "Roi bam nut 2 trong app (hoac doi app tu doc khi thay Classroom)."
+            ),
+        )
+        try:
+            cur = page.url if self._page_ok(page) else ""
+        except Exception:
+            cur = ""
+        if "skool.com" not in (cur or ""):
+            page = self._goto(page, "https://www.skool.com/")
+        try:
+            page.bring_to_front()
+        except Exception:
+            pass
+        self._save_state()
+        self.emit(type="opened")
+        self.emit(
+            type="browser_status",
+            url=page.url if self._page_ok(page) else "",
+            on_classroom=False,
+            alive=True,
+            hint="Chrome dang mo — KHONG dong. Vao Classroom cua khoa, roi bam nut 2.",
+        )
+
+    def _do_list(self, from_auto=False):
+        page = self._get_page()
+        try:
+            cur = page.url if self._page_ok(page) else ""
+        except Exception:
+            cur = ""
+            page = self._get_page()
+            cur = page.url or ""
+
+        skip = {"", "settings", "@me", "discovery", "signin", "signup", "www"}
+        m = re.search(r"skool\.com/([^/?#]+)", cur or "")
+        if m and m.group(1) not in skip:
+            grp = m.group(1)
+            self.emit(type="log", msg=f"Dang mo Classroom cua «{grp}»...")
+            page = self._goto(page, f"https://www.skool.com/{grp}/classroom")
+            # cho Next.js hydrate
+            try:
+                page.wait_for_load_state("domcontentloaded", timeout=15000)
+            except Exception:
+                pass
+            time.sleep(1.5)
+            try:
+                page.wait_for_function(
+                    """() => {
+                      try {
+                        const el = document.getElementById('__NEXT_DATA__');
+                        if (!el) return !!document.querySelector('a[href*="/classroom/"]');
+                        const d = JSON.parse(el.textContent);
+                        const pp = (d.props && d.props.pageProps) || {};
+                        return !!(pp.allCourses || pp.courses || pp.classroomCourses
+                          || document.querySelector('a[href*="/classroom/"]'));
+                      } catch (e) { return false; }
+                    }""",
+                    timeout=20000,
+                )
+            except Exception:
+                self.emit(
+                    type="log",
+                    msg="Cho allCourses timeout — van thu doc DOM/JSON...",
+                )
+                time.sleep(1.0)
+        else:
+            self.emit(
+                type="log",
+                msg=(
+                    "Chua o trang community. Trong Chromium hay mo: "
+                    "skool.com/<ten-khoa>/classroom  roi bam nut 2 lai."
+                ),
+            )
+
+        data = self._eval(page, JS_LIST)
+        self._save_state()
+
+        if not data or not data.get("chapters"):
+            try:
+                url_now = self._get_page().url
+            except Exception:
+                url_now = cur or "?"
+            self.emit(
+                type="need_classroom",
+                msg=(
+                    "Chua thay danh sach chuong.\n\n"
+                    "1) Trong cua so Chromium: dang nhap Skool\n"
+                    "2) Vao community → tab Classroom\n"
+                    "   URL dung: https://www.skool.com/<ten-khoa>/classroom\n"
+                    "3) Bam lai «2. Lay danh sach»\n\n"
+                    f"URL hien tai: {url_now}"
+                ),
+            )
+            return
+
+        self.group = data.get("group") or ""
+        chs = data["chapters"]
+        self.emit(type="log", msg=f"Tim thay {len(chs)} chuong (group={self.group}).")
+        self.emit(type="chapters", group=self.group, chapters=chs)
+
+    def _do_dump(self, cmd):
+        page = self._get_page()
+        chapters = cmd["chapters"]
+        out = Path(cmd["out_dir"])
+        all_titles = cmd.get("all_titles")
+        out.mkdir(parents=True, exist_ok=True)
+        order_titles = all_titles if all_titles else [c["title"] for c in chapters]
+        (out / "_chapters.json").write_text(
+            json.dumps(order_titles, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        pos = {t: i + 1 for i, t in enumerate(order_titles)}
+        try:
+            grp = self.group or (page.url or "").split("/")[3]
+        except Exception:
+            grp = self.group or ""
+        ok = 0
+        for idx, c in enumerate(chapters, 1):
+            self.emit(type="dump_progress", i=idx, n=len(chapters), title=c["title"])
+            try:
+                page = self._goto(
+                    page, f"https://www.skool.com/{grp}/classroom/{c['id']}"
+                )
                 try:
-                    page = self._live_page()
-                    page.goto(f"https://www.skool.com/{grp}/classroom/{c['id']}",
-                              wait_until="domcontentloaded", timeout=30000)
                     page.wait_for_function(
                         "() => { try { const d=JSON.parse(document.getElementById('__NEXT_DATA__').textContent);"
                         " return !!(d.props.pageProps.course && d.props.pageProps.course.children);} catch(e){return false;} }",
-                        timeout=25000)
-                    page.set_default_timeout(150000)   # chuong nhieu bai can lau
-                    res = page.evaluate(JS_DUMP)
-                    if not res or not res.get("ok"):
-                        self.emit(type="log", msg=f"  [bo qua] {c['title']}: {res.get('err') if res else 'loi'}"); continue
-                    n = pos.get(c["title"]) or pos.get(res["chapter"]) or idx
-                    safe = f"{n:02d}_{san_file(res['chapter'])}"   # so thu tu on dinh -> ten file khong trung
-                    (out / f"vid__{safe}.json").write_text(res["vid"], encoding="utf-8")
-                    (out / f"meta__{safe}.json").write_text(res["meta"], encoding="utf-8")
-                    ok += 1
-                    self.emit(type="log",
-                              msg=f"  [OK] {res['chapter']}: {res['total']} bai (native={res['native']} ext={res['ext']} text={res['none']})")
-                except Exception as e:
-                    s = str(e).lower()
-                    if "timeout" in s or "exceeded" in s:
-                        self.emit(type="log", msg=f"  [bo qua] {c['title']}: khong tai duoc (co the chuong khoa/tra phi hoac rong)")
-                    else:
-                        self.emit(type="log", msg=f"  [LOI] {c['title']}: {e}")
-            self.emit(type="dumped", ok=ok, total=len(chapters), out_dir=str(out))
+                        timeout=25000,
+                    )
+                except Exception:
+                    time.sleep(1.5)
+                page.set_default_timeout(150000)
+                res = self._eval(page, JS_DUMP)
+                if not res or not res.get("ok"):
+                    self.emit(
+                        type="log",
+                        msg=f"  [bo qua] {c['title']}: {res.get('err') if res else 'loi'}",
+                    )
+                    continue
+                n = pos.get(c["title"]) or pos.get(res["chapter"]) or idx
+                safe = f"{n:02d}_{san_file(res['chapter'])}"
+                (out / f"vid__{safe}.json").write_text(res["vid"], encoding="utf-8")
+                (out / f"meta__{safe}.json").write_text(res["meta"], encoding="utf-8")
+                ok += 1
+                self.emit(
+                    type="log",
+                    msg=(
+                        f"  [OK] {res['chapter']}: {res['total']} bai "
+                        f"(native={res['native']} ext={res['ext']} text={res['none']})"
+                    ),
+                )
+                self._save_state()
+            except Exception as e:
+                s = str(e).lower()
+                if "timeout" in s or "exceeded" in s:
+                    self.emit(
+                        type="log",
+                        msg=f"  [bo qua] {c['title']}: timeout (chuong khoa/rong?)",
+                    )
+                else:
+                    self.emit(type="log", msg=f"  [LOI] {c['title']}: {e}")
+                if _is_closed_err(e):
+                    self._teardown(kill_chrome=True)
+                    page = self._launch()
+        self.emit(type="dumped", ok=ok, total=len(chapters), out_dir=str(out))

@@ -6,6 +6,22 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"          # .../app
 ROOT="$(cd "$HERE/.." && pwd)"                # .../Skool-Downloader (repo)
 
+# --- PATH bootstrap SOM (Finder / .app chi co /usr/bin:/bin) ---
+export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
+# nvm (lay ban moi nhat neu co)
+if [ -d "${HOME}/.nvm/versions/node" ]; then
+  NVM_NODE_BIN="$(ls -1d "${HOME}/.nvm/versions/node"/*/bin 2>/dev/null | tail -1 || true)"
+  if [ -n "${NVM_NODE_BIN:-}" ] && [ -x "${NVM_NODE_BIN}/node" ]; then
+    export PATH="${NVM_NODE_BIN}:${PATH}"
+  fi
+fi
+FFDL_BIN="${HOME}/Library/Application Support/ffmpeg-downloader/ffmpeg"
+if [ -x "${FFDL_BIN}/ffmpeg" ]; then
+  export PATH="${FFDL_BIN}:${PATH}"
+fi
+# de con process (gui, yt-dlp) ke thua
+export PATH
+
 cd "$HERE"
 
 # True neu Python co customtkinter VA Tk khong bi treo (macOS CLT Python 3.9 hang).
@@ -152,24 +168,34 @@ if [ -z "$PY" ]; then
   fi
 fi
 
-# 3) Mo GUI
+# 3) Dam bao ffmpeg (ffdl neu thieu)
+if ! command -v ffmpeg >/dev/null 2>&1 && [ ! -x "${FFDL_BIN}/ffmpeg" ]; then
+  echo "  Cai ffmpeg (ffmpeg-downloader)..."
+  "$PY" -m ffmpeg_downloader install -y 2>/dev/null \
+    || echo "  [!] ffmpeg chua co. macOS: brew install ffmpeg"
+  if [ -x "${FFDL_BIN}/ffmpeg" ]; then
+    export PATH="${FFDL_BIN}:${PATH}"
+  fi
+fi
+
+# 4) Mo GUI (env -i KHONG dung — giu PATH da bo sung)
 echo "  Dang mo giao dien..."
 echo "  Python: $PY ($("$PY" -c 'import sys; print(sys.version.split()[0])' 2>/dev/null || true))"
+echo "  node:   $(command -v node 2>/dev/null || echo 'THIEU — brew install node')"
+echo "  ffmpeg: $(command -v ffmpeg 2>/dev/null || echo 'THIEU — brew install ffmpeg')"
 export PYTHONUTF8=1
 export PYTHONIOENCODING=utf-8
-# macOS: mo trong process rieng de co the dong Terminal neu muon
+# Truyen PATH ro rang cho child (nohup macOS)
+export PATH
 if [[ "$(uname -s)" == "Darwin" ]]; then
-  # nohup de khong bi kill khi dong terminal cua .command
-  nohup "$PY" gui.py >/tmp/skool-downloader-gui.log 2>&1 &
+  nohup env PATH="$PATH" "$PY" gui.py >/tmp/skool-downloader-gui.log 2>&1 &
   GPID=$!
   sleep 1.2
-  # neu fail ngay, hien log
   if ! kill -0 "$GPID" 2>/dev/null; then
     echo "  [!] GUI khong chay. Log: /tmp/skool-downloader-gui.log"
     tail -40 /tmp/skool-downloader-gui.log 2>/dev/null || true
     exit 1
   fi
-  # kiem tra process con song sau them 1s (crash cham)
   sleep 0.8
   if ! kill -0 "$GPID" 2>/dev/null; then
     echo "  [!] GUI thoat som. Log: /tmp/skool-downloader-gui.log"
@@ -179,5 +205,5 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
   echo "  Da mo app (log: /tmp/skool-downloader-gui.log)."
   echo "  Neu khong thay cua so: check Dock (Python) hoac mo lai sau khi cap quyen man hinh."
 else
-  exec "$PY" gui.py
+  exec env PATH="$PATH" "$PY" gui.py
 fi

@@ -28,3 +28,7 @@ _*.log
 *.tmp
 Thumbs.db
 .DS_Store
+
+# browser login state
+app/.browser_state.json
+app/.browser/

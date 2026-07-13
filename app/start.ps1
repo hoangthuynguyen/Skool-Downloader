@@ -45,7 +45,11 @@ if (-not $py) {
     Write-Host "  Cai thu vien (yt-dlp, whisper, customtkinter, python-docx...)..." -ForegroundColor DarkGray
     & $vpy -m pip install -r "$here\requirements.txt"
     Write-Host "  Cai ffmpeg..." -ForegroundColor DarkGray
-    try { & "$venv\Scripts\ffdl.exe" install --add-path } catch { Write-Host "  (ffmpeg: bo qua)" -ForegroundColor DarkGray }
+    try {
+        & "$venv\Scripts\ffdl.exe" install --add-path
+    } catch {
+        try { & $vpy -m ffmpeg_downloader install -y } catch { Write-Host "  (ffmpeg: bo qua)" -ForegroundColor DarkGray }
+    }
     Write-Host "  Cai trinh duyet de tai khoa (playwright)..." -ForegroundColor DarkGray
     try { & $vpy -m playwright install chromium } catch { Write-Host "  (playwright: cai sau khi can)" -ForegroundColor DarkGray }
     if (Has-Gui $vpy) { $py = $vpy } else { throw "Cai xong nhung van thieu customtkinter - xem log ben tren." }
