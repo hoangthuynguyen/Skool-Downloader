@@ -48,16 +48,26 @@ def run_checks(check_json=False):
     else: add("transcribe", WARN, "chua co engine transcribe nao",
               "pip install -U faster-whisper  (chi can neu muon phu de)")
 
-    # 6) Dung luong dia
+    # 6) BASE path
+    try:
+        info = C.base_info()
+        add("BASE", OK, f"{info['base']} ({info['source']})")
+        if not info.get("courses_exists"):
+            add("courses/", WARN, str(info["courses"]),
+                "Chua co thu muc courses — se tao khi them khoa; hoac python doctor.py --set-base <path>")
+    except Exception as e:
+        add("BASE", WARN, str(e))
+
+    # 7) Dung luong dia
     try:
         free_gb = shutil.disk_usage(C.BASE).free / (1024**3)
         st = OK if free_gb >= 20 else WARN
-        add("Dia trong", st, f"{free_gb:.1f} GB o {C.BASE.drive or C.BASE}",
+        add("Dia trong", st, f"{free_gb:.1f} GB o {getattr(C.BASE, 'drive', None) or C.BASE}",
             "Video khoa lon co the >100GB - don bot dia" if st == WARN else "")
     except Exception as e:
         add("Dia trong", WARN, f"khong do duoc: {e}")
 
-    # 7) JSON dump cua khoa (chi khi chi dinh course/root)
+    # 8) JSON dump cua khoa (chi khi chi dinh course/root)
     if check_json:
         vids = list(C.DUMP_ROOT.rglob(C.VID_PATTERN))
         if vids: add("JSON dump", OK, f"{len(vids)} file vid_*.json o {C.DUMP_ROOT}")

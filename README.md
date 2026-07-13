@@ -91,6 +91,26 @@ Double-click **`SkoolArchiver.cmd`** → mở app cửa sổ. Lần đầu trên
 
 ---
 
+## 1c. BASE path (nơi chứa `courses/`)
+
+App tìm thư mục gốc dữ liệu theo thứ tự:
+
+1. Biến môi trường `SKOOL_BASE`
+2. `app/.settings.json` → `"skool_base"`
+3. Tự nhận: có `courses/` cạnh repo (layout `SkoolProject/Archiver`) **hoặc** `courses/` trong repo
+4. Mặc định: thư mục cha của repo
+
+Kiểm tra / sửa:
+
+```powershell
+python app\doctor.py
+python app\doctor.py --set-base "E:\SkoolProject"
+```
+
+Hoặc sidebar **🩺 Doctor** trong GUI.
+
+---
+
 ## 2. Yêu cầu
 
 | Thành phần | Vì sao | Cài |
@@ -156,6 +176,9 @@ Xong. Video + tài liệu + mô tả nằm trong `courses\<Tên khóa>\`, báo c
 .\run.cmd --queue-run                           # chạy hết job queued
 .\run.cmd --queue-status                        # xem hàng đợi
 python app\preflight.py --course "X"           # chỉ kiểm tra môi trường
+python app\doctor.py                           # doctor full (core + BASE + phase modules)
+python app\doctor.py --set-base "E:\SkoolProject"
+python app\queue_engine.py --requeue-failed    # thu lai job failed/stopped
 python app\export.py   --course "X" --docx     # gộp & xuất Word (Nhóm A)
 python app\ai_tools.py --course "X" --translate --summary   # dịch + tóm tắt/to-do (cần API key / deep-translator)
 python app\updates.py  --course "X" --scan-local            # sức khỏe local / diff helper

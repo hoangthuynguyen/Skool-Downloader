@@ -4,21 +4,73 @@ Cau hinh trung tam cho Skool Archiver.
 Mac dinh: layout 1-khoa cu  ->  BASE/SkoolCourse  (giu nguyen cho khoa da tai).
 Khi chay  --course "Ten khoa"  ->  BASE/courses/Ten khoa/   (JSON dump + output deu o day).
 
-Co the override bang bien moi truong:
-    SKOOL_BASE = duong dan goc (mac dinh E:\\SkoolProject)
+Override (uu tien giam dan):
+  1) bien moi truong SKOOL_BASE
+  2) app/.settings.json -> "skool_base"
+  3) tu dong: parent co courses/  (layout SkoolProject/Archiver)
+     hoac chinh thu muc repo neu co courses/ ben trong
+  4) fallback: parent cua repo (layout classic)
 """
+import json
 import os
 from pathlib import Path
 
+_APP_DIR = Path(__file__).resolve().parent
+_ARCHIVER_DIR = _APP_DIR.parent  # repo / Archiver
+_SETTINGS_FILE = _APP_DIR / ".settings.json"
+
+
+def _read_settings():
+    try:
+        return json.loads(_SETTINGS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def resolve_base():
+    """Chon BASE thong minh — tuong thich may Windows (SkoolProject) va clone repo don."""
+    env = (os.environ.get("SKOOL_BASE") or "").strip()
+    if env:
+        return Path(env).expanduser().resolve()
+
+    s = _read_settings()
+    saved = (s.get("skool_base") or "").strip()
+    if saved:
+        return Path(saved).expanduser().resolve()
+
+    parent = _ARCHIVER_DIR.parent
+    # Classic: .../SkoolProject/courses  +  .../SkoolProject/Archiver/app
+    if (parent / "courses").is_dir() or (parent / "SkoolCourse").is_dir():
+        return parent.resolve()
+    # Repo-local: courses nam trong chinh repo
+    if (_ARCHIVER_DIR / "courses").is_dir() or (_ARCHIVER_DIR / "SkoolCourse").is_dir():
+        return _ARCHIVER_DIR.resolve()
+    # Mac dinh classic (tao courses o canh Archiver)
+    return parent.resolve()
+
+
 # ===================== DUONG DAN =====================
-# config.py o ...\Archiver\app  ->  BASE = ...\SkoolProject  (len 2 cap: app -> Archiver -> SkoolProject).
-# Khong hardcode o cung -> chay duoc tren may khac. Override bang bien moi truong SKOOL_BASE.
-BASE = Path(os.environ.get("SKOOL_BASE") or Path(__file__).resolve().parents[2])
+BASE = resolve_base()
 
 # Mac dinh = khoa cu (1 thu muc SkoolCourse). set_course()/set_root() se doi cac gia tri nay.
-COURSE    = None
-ROOT      = BASE / "SkoolCourse"   # noi chua cac folder chuong/bai + video
-DUMP_ROOT = BASE                   # noi tim de quy cac file JSON dump (vid_/meta_/Chap_)
+COURSE = None
+ROOT = BASE / "SkoolCourse"
+DUMP_ROOT = BASE
+
+
+def set_base(path, persist=False):
+    """Doi BASE runtime. persist=True -> ghi app/.settings.json."""
+    global BASE, COURSE, ROOT, DUMP_ROOT
+    BASE = Path(path).expanduser().resolve()
+    COURSE = None
+    ROOT = BASE / "SkoolCourse"
+    DUMP_ROOT = BASE
+    if persist:
+        s = _read_settings()
+        s["skool_base"] = str(BASE)
+        _SETTINGS_FILE.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
+    return BASE
+
 
 def set_course(name: str):
     """Tro pipeline vao 1 khoa cu the duoi BASE/courses/<name>/."""
@@ -28,41 +80,59 @@ def set_course(name: str):
     DUMP_ROOT = ROOT
     ROOT.mkdir(parents=True, exist_ok=True)
 
+
 def set_root(path):
     """Override truc tiep thu muc lam viec (ca JSON lan output deu o day)."""
     global ROOT, DUMP_ROOT
     ROOT = Path(path)
     DUMP_ROOT = Path(path)
 
+
+def base_info():
+    """Mo ta nguon BASE (de doctor / GUI)."""
+    env = (os.environ.get("SKOOL_BASE") or "").strip()
+    if env:
+        source = "env:SKOOL_BASE"
+    elif (_read_settings().get("skool_base") or "").strip():
+        source = "settings.json"
+    elif (BASE / "courses").is_dir() or (BASE / "SkoolCourse").is_dir():
+        source = "auto-detect"
+    else:
+        source = "default-parent"
+    return {
+        "base": str(BASE),
+        "source": source,
+        "archiver": str(_ARCHIVER_DIR),
+        "courses": str(BASE / "courses"),
+        "courses_exists": (BASE / "courses").is_dir(),
+    }
+
+
 # ===================== PATTERN JSON =====================
-VID_PATTERN  = "vid_*.json"    # link video moi bai
-META_PATTERN = "meta_*.json"   # mo ta + resources moi bai
-CHAP_PATTERN = "Chap*.json"    # cay chuong (tuy chon - de danh so chuong khi tao folder)
-STRIP_EMOJI  = True
+VID_PATTERN = "vid_*.json"
+META_PATTERN = "meta_*.json"
+CHAP_PATTERN = "Chap*.json"
+STRIP_EMOJI = True
 
 # ===================== VIDEO =====================
-DRY_RUN     = False
-ONLY_HOSTS  = []               # [] = tat ca; ["stream.video.skool.com"] = chi native
-ONLY_CHAPTER = None            # ten chuong (da san) -> chi tai chuong nay (GUI: tai 1 chuong)
-ONLY_LESSON  = None            # duong dan tuong doi bai (vs course root) -> chi tai 1 bai
-JS_RUNTIME = "node"            # JS runtime cho yt-dlp de vuot "Sign in to confirm you're not a bot"
-                               #   (deno/node). "" = tat. Yeu cau cai san (Node.js hoac Deno).
-YT_COOKIES_FILE    = ""        # duong dan cookies.txt (Netscape) neu can dang nhap; "" = tat
-YT_COOKIES_BROWSER = ""        # "firefox" (Chrome/Edge ban moi bi DPAPI -> KHONG dung). "" = tat
-MAX_TRIES  = 6                 # so lan thu lai moi video khi loi
-RETRY_WAIT = 8                 # giay nghi giua cac lan thu
+DRY_RUN = False
+ONLY_HOSTS = []
+ONLY_CHAPTER = None
+ONLY_LESSON = None
+JS_RUNTIME = "node"
+YT_COOKIES_FILE = ""
+YT_COOKIES_BROWSER = ""
+MAX_TRIES = 6
+RETRY_WAIT = 8
 
 # ===================== TRANSCRIBE =====================
-# Engine: "faster-whisper" (nhanh, nhe RAM, khuyen dung) | "openai-whisper" (du phong)
-WHISPER_ENGINE  = "faster-whisper"
-# faster-whisper: "distil-large-v3" (English-only, nhanh/nho nhat) | "large-v3-turbo" | "large-v3"
-# openai-whisper: "turbo" | "large-v3" | "medium" ...
-WHISPER_MODEL   = "distil-large-v3"
-WHISPER_LANG    = "en"          # None = tu nhan dien
-WHISPER_TASK    = "transcribe"  # "transcribe" (giu nguyen ngon ngu) | "translate" (dich SANG tieng Anh)
-WHISPER_DEVICE  = "auto"        # "auto" -> cuda neu co GPU NVIDIA, nguoc lai cpu
-WHISPER_COMPUTE = "int8"        # CPU: int8 (nhanh) ; GPU: float16
-WATCH_INTERVAL  = 90            # giay giua moi vong quet cua watcher
-WATCH_MIN_AGE   = 60            # video phai "yen" it nhat bao nhieu giay moi transcribe (tranh file dang ghi)
+WHISPER_ENGINE = "faster-whisper"
+WHISPER_MODEL = "distil-large-v3"
+WHISPER_LANG = "en"
+WHISPER_TASK = "transcribe"
+WHISPER_DEVICE = "auto"
+WHISPER_COMPUTE = "int8"
+WATCH_INTERVAL = 90
+WATCH_MIN_AGE = 60
 
 VIDEXT = (".mp4", ".webm", ".mkv", ".mov")

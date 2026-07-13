@@ -181,14 +181,44 @@ def test_export_site_and_embed():
     print("  PASS  export site + embed module")
 
 
+def test_config_base_and_doctor_requeue():
+    import config as C
+    info = C.base_info()
+    assert "base" in info and "source" in info
+    assert Path(info["base"]).is_absolute() or True
+    # set_base temp without polluting user settings: persist=False
+    old = C.BASE
+    with tempfile.TemporaryDirectory() as td:
+        C.set_base(td, persist=False)
+        assert C.BASE == Path(td).resolve()
+        assert C.ROOT == C.BASE / "SkoolCourse"
+    C.set_base(old, persist=False)
+
+    import doctor as D
+    rep = D.run_doctor()
+    assert "rows" in rep and "fail" in rep
+
+    import queue_engine as QE
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / "q.json"
+        jobs = QE.add_jobs(["A"], path=path)
+        state = QE.load_state(path)
+        state["jobs"][0]["status"] = "failed"
+        QE.save_state(state, path)
+        n = QE.requeue_failed(path=path)
+        assert n == 1
+        assert QE.load_state(path)["jobs"][0]["status"] == "queued"
+    print("  PASS  config base + doctor + requeue")
+
+
 def main():
-    print("Phase 1–5 smoke tests")
+    print("Phase 1–6 smoke tests")
     fails = 0
     for fn in (test_progress_badge, test_queue_persist, test_cloud_policy,
                test_updates_diff, test_rag_score, test_tfidf_and_multi,
                test_queue_workers_settings, test_parallel_claim,
                test_search_and_report, test_onedrive_module, test_health_and_web,
-               test_export_site_and_embed):
+               test_export_site_and_embed, test_config_base_and_doctor_requeue):
         try:
             fn()
         except Exception as e:

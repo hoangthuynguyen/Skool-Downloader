@@ -158,6 +158,40 @@ def cancel_job(job_id, path=None):
     save_state(state, path)
 
 
+def requeue_failed(path=None, include_stopped=True):
+    """Dua job failed/stopped ve queued. Tra ve so job da requeue."""
+    state = load_state(path)
+    statuses = {"failed"}
+    if include_stopped:
+        statuses.add("stopped")
+    n = 0
+    for j in state.get("jobs") or []:
+        if j.get("status") in statuses:
+            j["status"] = "queued"
+            j["error"] = None
+            j["returncode"] = None
+            j["started_at"] = None
+            j["finished_at"] = None
+            n += 1
+    if n:
+        save_state(state, path)
+    return n
+
+
+def requeue_job(job_id, path=None):
+    state = load_state(path)
+    for j in state.get("jobs") or []:
+        if j.get("id") == job_id and j.get("status") in ("failed", "stopped", "cancelled", "done"):
+            j["status"] = "queued"
+            j["error"] = None
+            j["returncode"] = None
+            j["started_at"] = None
+            j["finished_at"] = None
+            save_state(state, path)
+            return True
+    return False
+
+
 def reorder(job_ids, path=None):
     """Sap xep lai: job_ids = thu tu id muon; job khong co trong list giu sau."""
     state = load_state(path)
@@ -433,12 +467,15 @@ def main():
     ap.add_argument("--clear-done", action="store_true", help="Xoa job done/cancelled/stopped.")
     ap.add_argument("--cancel", help="Huy 1 job queued theo id.")
     ap.add_argument("--remove", help="Xoa job khoi queue theo id.")
+    ap.add_argument("--requeue-failed", action="store_true", help="Dua failed/stopped ve queued.")
     a = ap.parse_args()
     if a.workers is not None and a.save_workers:
         save_queue_settings(a.workers); print(f"Saved max_workers={a.workers}")
 
     if a.clear_done:
         clear_done(); print("Cleared done/cancelled/stopped.")
+    if a.requeue_failed:
+        n = requeue_failed(); print(f"Requeued {n} job(s).")
     if a.cancel:
         cancel_job(a.cancel); print(f"Cancelled {a.cancel}")
     if a.remove:

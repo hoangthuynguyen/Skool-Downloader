@@ -89,6 +89,7 @@ class App:
             ("☁  Cloud", self.show_cloud),
             ("🌐  Web Viewer", self.show_web_tools),
             ("📄  Xuất & Báo cáo", self.show_report),
+            ("🩺  Doctor", self.show_doctor),
         ):
             btn(nav, label, cmd, kind="ghost", text_color="white", hover_color=SIDE_HI,
                 anchor="w", height=32, font=(FT, 12)).pack(fill="x", pady=1)
@@ -504,6 +505,13 @@ class App:
     def show_dashboard(self):
         self.set_step(1); self.clear(); self.purpose = "import"
         self.head("Dashboard", "Toàn bộ khóa đã lưu — tiến độ, dung lượng, cảnh báo. Chọn khóa để tải tiếp, xếp hàng đợi, chat hoặc đồng bộ cloud.")
+        try:
+            bi = C.base_info()
+            base_line = f"BASE: {bi['base']}  ·  {bi['source']}"
+        except Exception:
+            base_line = f"BASE: {C.BASE}"
+        ctk.CTkLabel(self.content, text=base_line, font=("Consolas", 11), text_color=TEXT2,
+                     wraplength=560, justify="left").pack(anchor="w", pady=(0, 6))
         try: miss = self.env_missing()
         except Exception: miss = []
         if miss:
@@ -1535,6 +1543,7 @@ class App:
         btn(bar, "▶  Chạy hàng đợi", self.queue_run, kind="success", width=150).pack(side="left")
         btn(bar, "■  Dừng", self.queue_stop, kind="danger", width=90).pack(side="left", padx=6)
         btn(bar, "Xóa đã xong", self.queue_clear_done, kind="secondary", width=120).pack(side="left", padx=4)
+        btn(bar, "↺ Thử lại failed", self.queue_requeue_failed, kind="secondary", width=130).pack(side="left", padx=4)
         btn(bar, "↻ Làm mới", self.show_queue, kind="ghost", width=100).pack(side="right")
 
         add_card = self.card()
@@ -1577,6 +1586,8 @@ class App:
             jid = j.get("id")
             btn(row, "↓", lambda i=jid: self._queue_move(i, +1), kind="ghost", width=28, height=26).pack(side="right", padx=1)
             btn(row, "↑", lambda i=jid: self._queue_move(i, -1), kind="ghost", width=28, height=26).pack(side="right", padx=1)
+            if st in ("failed", "stopped", "cancelled"):
+                btn(row, "↺", lambda i=jid: self._queue_requeue_one(i), kind="ghost", width=28, height=26).pack(side="right")
             if st == "queued":
                 btn(row, "Hủy", lambda i=jid: self._queue_cancel(i), kind="ghost", width=50, height=26).pack(side="right")
             btn(row, "✕", lambda i=jid: self._queue_remove(i), kind="ghost", width=36, height=26).pack(side="right", padx=2)
@@ -1611,6 +1622,18 @@ class App:
     def queue_clear_done(self):
         import queue_engine as QE
         QE.clear_done(); self.show_queue()
+
+    def queue_requeue_failed(self):
+        import queue_engine as QE
+        n = QE.requeue_failed()
+        self.write(f"↺ Requeue {n} job failed/stopped")
+        self.show_queue()
+
+    def _queue_requeue_one(self, jid):
+        import queue_engine as QE
+        if QE.requeue_job(jid):
+            self.write(f"↺ Requeue {jid}")
+        self._queue_render_jobs()
 
     def _queue_save_workers(self):
         try:
@@ -1893,6 +1916,78 @@ class App:
         if not v: return
         self.cloud_save()
         self._cloud_sync_course(v, dry_run=True)
+
+    # ====================== DOCTOR + BASE (Phase 6) ======================
+    def show_doctor(self):
+        self.clear()
+        self.head("Doctor", "Kiểm tra môi trường + BASE path + module Phase 1–5. Sửa BASE nếu khóa không hiện.")
+        try:
+            bi = C.base_info()
+        except Exception:
+            bi = {"base": str(C.BASE), "source": "?", "courses": str(C.BASE / "courses")}
+
+        card = self.card()
+        ctk.CTkLabel(card, text="Thư mục dữ liệu (BASE)", font=(FT, 13, "bold"), text_color=TEXT).pack(anchor="w", padx=14, pady=(12, 4))
+        ctk.CTkLabel(card, text=f"{bi.get('base')}\nnguồn: {bi.get('source')} · courses: {bi.get('courses')}",
+                     font=("Consolas", 11), text_color=TEXT2, justify="left", wraplength=540).pack(anchor="w", padx=14, pady=(0, 6))
+        row = ctk.CTkFrame(card, fg_color="transparent"); row.pack(fill="x", padx=14, pady=(0, 8))
+        self.base_var = ctk.StringVar(value=str(bi.get("base") or ""))
+        ctk.CTkEntry(row, textvariable=self.base_var, font=("Consolas", 12)).pack(side="left", fill="x", expand=True, padx=(0, 8))
+        btn(row, "💾 Lưu BASE", self.doctor_save_base, width=120).pack(side="left")
+        ctk.CTkLabel(card, text="Hoặc đặt biến môi trường SKOOL_BASE. Sau khi đổi BASE, mở lại Dashboard.",
+                     font=(FT, 11), text_color=TEXT2, wraplength=540, justify="left").pack(anchor="w", padx=14, pady=(0, 12))
+
+        brow = ctk.CTkFrame(self.content, fg_color="transparent"); brow.pack(fill="x", pady=6)
+        btn(brow, "▶  Chạy Doctor", self.doctor_run, kind="success", width=140).pack(side="left")
+        btn(brow, "Preflight", self.show_check, kind="secondary", width=110).pack(side="left", padx=8)
+        btn(brow, "Mở BASE", lambda: self._open_path(C.BASE), kind="secondary", width=100).pack(side="left")
+
+        self.doctor_box = ctk.CTkTextbox(self.content, height=320, font=("Consolas", 11),
+                                         fg_color=CARD, text_color=TEXT, corner_radius=12)
+        self.doctor_box.pack(fill="x", pady=8)
+        self.doctor_box.insert("end", "Bấm «Chạy Doctor» để quét…")
+        self.doctor_box.configure(state="disabled")
+
+        btn(self.content, "←  Dashboard", self.show_dashboard, kind="ghost", width=120).pack(anchor="w", pady=10)
+
+    def doctor_save_base(self):
+        p = (self.base_var.get() if hasattr(self, "base_var") else "").strip()
+        if not p:
+            messagebox.showinfo("Trống", "Nhập đường dẫn BASE."); return
+        try:
+            C.set_base(p, persist=True)
+            self.write(f"✓ Đã lưu BASE = {C.BASE}")
+            messagebox.showinfo("BASE", f"Đã lưu:\n{C.BASE}\n\nMở lại Dashboard để quét khóa.")
+            self.show_doctor()
+        except Exception as e:
+            messagebox.showerror("BASE", str(e))
+
+    def doctor_run(self):
+        self.write("🩺 Doctor…")
+        def work():
+            try:
+                import doctor as D
+                import io
+                rep = D.run_doctor()
+                buf = io.StringIO()
+                # capture print
+                import contextlib
+                with contextlib.redirect_stdout(buf):
+                    D.print_report(rep)
+                return buf.getvalue(), rep
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("Doctor", str(r)); return
+            text, rep = r
+            if hasattr(self, "doctor_box") and self.doctor_box.winfo_exists():
+                self.doctor_box.configure(state="normal")
+                self.doctor_box.delete("1.0", "end")
+                self.doctor_box.insert("end", text)
+                self.doctor_box.configure(state="disabled")
+            self.write(f"Doctor: {rep.get('fail')} FAIL, {rep.get('warn')} WARN")
+        self.run_async(work, cb)
 
     # ====================== WEB VIEWER + HEALTH (Phase 4) ======================
     def show_web_tools(self):
