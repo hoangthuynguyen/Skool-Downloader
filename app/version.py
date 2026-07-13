@@ -1,6 +1,6 @@
 """Phien ban Skool Downloader (Phase ship)."""
-__version__ = "2.16.1"
-__codename__ = "chapter-order"
+__version__ = "2.17.0"
+__codename__ = "discovery-scrape"
 
 # Phase milestones (gan dung commit history)
 HISTORY = (
@@ -40,6 +40,7 @@ HISTORY = (
     "2.15.6 show all lessons (not only with URL) + better video extract",
     "2.16.0 full lesson pack: description/links/resources/lesson.json per folder",
     "2.16.1 chapters sorted 1,2,3 from _chapters.json / folder numbers",
+    "2.17.0 Discovery scrape: all pages/languages/topics → SQLite+CSV table",
 )
 
 

@@ -60,6 +60,7 @@ STEPS = ["Chọn khóa", "Lấy khóa", "Tùy chọn", "Tải về"]
 NAV_ITEMS = (
     ("dashboard", "⌂   Dashboard", "show_dashboard"),
     ("queue", "☰   Hàng đợi", "show_queue"),
+    ("discovery", "🔎   Discovery", "show_discovery"),
     ("chat", "💬   Chat RAG", "show_chat"),
     ("cloud", "☁   Cloud", "show_cloud"),
     ("web", "🌐   Web Viewer", "show_web_tools"),
@@ -230,6 +231,8 @@ class App:
         self.chat_history = []           # [(role, text)]
         self._cfg_lock = threading.Lock()  # serialize khi tam set config.C (tao folder)
         self._in_err = False             # tranh de quy man hinh loi
+        self._disc_stop = None           # threading.Event stop discovery scrape
+        self._disc_running = False
 
         try:
             import version as V
@@ -506,7 +509,9 @@ class App:
                   "browser_hint", "browser_url_lbl",
                   "dump_status", "dump_pb", "b_start", "b_all", "b_dump", "b_list", "b_open", "chap_box", "dump_row",
                   "dash_list", "dash_summary", "dash_search_box", "q_list", "q_status", "chat_box", "chat_input", "chat_src",
-                  "cloud_status", "mgr_fail_box", "doctor_box", "stat_row"):
+                  "cloud_status", "mgr_fail_box", "doctor_box", "stat_row",
+                  "disc_status", "disc_table", "disc_search", "disc_count_lbl",
+                  "disc_lang", "disc_topic", "disc_price", "disc_type", "disc_sort"):
             if hasattr(self, a):
                 delattr(self, a)
 
@@ -4754,6 +4759,362 @@ class App:
             messagebox.showinfo("Đang bận", "Đợi tác vụ hiện tại xong."); return
         self.write("🧪 Self-test (doctor --quick)…")
         self.start([PY, "selftest.py", "--quick"], "SELFTEST", on_done=lambda: self.write("✓ Self-test xong — xem Nhật ký"))
+
+    # ====================== DISCOVERY SCRAPE (catalog Skool) ======================
+    def show_discovery(self):
+        """Cào / cập nhật bảng community-khóa học trên Skool Discovery."""
+        self.set_nav("discovery")
+        self.clear()
+        import discovery_scrape as DS
+
+        self.head(
+            "Discovery — catalog Skool",
+            "Cào toàn bộ community theo page / ngôn ngữ / chủ đề. "
+            "Lưu SQLite + CSV (tên, ngôn ngữ, chủ đề, thành viên, giá, filter).",
+        )
+
+        # KPI
+        total = DS.count_courses()
+        meta = DS.load_meta()
+        krow = ctk.CTkFrame(self.content, fg_color="transparent")
+        krow.pack(fill="x", pady=(0, 8))
+        self.stat_card(krow, "Trong bảng", str(total), "courses.db", "info")
+        self.stat_card(
+            krow, "Topics API",
+            str(len(meta.get("categories") or []) or "—"),
+            "từ lần cào gần nhất", "muted",
+        )
+        self.stat_card(
+            krow, "Languages",
+            str(len(meta.get("languages") or []) or "48"),
+            "All + 48 ngôn ngữ", "muted",
+        )
+        last = (meta.get("last_scrape_at") or meta.get("saved_at") or "—")
+        self.stat_card(krow, "Cập nhật", str(last)[:16], "UTC", "ok" if total else "warn")
+
+        # Filters card
+        fcard = self.card()
+        ctk.CTkLabel(
+            fcard, text="Bộ lọc cào (giống skool.com/discovery)",
+            font=(FT, 13, "bold"), text_color=TEXT,
+        ).pack(anchor="w", padx=14, pady=(12, 6))
+
+        grid = ctk.CTkFrame(fcard, fg_color="transparent")
+        grid.pack(fill="x", padx=14, pady=(0, 8))
+
+        def _combo(parent, label, values, default=0, width=160):
+            box = ctk.CTkFrame(parent, fg_color="transparent")
+            box.pack(side="left", padx=(0, 12), pady=4)
+            ctk.CTkLabel(box, text=label, font=(FT, 11), text_color=TEXT2).pack(anchor="w")
+            labels = [v[1] for v in values]
+            keys = [v[0] for v in values]
+            var = ctk.StringVar(value=labels[default] if labels else "")
+            menu = ctk.CTkOptionMenu(
+                box, variable=var, values=labels or [""], width=width,
+                font=(FT, 12), fg_color=CARD2, button_color=BORDER,
+                text_color=TEXT, dropdown_fg_color=CARD,
+            )
+            menu.pack(anchor="w")
+            return var, keys, labels
+
+        langs = DS.languages_for_ui()
+        topics = DS.categories_for_ui()
+        # map display -> key helpers stored on self
+        self._disc_lang_map = {disp: key for key, disp in langs}
+        self._disc_topic_map = {disp: key for key, disp in topics}
+        self._disc_price_map = {disp: key for key, disp in DS.PRICE_FILTERS}
+        self._disc_type_map = {disp: key for key, disp in DS.TYPE_FILTERS}
+        self._disc_sort_map = {disp: key for key, disp in DS.SORT_FILTERS}
+
+        self.disc_lang, _, _ = _combo(grid, "Language", langs, 0, 150)
+        self.disc_topic, _, _ = _combo(grid, "Topic / Chủ đề", topics, 0, 180)
+        self.disc_price, _, _ = _combo(grid, "Price", DS.PRICE_FILTERS, 0, 120)
+        self.disc_type, _, _ = _combo(grid, "Type", DS.TYPE_FILTERS, 0, 120)
+        self.disc_sort, _, _ = _combo(grid, "Sort", DS.SORT_FILTERS, 0, 120)
+
+        opt = ctk.CTkFrame(fcard, fg_color="transparent")
+        opt.pack(fill="x", padx=14, pady=(0, 6))
+        self.disc_all_lang = ctk.BooleanVar(value=False)
+        self.disc_all_topic = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(
+            opt, text="Cào tất cả ngôn ngữ", variable=self.disc_all_lang,
+            font=(FT, 12), text_color=TEXT, fg_color=ACCENT,
+        ).pack(side="left", padx=(0, 16))
+        ctk.CTkCheckBox(
+            opt, text="Cào tất cả chủ đề", variable=self.disc_all_topic,
+            font=(FT, 12), text_color=TEXT, fg_color=ACCENT,
+        ).pack(side="left")
+
+        brow = ctk.CTkFrame(fcard, fg_color="transparent")
+        brow.pack(fill="x", padx=14, pady=(4, 12))
+        btn(brow, "▶  Cào theo filter", self._disc_start_filter, kind="success", width=150).pack(side="left")
+        btn(brow, "🌐  Cào toàn bộ", self._disc_start_full, kind="accent", width=130).pack(side="left", padx=8)
+        btn(brow, "■  Dừng", self._disc_stop_scrape, kind="danger", width=80).pack(side="left", padx=4)
+        btn(brow, "↻  Làm mới bảng", self._disc_refresh_table, kind="secondary", width=120).pack(side="left", padx=8)
+        btn(brow, "CSV", self._disc_export_csv, kind="ghost", width=70).pack(side="left", padx=4)
+        btn(brow, "📁  Mở folder", lambda: self._open_path(DS.data_dir()), kind="ghost", width=100).pack(side="left")
+
+        self.disc_status = ctk.CTkLabel(
+            fcard, text="Sẵn sàng — dữ liệu public Discovery (Playwright, headless).",
+            font=(FT, 12), text_color=TEXT2, wraplength=700, justify="left",
+        )
+        self.disc_status.pack(anchor="w", padx=14, pady=(0, 12))
+
+        # Local table filters + list
+        tcard = self.card()
+        ctk.CTkLabel(
+            tcard, text="Bảng khóa học đã cào",
+            font=(FT, 13, "bold"), text_color=TEXT,
+        ).pack(anchor="w", padx=14, pady=(12, 4))
+
+        srow = ctk.CTkFrame(tcard, fg_color="transparent")
+        srow.pack(fill="x", padx=14, pady=(0, 6))
+        ctk.CTkLabel(srow, text="Tìm:", font=(FT, 12), text_color=TEXT).pack(side="left")
+        self.disc_search = ctk.CTkEntry(
+            srow, placeholder_text="tên / slug / mô tả…", width=220, font=(FT, 12),
+        )
+        self.disc_search.pack(side="left", padx=8)
+        self.disc_search.bind("<Return>", lambda e: self._disc_refresh_table())
+        btn(srow, "Lọc bảng", self._disc_refresh_table, kind="secondary", width=90).pack(side="left")
+        self.disc_count_lbl = ctk.CTkLabel(srow, text="", font=(FT, 12), text_color=TEXT2)
+        self.disc_count_lbl.pack(side="right")
+
+        # header
+        hdr = ctk.CTkFrame(tcard, fg_color=CARD2, corner_radius=8)
+        hdr.pack(fill="x", padx=14, pady=(4, 0))
+        cols = [
+            ("Tên khóa học", 220),
+            ("Ngôn ngữ", 90),
+            ("Chủ đề", 110),
+            ("TV", 60),
+            ("Giá", 90),
+            ("Price", 70),
+            ("Type", 60),
+            ("URL", 100),
+        ]
+        for text, w in cols:
+            ctk.CTkLabel(
+                hdr, text=text, width=w, anchor="w",
+                font=(FT, 11, "bold"), text_color=TEXT2,
+            ).pack(side="left", padx=4, pady=6)
+
+        self.disc_table = ctk.CTkScrollableFrame(
+            tcard, fg_color="transparent", height=280,
+        )
+        self.disc_table.pack(fill="both", expand=True, padx=10, pady=(4, 12))
+
+        ctk.CTkLabel(
+            tcard,
+            text="Price: Free / Paid / Free trial · Type: Private / Public · Sort: Trending / Top · "
+                 "Free = $0/tháng. File: BASE/skool_discovery/courses.db + courses.csv",
+            font=(FT, 11), text_color=TEXT2, wraplength=700, justify="left",
+        ).pack(anchor="w", padx=14, pady=(0, 12))
+
+        self._disc_refresh_table()
+
+    def _disc_filter_kwargs(self):
+        import discovery_scrape as DS
+        lang_disp = self.disc_lang.get() if hasattr(self, "disc_lang") else "All"
+        topic_disp = self.disc_topic.get() if hasattr(self, "disc_topic") else "All topics"
+        price_disp = self.disc_price.get() if hasattr(self, "disc_price") else "All prices"
+        type_disp = self.disc_type.get() if hasattr(self, "disc_type") else "All types"
+        sort_disp = self.disc_sort.get() if hasattr(self, "disc_sort") else "Trending"
+        return {
+            "language": self._disc_lang_map.get(lang_disp, "all"),
+            "category_id": self._disc_topic_map.get(topic_disp, ""),
+            "price": self._disc_price_map.get(price_disp, ""),
+            "type_kind": self._disc_type_map.get(type_disp, ""),
+            "sort": self._disc_sort_map.get(sort_disp, "trending"),
+            "all_languages": bool(self.disc_all_lang.get()) if hasattr(self, "disc_all_lang") else False,
+            "all_topics": bool(self.disc_all_topic.get()) if hasattr(self, "disc_all_topic") else False,
+        }
+
+    def _disc_start_filter(self):
+        self._disc_run(mode="filter")
+
+    def _disc_start_full(self):
+        # full = all languages + all topics (overrides checkboxes)
+        if not messagebox.askyesno(
+            "Cào toàn bộ",
+            "Cào theo TẤT CẢ ngôn ngữ × TẤT CẢ chủ đề (nhiều request, có thể lâu).\n"
+            "Price/Type/Sort hiện tại vẫn được áp dụng.\n\nTiếp tục?",
+        ):
+            return
+        self._disc_run(mode="full", force_all=True)
+
+    def _disc_stop_scrape(self):
+        if self._disc_stop:
+            self._disc_stop.set()
+        self.write("⏹ Đang dừng Discovery scrape…")
+        try:
+            if hasattr(self, "disc_status") and self.disc_status.winfo_exists():
+                self.disc_status.configure(text="⏹ Đang dừng…")
+        except Exception:
+            pass
+
+    def _disc_run(self, mode="filter", force_all=False):
+        if self._disc_running:
+            messagebox.showinfo("Đang cào", "Discovery đang chạy. Bấm Dừng hoặc đợi xong.")
+            return
+        import discovery_scrape as DS
+        kw = self._disc_filter_kwargs()
+        if force_all:
+            kw["all_languages"] = True
+            kw["all_topics"] = True
+            mode = "full"
+
+        self._disc_running = True
+        self._disc_stop = threading.Event()
+        stop_ev = self._disc_stop
+
+        def progress(msg):
+            self.ui_q.put(lambda m=msg: self._disc_on_ui_event("disc_log", m))
+
+        def worker():
+            try:
+                r = DS.run_scrape(
+                    mode=mode,
+                    language=kw["language"],
+                    price=kw["price"],
+                    type_kind=kw["type_kind"],
+                    sort=kw["sort"],
+                    category_id=kw["category_id"],
+                    all_languages=kw["all_languages"],
+                    all_topics=kw["all_topics"],
+                    max_pages=200,
+                    on_progress=progress,
+                    stop_event=stop_ev,
+                )
+                self.ui_q.put(lambda res=r: self._disc_on_ui_event("disc_done", res))
+            except Exception as e:
+                self.ui_q.put(lambda err=str(e): self._disc_on_ui_event("disc_err", err))
+
+        self.write(
+            f"🔎 Discovery scrape start mode={mode} lang={kw['language']} "
+            f"topic={kw['category_id'] or 'all'} pr={kw['price'] or 'all'} "
+            f"ty={kw['type_kind'] or 'all'} srt={kw['sort']} "
+            f"all_lang={kw['all_languages']} all_topic={kw['all_topics']}"
+        )
+        try:
+            if hasattr(self, "disc_status") and self.disc_status.winfo_exists():
+                self.disc_status.configure(text="⏳ Đang cào Discovery…")
+        except Exception:
+            pass
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _disc_refresh_table(self):
+        import discovery_scrape as DS
+        if not hasattr(self, "disc_table") or not self.disc_table.winfo_exists():
+            return
+        for w in self.disc_table.winfo_children():
+            w.destroy()
+        q = ""
+        try:
+            q = (self.disc_search.get() or "").strip()
+        except Exception:
+            pass
+        # filter table by current price/type/lang display if useful
+        kw = {}
+        try:
+            fk = self._disc_filter_kwargs()
+            if fk.get("language") and fk["language"] != "all":
+                kw["language"] = fk["language"]
+            # topic filter by name from map reverse
+            topic_disp = self.disc_topic.get() if hasattr(self, "disc_topic") else ""
+            if topic_disp and topic_disp not in ("All topics", "All"):
+                kw["topic"] = topic_disp
+            price_disp = self.disc_price.get() if hasattr(self, "disc_price") else ""
+            if price_disp and price_disp not in ("All prices", "All"):
+                kw["price_kind"] = price_disp
+            type_disp = self.disc_type.get() if hasattr(self, "disc_type") else ""
+            if type_disp and type_disp not in ("All types", "All"):
+                kw["type_kind"] = type_disp.lower() if type_disp else ""
+        except Exception:
+            pass
+
+        rows = DS.query_courses(q=q, limit=400, **kw)
+        total = DS.count_courses()
+        try:
+            if hasattr(self, "disc_count_lbl") and self.disc_count_lbl.winfo_exists():
+                self.disc_count_lbl.configure(text=f"Hiện {len(rows)} / {total} khóa")
+        except Exception:
+            pass
+
+        if not rows:
+            ctk.CTkLabel(
+                self.disc_table,
+                text="Chưa có dữ liệu — bấm «Cào theo filter» hoặc «Cào toàn bộ».",
+                font=(FT, 12), text_color=TEXT2,
+            ).pack(anchor="w", padx=8, pady=16)
+            return
+
+        for i, r in enumerate(rows):
+            bg = CARD if i % 2 == 0 else CARD2
+            row = ctk.CTkFrame(self.disc_table, fg_color=bg, corner_radius=6)
+            row.pack(fill="x", pady=1, padx=2)
+            vals = [
+                ((r.get("display_name") or r.get("slug") or "")[:42], 220),
+                ((r.get("language") or "")[:16], 90),
+                ((r.get("topic") or "—")[:18], 110),
+                (str(r.get("members") or 0), 60),
+                ((r.get("price") or "")[:14], 90),
+                ((r.get("price_kind") or "")[:12], 70),
+                ((r.get("type_kind") or "—")[:10], 60),
+                ((r.get("slug") or "")[:16], 100),
+            ]
+            for text, w in vals:
+                ctk.CTkLabel(
+                    row, text=text, width=w, anchor="w",
+                    font=(FT, 11), text_color=TEXT,
+                ).pack(side="left", padx=4, pady=4)
+
+    def _disc_export_csv(self):
+        import discovery_scrape as DS
+        try:
+            path = DS.export_csv()
+            self.write(f"✓ CSV: {path}")
+            messagebox.showinfo("CSV", f"Đã xuất:\n{path}")
+            self._open_path(path.parent)
+        except Exception as e:
+            messagebox.showerror("CSV", str(e))
+
+    def _disc_on_ui_event(self, t, e):
+        """Xử lý event discovery từ ui_q (gọi từ poll loop)."""
+        if t == "disc_log":
+            self.write(str(e))
+            try:
+                if hasattr(self, "disc_status") and self.disc_status.winfo_exists():
+                    self.disc_status.configure(text=str(e)[:180])
+            except Exception:
+                pass
+        elif t == "disc_done":
+            self._disc_running = False
+            r = e or {}
+            msg = (
+                f"✓ Discovery xong — upsert≈{r.get('upserted', r.get('db_total', '?'))}, "
+                f"tổng DB={r.get('db_total', '?')}, CSV={r.get('csv', '')}"
+            )
+            self.write(msg)
+            try:
+                if hasattr(self, "disc_status") and self.disc_status.winfo_exists():
+                    self.disc_status.configure(text=msg)
+            except Exception:
+                pass
+            if getattr(self, "nav_page", "") == "discovery":
+                try:
+                    self._disc_refresh_table()
+                except Exception:
+                    pass
+            messagebox.showinfo("Discovery", msg)
+        elif t == "disc_err":
+            self._disc_running = False
+            self.write(f"[Discovery lỗi] {e}")
+            try:
+                if hasattr(self, "disc_status") and self.disc_status.winfo_exists():
+                    self.disc_status.configure(text=f"Lỗi: {e}")
+            except Exception:
+                pass
+            messagebox.showerror("Discovery", str(e))
 
     # ====================== WEB VIEWER + HEALTH (Phase 4) ======================
     def show_web_tools(self):
