@@ -97,6 +97,8 @@ def main():
                     help="Smart update: missing-only + uu tien chuong moi tu _update_diff.json.")
     ap.add_argument("--workers", type=int, default=None,
                     help="Sprint E: so bai video tai song song (1-4). Mac dinh VIDEO_WORKERS.")
+    ap.add_argument("--no-adaptive", action="store_true",
+                    help="Sprint J: tat adaptive workers (khong ha workers khi 429).")
     ap.add_argument("--notify", action="store_true",
                     help="Sprint F: toast he thong sau khi xong (mac dinh bat neu NOTIFY_ON_DONE).")
     ap.add_argument("--no-notify", action="store_true", help="Tat toast.")
@@ -104,6 +106,10 @@ def main():
                     help="Sprint G: dung last_course trong .settings.json.")
     ap.add_argument("--index", action="store_true", help="Sau pipeline: build RAG index (catalog+tfidf).")
     ap.add_argument("--no-index", action="store_true", help="Tat auto index sau pipeline.")
+    ap.add_argument("--smart-batch", action="store_true",
+                    help="Sprint L: enqueue smart-update moi khoa con thieu roi (tuy chon) chay.")
+    ap.add_argument("--smart-batch-run", action="store_true",
+                    help="Voi --smart-batch: chay queue ngay.")
     # multi-course queue (S2) — uy thac queue_engine
     ap.add_argument("--queue", help="Them nhieu khoa vao hang doi (ten cach nhau bang dau phay) roi chay.")
     ap.add_argument("--queue-add", help="Chi them vao hang doi, khong chay (ten cach nhau bang dau phay).")
@@ -125,6 +131,19 @@ def main():
 
     if a.list_courses:
         list_courses(); return
+
+    # Sprint L: smart-batch multi-course
+    if a.smart_batch:
+        import updates as U
+        created, batch = U.enqueue_smart_batch(until_clean=True)
+        print(f"Smart batch: {len(created)} job / {len(batch)} khoa")
+        for j in created:
+            print(f"  + {j.get('label')}")
+        if a.smart_batch_run and created:
+            import queue_engine as QE
+            n = QE.QueueRunner().run_all()
+            print(f"=== Queue xong ({n} job) ===")
+        return
 
     # ---- hang doi multi-course ----
     if a.queue_status or a.queue_run or a.queue or a.queue_add:
@@ -195,6 +214,8 @@ def main():
             C.ONLY_MISSING = True
     if a.workers is not None:
         C.VIDEO_WORKERS = max(1, min(int(a.workers), 4))
+    if a.no_adaptive:
+        C.ADAPTIVE_WORKERS = False
     do_index = bool(a.index) or (getattr(C, "AUTO_INDEX", True) and not a.no_index and not a.only)
     do_notify = bool(a.notify) or (getattr(C, "NOTIFY_ON_DONE", True) and not a.no_notify)
 

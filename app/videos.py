@@ -297,21 +297,99 @@ def run():
     total_jobs = len(jobs)
     idx = tai = skip = loi = 0
     fails = []   # (folder, ma, mo ta, fix)
-    quiet = workers > 1
-    counter_lock = threading.Lock()
-    done_count = [0]
+    adaptive = bool(getattr(C, "ADAPTIVE_WORKERS", True))
+    t0 = time.time()
+    bytes_done = [0]
+    rate_hits = [0]
+    cur_workers = [workers]
+    progress_path = Path(C.ROOT) / "_download_progress.json"
 
-    def _one(item):
+    def _eta_line(n, total, extra=""):
+        """Sprint K: ETA + toc do bai/phut."""
+        elapsed = max(0.001, time.time() - t0)
+        rate = n / elapsed  # jobs/sec
+        left = max(0, total - n)
+        eta_s = int(left / rate) if rate > 0 else 0
+        if eta_s >= 3600:
+            eta = f"{eta_s // 3600}h{(eta_s % 3600) // 60}m"
+        elif eta_s >= 60:
+            eta = f"{eta_s // 60}m{eta_s % 60}s"
+        else:
+            eta = f"{eta_s}s"
+        jpm = rate * 60
+        mb = bytes_done[0] / (1024 * 1024)
+        return f"ETA~{eta} · {jpm:.1f} bai/phut · {mb:.1f}MB{extra}"
+
+    def _write_progress(n, total, status="running", workers_now=1):
+        try:
+            payload = {
+                "status": status,
+                "done": n, "total": total,
+                "tai": tai, "skip": skip, "loi": loi,
+                "workers": workers_now,
+                "eta": _eta_line(n, total),
+                "elapsed_s": int(time.time() - t0),
+                "bytes": bytes_done[0],
+                "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            }
+            progress_path.write_text(
+                __import__("json").dumps(payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+
+    def _one(item, quiet=True):
         folder, url, chap_name = item
         host = url.split("/")[2] if "://" in url else url[:24]
         if done_file(folder):
-            return ("skip", folder, chap_name, host, None)
+            return ("skip", folder, chap_name, host, None, 0)
         if C.DRY_RUN:
-            return ("dry", folder, chap_name, host, None)
+            return ("dry", folder, chap_name, host, None, 0)
         ok, reason = download(url, folder, quiet=quiet)
+        sz = 0
         if ok:
-            return ("ok", folder, chap_name, host, None)
-        return ("fail", folder, chap_name, host, reason)
+            try:
+                for ext in C.VIDEXT:
+                    p = folder / ("video" + ext)
+                    if p.exists():
+                        sz = p.stat().st_size
+                        break
+            except OSError:
+                pass
+            return ("ok", folder, chap_name, host, None, sz)
+        return ("fail", folder, chap_name, host, reason, 0)
+
+    def _handle_result(status, folder, chap_name, host, reason, sz, n, total_jobs, workers_now):
+        nonlocal tai, skip, loi
+        tag = folder.name if hasattr(folder, "name") else str(folder)
+        pct = round(n * 100 / total_jobs, 1) if total_jobs else 0
+        eta = _eta_line(n, total_jobs, f" · w={workers_now}" if workers_now > 1 else "")
+        if status == "skip":
+            skip += 1
+            _plog(f"[{n}/{total_jobs} = {pct}%] skip  {tag}  | {eta}")
+        elif status == "dry":
+            _plog(f"[{n}/{total_jobs} = {pct}%] dry   {tag}")
+        elif status == "ok":
+            tai += 1
+            bytes_done[0] += sz or 0
+            _plog(f"[{n}/{total_jobs} = {pct}%] OK    {tag}  <{host}>  | {eta}")
+        else:
+            loi += 1
+            ma, mo, fix = reason or ("unknown", "?", "?")
+            fails.append((str(folder), ma, mo, fix))
+            _plog(f"[{n}/{total_jobs} = {pct}%] FAIL  {tag}  {mo}  | {eta}")
+            # Sprint J: adaptive — ha workers khi rate-limit
+            if adaptive and ma == "rate":
+                rate_hits[0] += 1
+                if rate_hits[0] >= 2 and cur_workers[0] > 1:
+                    cur_workers[0] = max(1, cur_workers[0] - 1)
+                    rate_hits[0] = 0
+                    _plog(f"!! Adaptive: rate-limit x2 → workers={cur_workers[0]} (nghi 15s)")
+                    time.sleep(15)
+            elif ma != "rate":
+                rate_hits[0] = 0
+        _write_progress(n, total_jobs, workers_now=workers_now)
 
     try:
         if workers <= 1:
@@ -320,62 +398,50 @@ def run():
                 if chap_name != last_chap:
                     print(f"=== [{chap_name}] ===")
                     last_chap = chap_name
-                idx += 1
-                pct = round(idx * 100 / total_jobs, 1) if total_jobs else 0
                 host = url.split("/")[2] if "://" in url else url[:24]
-                print(f"[{idx}/{total_jobs} = {pct}%] {folder.name}  <{host}>", flush=True)
-                status, _fd, _ch, _host, reason = _one((folder, url, chap_name))
-                if status == "skip":
-                    skip += 1
-                    print("   da co -> skip", flush=True)
-                elif status == "dry":
-                    pass
-                elif status == "ok":
-                    tai += 1
-                else:
-                    loi += 1
-                    ma, mo, fix = reason
-                    fails.append((str(folder), ma, mo, fix))
-                    print(f"   [THAT BAI] {mo}", flush=True)
+                print(f"→ {folder.name}  <{host}>", flush=True)
+                status, _fd, _ch, _host, reason, sz = _one((folder, url, chap_name), quiet=False)
+                idx += 1
+                _handle_result(status, folder, chap_name, host, reason, sz, idx, total_jobs, 1)
             if last_chap:
                 print()
         else:
-            print(f">> Parallel download workers={workers} (log gon)\n")
-            with ThreadPoolExecutor(max_workers=workers) as pool:
-                futs = {pool.submit(_one, j): j for j in jobs}
-                for fut in as_completed(futs):
-                    try:
-                        status, folder, chap_name, host, reason = fut.result()
-                    except Exception as e:
-                        loi += 1
-                        j = futs[fut]
-                        fails.append((str(j[0]), "unknown", str(e), "Chay lai"))
-                        _plog(f"[ERR] {j[0].name}: {e}")
-                        continue
-                    with counter_lock:
-                        done_count[0] += 1
-                        n = done_count[0]
-                    pct = round(n * 100 / total_jobs, 1) if total_jobs else 0
-                    tag = folder.name if hasattr(folder, "name") else str(folder)
-                    if status == "skip":
-                        skip += 1
-                        _plog(f"[{n}/{total_jobs} = {pct}%] skip  {tag}")
-                    elif status == "dry":
-                        _plog(f"[{n}/{total_jobs} = {pct}%] dry   {tag}")
-                    elif status == "ok":
-                        tai += 1
-                        _plog(f"[{n}/{total_jobs} = {pct}%] OK    {tag}  <{host}>")
-                    else:
-                        loi += 1
-                        ma, mo, fix = reason or ("unknown", "?", "?")
-                        fails.append((str(folder), ma, mo, fix))
-                        _plog(f"[{n}/{total_jobs} = {pct}%] FAIL  {tag}  {mo}")
-            idx = total_jobs
+            # Sprint E+J: parallel theo lo, adaptive workers
+            adaptive_on = "adaptive" if adaptive else "fixed"
+            print(f">> Parallel download workers={workers} ({adaptive_on}, log gon + ETA)\n")
+            pending = list(jobs)
+            n_done = 0
+            while pending:
+                w = cur_workers[0]
+                batch = pending[:w]
+                pending = pending[w:]
+                with ThreadPoolExecutor(max_workers=w) as pool:
+                    futs = {pool.submit(_one, j, True): j for j in batch}
+                    for fut in as_completed(futs):
+                        try:
+                            status, folder, chap_name, host, reason, sz = fut.result()
+                        except Exception as e:
+                            j = futs[fut]
+                            loi += 1
+                            fails.append((str(j[0]), "unknown", str(e), "Chay lai"))
+                            n_done += 1
+                            _plog(f"[ERR] {j[0].name}: {e}")
+                            continue
+                        n_done += 1
+                        _handle_result(status, folder, chap_name, host, reason, sz,
+                                       n_done, total_jobs, w)
+                        # neu adaptive ha workers, phan con lai cua batch van chay xong
+            idx = n_done
     except KeyboardInterrupt:
         print("\n[Dung] - chay lai se resume.\n")
+        _write_progress(idx, total_jobs, status="stopped", workers_now=cur_workers[0])
 
+    final_w = cur_workers[0]
+    _write_progress(idx or total_jobs, total_jobs, status="done", workers_now=final_w)
     print(f"--- VIDEO: tai={tai} skip={skip} loi={loi} folder-thieu={miss} "
-          f"({idx or total_jobs}/{total_jobs or total}) workers={workers} ---")
+          f"({idx or total_jobs}/{total_jobs or total}) workers={final_w}"
+          f"{' (adaptive)' if adaptive and final_w != workers else ''} ---")
+    print(f"    {_eta_line(idx or total_jobs, total_jobs or 1)} · elapsed={int(time.time()-t0)}s")
     if fails:
         groups = {}
         for folder, ma, mo, fix in fails:

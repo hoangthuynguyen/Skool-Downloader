@@ -112,8 +112,23 @@ def build_cmd(job, py=None):
         if "--only" not in cmd:
             cmd += ["--only", "videos"]
         cmd += ["--lesson", job["lesson"]]
+    # Sprint L: smart-update / missing-only batch
+    if job.get("smart_update"):
+        if "--only" not in cmd:
+            cmd += ["--only", "videos"]
+        cmd.append("--smart-update")
+    elif job.get("missing_only"):
+        if "--only" not in cmd:
+            cmd += ["--only", "videos"]
+        cmd.append("--missing-only")
     if job.get("until_clean") and kind in ("full", "videos", "native"):
         cmd.append("--until-clean")
+    if job.get("workers"):
+        try:
+            w = max(1, min(int(job["workers"]), 4))
+            cmd += ["--workers", str(w)]
+        except Exception:
+            pass
     return cmd
 
 

@@ -260,21 +260,99 @@ def apply_smart_update_flags(root, prefer_new_chapters=True):
     return plan
 
 
+def plan_smart_batch(base=None):
+    """Sprint L: quet moi khoa, ke hoach smart update multi-course.
+
+    Tra ve list[{item, course, root, plan, has_work}]
+    """
+    import progress as P
+    base = Path(base or C.BASE)
+    out = []
+    for meta in P.list_course_items(base):
+        try:
+            plan = plan_smart_update(meta["root"])
+        except Exception as e:
+            plan = {"has_work": False, "summary": str(e), "missing_count": 0}
+        out.append({
+            "item": meta.get("item"),
+            "course": meta.get("course"),
+            "root": str(meta["root"]),
+            "plan": plan,
+            "has_work": bool(plan.get("has_work")),
+            "missing_count": plan.get("missing_count") or 0,
+        })
+    return out
+
+
+def enqueue_smart_batch(until_clean=True, path=None, only_with_work=True):
+    """Them job smart-update vao queue cho moi khoa con thieu.
+
+    Job kind custom: videos + --smart-update via queue flags.
+    """
+    import queue_engine as QE
+    batch = plan_smart_batch()
+    created = []
+    state = QE.load_state(path)
+    for b in batch:
+        if only_with_work and not b.get("has_work"):
+            continue
+        course = b.get("course")
+        # kind videos + extra args stored
+        j = QE.make_job(course if course else None, kind="videos", until_clean=until_clean,
+                        label=f"{b.get('item') or course} · smart-update")
+        j["smart_update"] = True
+        j["missing_only"] = True
+        state["jobs"].append(j)
+        created.append(j)
+    QE.save_state(state, path)
+    return created, batch
+
+
 def main():
     K.setup_console()
-    ap = argparse.ArgumentParser(description="Update checker v2 + smart plan (Sprint B)")
+    ap = argparse.ArgumentParser(description="Update checker v2 + smart plan (Sprint B/L)")
     ap.add_argument("--course", help="Ten khoa duoi courses/")
     ap.add_argument("--root", help="Override thu muc khoa")
     ap.add_argument("--chapters-file", help="JSON list chuong remote [{id,title}]")
     ap.add_argument("--scan-local", action="store_true", help="Chi quet local health")
     ap.add_argument("--smart-plan", action="store_true",
                     help="In ke hoach smart update (missing + chapter delta)")
+    ap.add_argument("--smart-batch", action="store_true",
+                    help="Sprint L: ke hoach smart update tat ca khoa")
+    ap.add_argument("--enqueue", action="store_true",
+                    help="Voi --smart-batch: them job vao hang doi")
+    ap.add_argument("--run-queue", action="store_true",
+                    help="Sau --enqueue: chay queue")
     a = ap.parse_args()
     if a.root:
         C.set_root(a.root)
     elif a.course:
         C.set_course(a.course)
     root = C.ROOT
+    if a.smart_batch:
+        if a.enqueue:
+            created, batch = enqueue_smart_batch()
+            print(f"Smart batch: {len(created)} job queued / {len(batch)} khoa quet")
+            for j in created:
+                print(f"  + {j.get('label')}")
+            if a.run_queue:
+                import queue_engine as QE
+                n = QE.QueueRunner().run_all()
+                print(f"=== Queue xong ({n} job) ===")
+            return
+        batch = plan_smart_batch()
+        work = [b for b in batch if b.get("has_work")]
+        print(json.dumps({
+            "courses": len(batch),
+            "with_work": len(work),
+            "total_missing": sum(b.get("missing_count") or 0 for b in batch),
+            "items": [
+                {"item": b["item"], "missing": b["missing_count"],
+                 "summary": (b.get("plan") or {}).get("summary")}
+                for b in batch
+            ],
+        }, ensure_ascii=False, indent=2))
+        return
     if a.smart_plan:
         p = plan_smart_update(root)
         print(json.dumps({

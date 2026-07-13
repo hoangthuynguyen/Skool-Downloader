@@ -792,9 +792,15 @@ class App:
         r3 = ctk.CTkFrame(act, fg_color="transparent"); r3.pack(fill="x", padx=14, pady=4)
         btn(r3, "📝  Tóm tắt + To-do (AI)", self.do_summary, kind="secondary", width=210).pack(side="left", padx=(0, 8))
         ctk.CTkLabel(r3, text="Tóm tắt từng chương + to-do áp dụng", font=(FT, 11), text_color=TEXT2).pack(side="left")
-        r4 = ctk.CTkFrame(act, fg_color="transparent"); r4.pack(fill="x", padx=14, pady=(4, 12))
+        r4 = ctk.CTkFrame(act, fg_color="transparent"); r4.pack(fill="x", padx=14, pady=(4, 8))
         btn(r4, "📦  Knowledge pack (zip)", self.do_knowledge_pack, kind="accent", width=210).pack(side="left", padx=(0, 8))
         ctk.CTkLabel(r4, text="Zip text/resources — gửi sếp / USB (không video)", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r5 = ctk.CTkFrame(act, fg_color="transparent"); r5.pack(fill="x", padx=14, pady=4)
+        btn(r5, "🃏  Anki flashcards", self.do_anki_export, kind="secondary", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r5, text="TSV import Anki — blank / cloze từ transcript", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r6 = ctk.CTkFrame(act, fg_color="transparent"); r6.pack(fill="x", padx=14, pady=(4, 12))
+        btn(r6, "❓  Offline quiz", self.do_quiz_build, kind="secondary", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r6, text="MCQ offline từ knowledge (không cần API)", font=(FT, 11), text_color=TEXT2).pack(side="left")
 
         row = ctk.CTkFrame(self.content, fg_color="transparent"); row.pack(fill="x", pady=12)
         btn(row, "←  Dashboard", self.show_dashboard, kind="ghost", width=120).pack(side="left")
@@ -892,6 +898,64 @@ class App:
             messagebox.showinfo("Chưa chọn", "Hãy chọn một khóa."); return
         self.export_knowledge_pack(v)
 
+    def do_anki_export(self):
+        """Sprint M: xuat Anki TSV."""
+        v = self.rep_var.get().strip() if hasattr(self, "rep_var") else ""
+        if not v:
+            messagebox.showinfo("Chưa chọn", "Hãy chọn một khóa."); return
+        course = self.item_course(v)
+        root = self.item_root(v)
+        cloze = messagebox.askyesno("Anki", "Xuất dạng Cloze ({{c1::…}})?\nNo = Basic Front/Back.")
+        self.write(f"🃏 Anki export: {v}…")
+        def work():
+            try:
+                import anki_export as AE
+                return AE.export_course(root, course_name=course or v, cloze=cloze,
+                                       log=lambda s: self.ui_q.put(lambda m=s: self.write(m)))
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("Anki", str(r)); return
+            if messagebox.askyesno("Anki", f"{r.get('cards')} cards\n{r.get('path')}\n\nMở thư mục?"):
+                self._open_path(Path(r["path"]).parent)
+        self.run_async(work, cb)
+
+    def do_quiz_build(self):
+        """Sprint N: build offline quiz."""
+        v = self.rep_var.get().strip() if hasattr(self, "rep_var") else ""
+        if not v:
+            messagebox.showinfo("Chưa chọn", "Hãy chọn một khóa."); return
+        course = self.item_course(v)
+        root = self.item_root(v)
+        self.write(f"❓ Quiz: {v}…")
+        def work():
+            try:
+                import quiz as Q
+                qz = Q.build_quiz(root, n=10)
+                path = Q.save_quiz(root, qz)
+                return qz, str(path)
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("Quiz", str(r)); return
+            qz, path = r
+            n = qz.get("n") or 0
+            if n == 0:
+                messagebox.showinfo("Quiz", "Chưa tạo được câu (cần transcript + index)."); return
+            preview = "\n".join(
+                f"{i+1}. {(q.get('answer') or '')} — {q.get('title') or ''}"
+                for i, q in enumerate((qz.get("questions") or [])[:5])
+            )
+            messagebox.showinfo(
+                "Quiz",
+                f"{n} câu → {path}\n\nMẫu đáp án:\n{preview}\n\n"
+                f"CLI: python app/quiz.py --course \"{course or v}\" --play",
+            )
+            self.write(f"❓ {n} câu → {path}")
+        self.run_async(work, cb)
+
     # ====================== DASHBOARD (S1) ======================
     def show_step1(self):
         """Alias — màn hình chính là Dashboard."""
@@ -972,6 +1036,7 @@ class App:
         btn(bar, "↻  Làm mới", self._dash_refresh, kind="secondary", width=110).pack(side="left", padx=6)
         btn(bar, "🔄  Quét cập nhật", self.batch_local_health, kind="secondary", width=140).pack(side="left", padx=2)
         btn(bar, "★ BM", self.show_bookmarks, kind="soft", width=70).pack(side="left", padx=2)
+        btn(bar, "⚡ Batch", self.dash_smart_batch, kind="accent", width=90).pack(side="left", padx=2)
         btn(bar, "+ Hàng đợi", self.dash_enqueue_selected, kind="primary", width=130).pack(side="right")
 
         ctk.CTkLabel(self.content, text="KHÓA HỌC", font=(FT, 11, "bold"),
@@ -1282,6 +1347,39 @@ class App:
         if not target:
             messagebox.showinfo("Resume", f"Không tìm thấy khóa gần nhất: {lc or 'SkoolCourse'}"); return
         self._dash_open(target)
+
+    def dash_smart_batch(self):
+        """Sprint L: enqueue smart-update moi khoa con thieu."""
+        self.write("⚡ Đang quét smart batch toàn kho…")
+        def work():
+            try:
+                import updates as U
+                batch = U.plan_smart_batch()
+                work_items = [b for b in batch if b.get("has_work")]
+                return batch, work_items
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("Smart batch", str(r)); return
+            batch, work_items = r
+            total_m = sum(b.get("missing_count") or 0 for b in work_items)
+            if not work_items:
+                messagebox.showinfo("Smart batch", f"Đã quét {len(batch)} khóa — không còn bài thiếu."); return
+            lines = [f"• {b['item']}: {b['missing_count']} thiếu" for b in work_items[:12]]
+            msg = (f"{len(work_items)}/{len(batch)} khóa còn thiếu ({total_m} bài):\n\n"
+                   + "\n".join(lines) + "\n\nThêm vào hàng đợi smart-update?")
+            if not messagebox.askyesno("⚡ Smart batch", msg):
+                return
+            try:
+                import updates as U
+                created, _ = U.enqueue_smart_batch(until_clean=True)
+                self.write(f"✓ Đã queue {len(created)} job smart-update")
+                if messagebox.askyesno("Hàng đợi", f"Đã thêm {len(created)} job.\nMở Hàng đợi để chạy?"):
+                    self.show_queue()
+            except Exception as e:
+                messagebox.showerror("Smart batch", str(e))
+        self.run_async(work, cb)
 
     def show_bookmarks(self):
         try:

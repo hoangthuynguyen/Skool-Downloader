@@ -375,6 +375,64 @@ def test_notify_session_workers_digest():
     print("  PASS  notify + session + workers + digest + transcribe")
 
 
+def test_sprint_jklmn():
+    """Sprint J–N: adaptive flag, anki cards, quiz grade, smart-batch plan, queue smart flags."""
+    import config as C
+    import anki_export as AE
+    import quiz as Q
+    import updates as U
+    import queue_engine as QE
+    assert getattr(C, "ADAPTIVE_WORKERS", True) in (True, False)
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        lesson = root / "01 - Intro" / "01 - Lesson"
+        lesson.mkdir(parents=True)
+        body = (
+            "Automation is powerful when webhooks fire correctly. "
+            "You should configure the endpoint carefully. "
+            "Prompt engineering improves the quality of answers significantly. "
+            "Always validate input before processing the request fully."
+        )
+        (lesson / "video.txt").write_text(body, encoding="utf-8")
+        (lesson / "description.md").write_text("About webhooks and automation.", encoding="utf-8")
+        # fake catalog for quiz
+        rag = root / ".rag"
+        rag.mkdir()
+        cat = {
+            "course": "T", "lessons": [{
+                "title": "Lesson", "chapter": "Intro", "section": "Intro",
+                "path": str(lesson), "chars": len(body), "preview": body[:80],
+                "text": body,
+            }],
+            "n_lessons": 1, "n_chars": len(body),
+        }
+        (rag / "catalog_full.json").write_text(json.dumps(cat), encoding="utf-8")
+        (rag / "catalog.json").write_text(json.dumps(cat), encoding="utf-8")
+        cards = AE.make_cards(root, max_cards=20, cloze=False)
+        assert len(cards) >= 1
+        z = AE.write_tsv(cards, root / "cards.tsv")
+        assert z.exists() and z.stat().st_size > 0
+        qz = Q.build_quiz(root, n=5, seed=42)
+        assert qz["n"] >= 1
+        # grade all correct
+        ans = {q["id"]: q["answer_index"] for q in qz["questions"]}
+        g = Q.grade(qz, ans)
+        assert g["score"] == g["total"]
+        path = Q.save_quiz(root, qz)
+        assert path.exists()
+        plan = U.plan_smart_update(root)
+        assert "has_work" in plan
+    # queue smart_update flag
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / "q.json"
+        j = QE.make_job("CourseA", kind="videos", until_clean=True)
+        j["smart_update"] = True
+        cmd = QE.build_cmd(j)
+        assert "--smart-update" in cmd
+        assert "--only" in cmd and "videos" in cmd
+    print("  PASS  sprint J–N anki/quiz/batch/adaptive")
+
+
 def test_warehouse_fails_field():
     import progress as P
     st = P.warehouse_stats([])
@@ -469,7 +527,7 @@ def test_config_base_and_doctor_requeue():
 
 
 def main():
-    print("Phase 1–10 + Sprint A–I smoke tests")
+    print("Phase 1–10 + Sprint A–N smoke tests")
     fails = 0
     for fn in (test_progress_badge, test_queue_persist, test_cloud_policy,
                test_updates_diff, test_rag_score, test_tfidf_and_multi,
@@ -480,7 +538,8 @@ def main():
                test_version_module, test_warehouse_fails_field,
                test_retry_failed_and_knowledge_pack,
                test_smart_update_and_chapters, test_search_snippet_highlight,
-               test_pack_backup_restore, test_notify_session_workers_digest):
+               test_pack_backup_restore, test_notify_session_workers_digest,
+               test_sprint_jklmn):
         try:
             fn()
         except Exception as e:

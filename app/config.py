@@ -129,6 +129,7 @@ YT_COOKIES_BROWSER = ""
 MAX_TRIES = 6
 RETRY_WAIT = 8
 VIDEO_WORKERS = 1            # Sprint E: so bai tai song song trong 1 khoa (1-4)
+ADAPTIVE_WORKERS = True      # Sprint J: tu ha workers khi gap 429/rate-limit
 AUTO_INDEX = True            # sau pipeline: build RAG index (catalog + tfidf)
 NOTIFY_ON_DONE = True        # Sprint F: toast sau pipeline / het fail
 

@@ -2,7 +2,7 @@
 
 Công cụ lưu trữ **toàn bộ một khóa học Skool** về máy: cây thư mục theo chương/bài, video (native Skool + Loom + YouTube), mô tả bài, tài liệu (resources) và **phụ đề tiếng Anh (Whisper)** — chạy bằng **một lệnh**, có **kiểm tra môi trường trước khi chạy** và **báo lỗi kèm cách xử lý**.
 
-> Phiên bản hiện tại: **2.6.0** — parallel workers · notify · resume/bookmarks · health digest (`python app/main.py --version`).  
+> Phiên bản hiện tại: **2.7.0** — adaptive workers · ETA · smart-batch · Anki · offline quiz (`python app/main.py --version`).  
 > Đã kiểm chứng trên khóa *AI Automations by Jack* (584 bài, ~170 GB).
 
 ---
@@ -203,11 +203,19 @@ python -m cloud.pack_backup --list
 python -m cloud.pack_backup --restore path\to\pack.zip --course "X"
 python app\search_lib.py "webhook" --snippet   # highlight + folder bai
 python app\main.py --course "X" --only videos --workers 3   # parallel bai (1-4)
+python app\main.py --course "X" --only videos --workers 3   # adaptive ha workers khi 429
 python app\main.py --resume --only videos --missing-only    # mo last_course
 python app\main.py --course "X" --notify                    # toast khi xong
+python app\main.py --smart-batch                            # queue smart-update moi khoa thieu
+python app\main.py --smart-batch --smart-batch-run
+python app\updates.py --smart-batch
 python app\session_state.py --last
 python app\session_state.py --list-bm
 python app\health_check.py --digest --write --notify        # digest + delta
+python app\anki_export.py --course "X"                      # Anki TSV
+python app\anki_export.py --course "X" --cloze
+python app\quiz.py --course "X" --build
+python app\quiz.py --course "X" --play
 python app\main.py --course "X" --only transcribe           # phu de chi thieu
 python app\main.py --course "X" --index        # build RAG index sau pipeline
 python app\export.py   --course "X" --docx     # gộp & xuất Word (Nhóm A)
