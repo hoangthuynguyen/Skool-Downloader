@@ -99,8 +99,13 @@ def run_doctor(fix_base=None):
     add("optional", "send2trash", OK if has_mod("send2trash") else INFO, "xoa an toan")
 
     # --- Modules import ---
-    for mod in ("queue_engine", "updates", "search_lib", "health_check",
-                "web_viewer", "export_site", "rag.index", "rag.vector", "cloud.sync"):
+    for mod in (
+        "queue_engine", "updates", "search_lib", "health_check",
+        "web_viewer", "export_site", "rag.index", "rag.vector", "cloud.sync",
+        "knowledge_pack", "notify", "session_state", "anki_export", "quiz",
+        "progress_live", "learn_playlist", "content_diff", "vault_export",
+        "tools_fix", "notes", "disk_report", "study_plan", "cloud.pack_backup",
+    ):
         try:
             __import__(mod)
             add("modules", mod, OK, "import ok")

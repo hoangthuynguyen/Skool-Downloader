@@ -470,6 +470,38 @@ def test_sprint_opqrs():
     print("  PASS  sprint O–S progress/playlist/diff/vault/fix")
 
 
+def test_sprint_tuvwx():
+    """Sprint T–X: notes, disk report, study ICS."""
+    import notes as N
+    import disk_report as DR
+    import study_plan as SP
+    import learn_playlist as LP
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        lesson = root / "01 - C" / "01 - L"
+        lesson.mkdir(parents=True)
+        (lesson / "video.mp4").write_bytes(b"\x00" * 5000)
+        (lesson / "description.md").write_text("d", encoding="utf-8")
+        N.write_note(lesson, "My note about automation")
+        assert "automation" in N.read_note(lesson)
+        items = N.list_notes(root)
+        assert len(items) == 1
+        exp = N.export_notes_md(root)
+        assert exp.exists()
+        rec = DR.scan_course(root, course_name="T", top=5)
+        assert rec["n_videos"] == 1 and rec["video_bytes"] >= 5000
+        import session_state as SS
+        SS.add_bookmark("T", str(lesson), title="Lesson")
+        pl = LP.build_playlist(course="T")
+        assert pl["n"] >= 1
+        ics = SP.build_ics(pl, per_day=1)
+        assert "BEGIN:VCALENDAR" in ics and "VEVENT" in ics
+        r = SP.export_plan(course="T", days=7, per_day=1, out=str(root / "plan.ics"),
+                           log=lambda *_: None)
+        assert Path(r["path"]).exists() and r["n"] >= 1
+    print("  PASS  sprint T–X notes/disk/study")
+
+
 def test_warehouse_fails_field():
     import progress as P
     st = P.warehouse_stats([])
@@ -564,7 +596,7 @@ def test_config_base_and_doctor_requeue():
 
 
 def main():
-    print("Phase 1–10 + Sprint A–S smoke tests")
+    print("Phase 1–10 + Sprint A–X smoke tests")
     fails = 0
     for fn in (test_progress_badge, test_queue_persist, test_cloud_policy,
                test_updates_diff, test_rag_score, test_tfidf_and_multi,
@@ -576,7 +608,7 @@ def main():
                test_retry_failed_and_knowledge_pack,
                test_smart_update_and_chapters, test_search_snippet_highlight,
                test_pack_backup_restore, test_notify_session_workers_digest,
-               test_sprint_jklmn, test_sprint_opqrs):
+               test_sprint_jklmn, test_sprint_opqrs, test_sprint_tuvwx):
         try:
             fn()
         except Exception as e:

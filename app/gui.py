@@ -1107,8 +1107,15 @@ class App:
         btn(bar, "🔄  Quét cập nhật", self.batch_local_health, kind="secondary", width=140).pack(side="left", padx=2)
         btn(bar, "★ BM", self.show_bookmarks, kind="soft", width=70).pack(side="left", padx=2)
         btn(bar, "▶ Học", self.dash_learn_next, kind="success", width=80).pack(side="left", padx=2)
+        btn(bar, "📅 Plan", self.dash_study_plan, kind="soft", width=80).pack(side="left", padx=2)
+        btn(bar, "💾 Disk", self.dash_disk_report, kind="secondary", width=80).pack(side="left", padx=2)
         btn(bar, "⚡ Batch", self.dash_smart_batch, kind="accent", width=90).pack(side="left", padx=2)
         btn(bar, "+ Hàng đợi", self.dash_enqueue_selected, kind="primary", width=130).pack(side="right")
+
+        # Sprint W: live download strip (neu dang tai / co progress file)
+        self.dash_dl_box = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=12,
+                                        border_width=1, border_color=BORDER)
+        self._refresh_dash_download_strip()
 
         ctk.CTkLabel(self.content, text="KHÓA HỌC", font=(FT, 11, "bold"),
                      text_color=TEXT2).pack(anchor="w", pady=(6, 4))
@@ -1418,6 +1425,108 @@ class App:
         if not target:
             messagebox.showinfo("Resume", f"Không tìm thấy khóa gần nhất: {lc or 'SkoolCourse'}"); return
         self._dash_open(target)
+
+    def _refresh_dash_download_strip(self):
+        """Sprint W: hien ETA neu co _download_progress running tren khoa dang chon/gan nhat."""
+        if not hasattr(self, "dash_dl_box") or not self.dash_dl_box.winfo_exists():
+            return
+        for w in self.dash_dl_box.winfo_children():
+            w.destroy()
+        try:
+            import progress_live as PL
+            import session_state as SS
+            lc, _ = SS.get_last_course()
+            candidates = []
+            candidates.append((lc or "SkoolCourse", self.course_root(lc)))
+            for it in (self.existing_courses() or [])[:10]:
+                candidates.append((self.item_course(it) or it, self.item_root(it)))
+            best = None
+            for name, root in candidates:
+                data = PL.read_download_progress(root)
+                if not data:
+                    continue
+                if data.get("status") == "running":
+                    best = (name, data)
+                    break
+                if data.get("status") == "done" and best is None:
+                    best = (name, data)
+            if not best:
+                self.dash_dl_box.pack_forget()
+                return
+            name, data = best
+            # pack before course list if possible
+            try:
+                self.dash_dl_box.pack(fill="x", pady=(0, 8),
+                                     before=self.dash_list if hasattr(self, "dash_list") else None)
+            except Exception:
+                self.dash_dl_box.pack(fill="x", pady=(0, 8))
+            line = PL.format_eta_line(data)
+            frac = PL.progress_fraction(data)
+            st = data.get("status") or ""
+            icon = "⏳" if st == "running" else "✓"
+            ctk.CTkLabel(self.dash_dl_box, text=f"{icon}  Tải: {name}",
+                         font=(FT, 12, "bold"),
+                         text_color=ACCENT if st == "running" else SUCCESS).pack(
+                anchor="w", padx=14, pady=(10, 2))
+            ctk.CTkLabel(self.dash_dl_box, text=line, font=(FT, 11), text_color=TEXT2).pack(
+                anchor="w", padx=14, pady=(0, 4))
+            pb = ctk.CTkProgressBar(self.dash_dl_box, height=8, corner_radius=4,
+                                    progress_color=ACCENT, fg_color=CARD2)
+            pb.pack(fill="x", padx=14, pady=(0, 12))
+            pb.set(frac)
+        except Exception:
+            try:
+                self.dash_dl_box.pack_forget()
+            except Exception:
+                pass
+
+    def dash_study_plan(self):
+        """Sprint V: xuat ICS study plan."""
+        self.write("📅 Study plan ICS…")
+        def work():
+            try:
+                import study_plan as SP
+                return SP.export_plan(course=None, days=14, per_day=1,
+                                      log=lambda s: self.ui_q.put(lambda m=s: self.write(m)))
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("Study plan", str(r)); return
+            if messagebox.askyesno("Study plan", f"{r.get('n')} sự kiện\n{r.get('path')}\n\nMở thư mục?"):
+                self._open_path(Path(r["path"]).parent)
+        self.run_async(work, cb)
+
+    def dash_disk_report(self):
+        """Sprint U: disk report toan kho."""
+        self.write("💾 Disk report…")
+        def work():
+            try:
+                import disk_report as DR
+                rep = DR.scan_warehouse(top=15)
+                paths = DR.write_report(rep)
+                return rep, str(paths[1])
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("Disk", str(r)); return
+            rep, md = r
+            def _fh(n):
+                try:
+                    import disk_report as DR
+                    return DR._fmt(n)
+                except Exception:
+                    return str(n)
+            top = "\n".join(
+                f"  {_fh(L['size'])}  [{L.get('course')}] {L.get('rel')}"
+                for L in (rep.get("top_lessons") or [])[:5]
+            )
+            msg = (f"{rep.get('n_courses')} khóa · {rep.get('total_human')}\n\n"
+                   f"Top bài:\n{top}\n\n{md}")
+            if messagebox.askyesno("Disk report", msg + "\n\nMở thư mục?"):
+                self._open_path(Path(md).parent)
+        self.run_async(work, cb)
 
     def dash_learn_next(self):
         """Sprint P: playlist hoc tiep tu bookmarks + quiz."""
@@ -2360,7 +2469,44 @@ class App:
         ctk.CTkLabel(lrow, text=host, font=("Consolas", 10), text_color=TEXT2, width=100, anchor="w").pack(side="left")
         btn(lrow, "⬇", (lambda r=L["rel"], tt=(L["title"] or "bài"): self.dl_lesson(r, tt)), kind="ghost", width=32, height=26).pack(side="right", padx=2)
         btn(lrow, "★", (lambda L=L: self._bookmark_lesson(L)), kind="ghost", width=28, height=26).pack(side="right", padx=1)
+        btn(lrow, "✎", (lambda L=L: self._edit_lesson_note(L)), kind="ghost", width=28, height=26).pack(side="right", padx=1)
         self.mgr_widgets[("lesson", L["rel"])] = {"ic": ic}
+
+    def _edit_lesson_note(self, L):
+        """Sprint T: sua notes.md cua bai."""
+        try:
+            import notes as N
+            folder = L.get("folder")
+            if folder is None:
+                folder = self.course_root(self.course_name) / (L.get("rel") or "")
+            folder = Path(folder)
+            old = N.read_note(folder)
+        except Exception as e:
+            messagebox.showerror("Notes", str(e)); return
+        win = ctk.CTkToplevel(self.root)
+        win.title(f"Notes — {L.get('title') or folder.name}")
+        win.geometry("520x360")
+        win.transient(self.root)
+        ctk.CTkLabel(win, text=f"✎ {L.get('title') or ''}", font=(FT, 13, "bold")).pack(
+            anchor="w", padx=14, pady=(12, 4))
+        box = ctk.CTkTextbox(win, font=(FT, 12), fg_color=LOG_BG, text_color=TEXT, corner_radius=10)
+        box.pack(fill="both", expand=True, padx=12, pady=8)
+        if old:
+            box.insert("1.0", old)
+        def save():
+            try:
+                import notes as N
+                text = box.get("1.0", "end").rstrip()
+                p = N.write_note(folder, text)
+                self.write(f"✎ Note: {p}")
+                messagebox.showinfo("Notes", f"Đã lưu\n{p}")
+                win.destroy()
+            except Exception as e:
+                messagebox.showerror("Notes", str(e))
+        brow = ctk.CTkFrame(win, fg_color="transparent")
+        brow.pack(fill="x", padx=12, pady=(0, 12))
+        btn(brow, "Lưu", save, kind="accent", width=100).pack(side="right")
+        btn(brow, "Hủy", win.destroy, kind="ghost", width=80).pack(side="right", padx=6)
 
     def _bookmark_lesson(self, L):
         try:
@@ -2748,6 +2894,12 @@ class App:
             if self.proc and time.time() - getattr(self, "_last_eta", 0) > 1.2:
                 self._last_eta = time.time()
                 self._refresh_live_eta()
+            # Sprint W: cap nhat strip dashboard neu dang o dashboard
+            if (hasattr(self, "dash_dl_box") and self.dash_dl_box.winfo_exists()
+                    and hasattr(self, "dash_list") and self.dash_list.winfo_exists()):
+                if time.time() - getattr(self, "_last_dash_dl", 0) > 2.5:
+                    self._last_dash_dl = time.time()
+                    self._refresh_dash_download_strip()
         except Exception as e:
             try: self.write(f"[lỗi vòng lặp] {e}")
             except Exception: pass
