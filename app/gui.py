@@ -113,6 +113,59 @@ def save_theme_pref(mode):
 apply_theme(load_theme_pref())
 ctk.set_default_color_theme("blue")
 
+# ===== density (comfortable | compact) =====
+DENSITY = "comfortable"
+DENS = {
+    "comfortable": {
+        "btn_h": 38, "nav_h": 36, "nav_pad": 2, "log_h": 88,
+        "head": 24, "sub": 13, "pad_x": 24, "pad_y": 18, "card_r": 16,
+        "entry_h": 38, "font_btn": 13, "font_nav": 12,
+    },
+    "compact": {
+        "btn_h": 32, "nav_h": 30, "nav_pad": 1, "log_h": 64,
+        "head": 20, "sub": 12, "pad_x": 16, "pad_y": 12, "card_r": 12,
+        "entry_h": 32, "font_btn": 12, "font_nav": 11,
+    },
+}
+
+
+def dens(key, default=None):
+    return DENS.get(DENSITY, DENS["comfortable"]).get(key, default)
+
+
+def load_density_pref():
+    try:
+        import json
+        p = HERE / ".settings.json"
+        d = (json.loads(p.read_text(encoding="utf-8")).get("ui_density") or "comfortable").lower()
+        return d if d in DENS else "comfortable"
+    except Exception:
+        return "comfortable"
+
+
+def save_density_pref(mode):
+    try:
+        import json
+        p = HERE / ".settings.json"
+        s = {}
+        if p.exists():
+            try:
+                s = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                s = {}
+        s["ui_density"] = mode
+        p.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def apply_density(mode="comfortable"):
+    global DENSITY
+    DENSITY = mode if mode in DENS else "comfortable"
+
+
+apply_density(load_density_pref())
+
 
 def btn(parent, text, cmd, kind="primary", **kw):
     pal = {
@@ -127,7 +180,8 @@ def btn(parent, text, cmd, kind="primary", **kw):
         "soft": (ACCENT_SOFT, ACCENT_SOFT, ACCENT),
     }
     fg, hov, tc = pal.get(kind, pal["primary"])
-    opt = dict(corner_radius=10, height=38, font=(FT, 13, "bold"),
+    opt = dict(corner_radius=10, height=dens("btn_h", 38),
+               font=(FT, dens("font_btn", 13), "bold"),
                fg_color=fg, hover_color=hov, text_color=tc)
     if kind == "ghost":
         opt["border_width"] = 0
@@ -232,7 +286,14 @@ class App:
             self.toggle_theme, kind="ghost",
             text_color="white", hover_color=SIDE_HI, anchor="w", height=34,
             font=(FT, 12))
-        self.theme_btn.pack(fill="x", pady=(0, 4))
+        self.theme_btn.pack(fill="x", pady=(0, 2))
+        self.density_btn = btn(
+            foot,
+            "▤  Compact" if DENSITY == "comfortable" else "▦  Comfortable",
+            self.toggle_density, kind="ghost",
+            text_color="white", hover_color=SIDE_HI, anchor="w", height=34,
+            font=(FT, 12))
+        self.density_btn.pack(fill="x", pady=(0, 4))
         btn(foot, "⚙  Kiểm tra môi trường", self.show_check, kind="ghost",
             text_color="white", hover_color=SIDE_HI, anchor="w", height=34,
             font=(FT, 12)).pack(fill="x")
@@ -243,10 +304,12 @@ class App:
         main.grid_rowconfigure(0, weight=1)
         main.grid_columnconfigure(0, weight=1)
 
+        self.main_frame = main
         self.content = ctk.CTkScrollableFrame(
             main, fg_color="transparent", corner_radius=0,
             scrollbar_button_color=BORDER, scrollbar_button_hover_color=TEXT2)
-        self.content.grid(row=0, column=0, sticky="nsew", padx=(24, 10), pady=(18, 6))
+        self.content.grid(row=0, column=0, sticky="nsew",
+                          padx=(dens("pad_x", 24), 10), pady=(dens("pad_y", 18), 6))
 
         # log panel
         logwrap = ctk.CTkFrame(main, fg_color=CARD, corner_radius=14,
@@ -258,7 +321,7 @@ class App:
         ctk.CTkLabel(ltop, text="pipeline · queue · cloud", font=(FT, 10),
                      text_color=TEXT2).pack(side="left", padx=8)
         self.logwrap = logwrap
-        self.log = ctk.CTkTextbox(logwrap, height=88, font=("Consolas", 11),
+        self.log = ctk.CTkTextbox(logwrap, height=dens("log_h", 88), font=("Consolas", 11),
                                   fg_color=LOG_BG, text_color=TEXT, corner_radius=10,
                                   border_width=0)
         self.log.pack(fill="x", padx=10, pady=(6, 10))
@@ -301,6 +364,33 @@ class App:
             self.show_dashboard()
         self.write(f"Giao diện: {new} mode")
 
+    def toggle_density(self):
+        """Dao comfortable / compact, luu settings, ve lai."""
+        new = "compact" if DENSITY == "comfortable" else "comfortable"
+        apply_density(new)
+        save_density_pref(new)
+        try:
+            if hasattr(self, "content") and self.content.winfo_exists():
+                self.content.grid_configure(padx=(dens("pad_x", 24), 10),
+                                            pady=(dens("pad_y", 18), 6))
+            if hasattr(self, "log") and self.log.winfo_exists():
+                self.log.configure(height=dens("log_h", 88))
+            if hasattr(self, "density_btn") and self.density_btn.winfo_exists():
+                self.density_btn.configure(
+                    text="▤  Compact" if new == "comfortable" else "▦  Comfortable",
+                    fg_color="transparent", hover_color=SIDE_HI, text_color="white")
+        except Exception:
+            pass
+        self._build_nav()
+        self.render_sidebar()
+        page = self.nav_page or "dashboard"
+        method = next((m for i, _, m in NAV_ITEMS if i == page), "show_dashboard")
+        try:
+            getattr(self, method)()
+        except Exception:
+            self.show_dashboard()
+        self.write(f"Density: {new}")
+
     def _build_nav(self):
         for w in self.nav_box.winfo_children():
             w.destroy()
@@ -308,14 +398,15 @@ class App:
         for nid, label, method in NAV_ITEMS:
             active = (self.nav_page == nid)
             b = ctk.CTkButton(
-                self.nav_box, text=label, anchor="w", height=36,
-                corner_radius=10, font=(FT, 12, "bold" if active else "normal"),
+                self.nav_box, text=label, anchor="w", height=dens("nav_h", 36),
+                corner_radius=10,
+                font=(FT, dens("font_nav", 12), "bold" if active else "normal"),
                 fg_color=(SIDE_ACTIVE if active else "transparent"),
                 hover_color=SIDE_HI,
                 text_color=("white" if active else ON_SIDE),
                 command=lambda m=method, i=nid: self._nav_go(i, m),
             )
-            b.pack(fill="x", pady=2)
+            b.pack(fill="x", pady=dens("nav_pad", 2))
             self._nav_btns[nid] = b
 
     def _nav_go(self, page_id, method_name):
@@ -422,19 +513,21 @@ class App:
 
     def head(self, text, sub=""):
         wrap = ctk.CTkFrame(self.content, fg_color="transparent")
-        wrap.pack(fill="x", pady=(0, 14))
-        ctk.CTkLabel(wrap, text=text, font=(FT, 24, "bold"), text_color=TEXT).pack(anchor="w")
+        wrap.pack(fill="x", pady=(0, 10 if DENSITY == "compact" else 14))
+        ctk.CTkLabel(wrap, text=text, font=(FT, dens("head", 24), "bold"),
+                     text_color=TEXT).pack(anchor="w")
         if sub:
-            ctk.CTkLabel(wrap, text=sub, font=(FT, 13), text_color=TEXT2,
+            ctk.CTkLabel(wrap, text=sub, font=(FT, dens("sub", 13)), text_color=TEXT2,
                          justify="left", wraplength=640).pack(anchor="w", pady=(4, 0))
-        # accent underline
-        ctk.CTkFrame(wrap, height=3, width=48, corner_radius=2, fg_color=ACCENT).pack(anchor="w", pady=(10, 0))
+        ctk.CTkFrame(wrap, height=3, width=48, corner_radius=2, fg_color=ACCENT).pack(
+            anchor="w", pady=(8 if DENSITY == "compact" else 10, 0))
 
     def card(self, **kw):
-        opt = dict(fg_color=CARD, corner_radius=16, border_width=1, border_color=BORDER)
+        opt = dict(fg_color=CARD, corner_radius=dens("card_r", 16),
+                   border_width=1, border_color=BORDER)
         opt.update(kw)
         c = ctk.CTkFrame(self.content, **opt)
-        c.pack(fill="x", pady=8)
+        c.pack(fill="x", pady=(4 if DENSITY == "compact" else 8))
         return c
 
     def pill(self, parent, text, level="muted"):
@@ -2605,39 +2698,58 @@ class App:
     def show_doctor(self):
         self.set_nav("doctor")
         self.clear()
-        self.head("Doctor", "Kiểm tra môi trường + BASE path + module. Sửa BASE nếu khóa không hiện.")
+        self.head("Doctor", "Chẩn đoán môi trường, BASE path và module. Sửa BASE nếu khóa không hiện đúng.")
         try:
             bi = C.base_info()
         except Exception:
             bi = {"base": str(C.BASE), "source": "?", "courses": str(C.BASE / "courses")}
 
-        card = self.card()
-        ctk.CTkLabel(card, text="Thư mục dữ liệu (BASE)", font=(FT, 13, "bold"), text_color=TEXT).pack(anchor="w", padx=14, pady=(12, 4))
-        ctk.CTkLabel(card, text=f"{bi.get('base')}\nnguồn: {bi.get('source')} · courses: {bi.get('courses')}",
-                     font=("Consolas", 11), text_color=TEXT2, justify="left", wraplength=540).pack(anchor="w", padx=14, pady=(0, 6))
-        row = ctk.CTkFrame(card, fg_color="transparent"); row.pack(fill="x", padx=14, pady=(0, 8))
-        self.base_var = ctk.StringVar(value=str(bi.get("base") or ""))
-        ctk.CTkEntry(row, textvariable=self.base_var, font=("Consolas", 12)).pack(side="left", fill="x", expand=True, padx=(0, 8))
-        btn(row, "💾 Lưu BASE", self.doctor_save_base, width=120).pack(side="left")
-        ctk.CTkLabel(card, text="Hoặc đặt biến môi trường SKOOL_BASE. Sau khi đổi BASE, mở lại Dashboard.",
-                     font=(FT, 11), text_color=TEXT2, wraplength=540, justify="left").pack(anchor="w", padx=14, pady=(0, 12))
+        # info strip
+        info = ctk.CTkFrame(self.content, fg_color="transparent")
+        info.pack(fill="x", pady=(0, 8))
+        self.stat_card(info, "Theme", THEME_MODE, DENSITY, "info")
+        self.stat_card(info, "BASE source", str(bi.get("source") or "?")[:16], "path", "muted")
         try:
             import version as V
-            ver = V.version_string()
+            ver_short = V.__version__
         except Exception:
-            ver = "Skool Archiver"
-        ctk.CTkLabel(card, text=ver, font=("Consolas", 11), text_color=TEXT2).pack(anchor="w", padx=14, pady=(0, 10))
+            ver_short = "?"
+        self.stat_card(info, "Version", ver_short, "selftest OK", "ok")
 
-        brow = ctk.CTkFrame(self.content, fg_color="transparent"); brow.pack(fill="x", pady=6)
+        card = self.card()
+        ctk.CTkLabel(card, text="Thư mục dữ liệu (BASE)", font=(FT, 13, "bold"),
+                     text_color=TEXT).pack(anchor="w", padx=16, pady=(14, 4))
+        ctk.CTkLabel(card, text=f"{bi.get('base')}\ncourses: {bi.get('courses')}",
+                     font=("Consolas", 11), text_color=TEXT2, justify="left",
+                     wraplength=600).pack(anchor="w", padx=16, pady=(0, 8))
+        row = ctk.CTkFrame(card, fg_color="transparent")
+        row.pack(fill="x", padx=14, pady=(0, 8))
+        self.base_var = ctk.StringVar(value=str(bi.get("base") or ""))
+        ctk.CTkEntry(row, textvariable=self.base_var, font=("Consolas", 12), height=dens("entry_h", 36),
+                     corner_radius=10, fg_color=CARD2, border_color=BORDER).pack(
+            side="left", fill="x", expand=True, padx=(0, 8))
+        btn(row, "💾 Lưu BASE", self.doctor_save_base, kind="accent", width=120).pack(side="left")
+        ctk.CTkLabel(card, text="Hoặc SKOOL_BASE env. Đổi BASE xong mở lại Dashboard.",
+                     font=(FT, 11), text_color=TEXT2, wraplength=600,
+                     justify="left").pack(anchor="w", padx=16, pady=(0, 14))
+
+        brow = ctk.CTkFrame(self.content, fg_color="transparent")
+        brow.pack(fill="x", pady=8)
         btn(brow, "▶  Chạy Doctor", self.doctor_run, kind="success", width=140).pack(side="left")
-        btn(brow, "Self-test", self.run_selftest, kind="secondary", width=110).pack(side="left", padx=8)
-        btn(brow, "Preflight", self.show_check, kind="secondary", width=110).pack(side="left", padx=8)
-        btn(brow, "Mở BASE", lambda: self._open_path(C.BASE), kind="secondary", width=100).pack(side="left")
+        btn(brow, "Self-test", self.run_selftest, kind="secondary", width=110).pack(side="left", padx=6)
+        btn(brow, "Preflight", self.show_check, kind="secondary", width=110).pack(side="left", padx=6)
+        btn(brow, "Mở BASE", lambda: self._open_path(C.BASE), kind="soft", width=100).pack(side="left", padx=6)
 
-        self.doctor_box = ctk.CTkTextbox(self.content, height=320, font=("Consolas", 11),
-                                         fg_color=CARD, text_color=TEXT, corner_radius=12)
-        self.doctor_box.pack(fill="x", pady=8)
-        self.doctor_box.insert("end", "Bấm «Chạy Doctor» để quét…")
+        out = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=dens("card_r", 16),
+                           border_width=1, border_color=BORDER)
+        out.pack(fill="x", pady=8)
+        ctk.CTkLabel(out, text="KẾT QUẢ", font=(FT, 11, "bold"), text_color=TEXT2).pack(
+            anchor="w", padx=14, pady=(10, 0))
+        self.doctor_box = ctk.CTkTextbox(out, height=300 if DENSITY == "comfortable" else 220,
+                                         font=("Consolas", 11), fg_color=LOG_BG, text_color=TEXT,
+                                         corner_radius=10, border_width=0)
+        self.doctor_box.pack(fill="x", padx=10, pady=(6, 12))
+        self.doctor_box.insert("end", "Bấm «Chạy Doctor» để quét môi trường…")
         self.doctor_box.configure(state="disabled")
 
         btn(self.content, "←  Dashboard", self.show_dashboard, kind="ghost", width=120).pack(anchor="w", pady=10)
