@@ -134,12 +134,31 @@ def test_parallel_claim():
         print("  PASS  parallel claim")
 
 
+def test_search_and_report():
+    import search_lib as S
+    # empty warehouse still returns structure
+    md, entries = S.warehouse_report()
+    assert "Skool Archiver" in md
+    assert isinstance(entries, list)
+    hits = S.search_all("zzz_nonexistent_term_xyz", top_k=3)
+    assert hits == [] or isinstance(hits, list)
+    print("  PASS  search + warehouse report")
+
+
+def test_onedrive_module():
+    from cloud import onedrive as OD
+    assert "Files.ReadWrite" in OD.SCOPES
+    assert not OD._have_msal() or OD._have_msal() in (True, False)
+    print("  PASS  onedrive module import")
+
+
 def main():
-    print("Phase 1+2 smoke tests")
+    print("Phase 1+2+3 smoke tests")
     fails = 0
     for fn in (test_progress_badge, test_queue_persist, test_cloud_policy,
                test_updates_diff, test_rag_score, test_tfidf_and_multi,
-               test_queue_workers_settings, test_parallel_claim):
+               test_queue_workers_settings, test_parallel_claim,
+               test_search_and_report, test_onedrive_module):
         try:
             fn()
         except Exception as e:

@@ -182,7 +182,7 @@ class App:
         for a in ("mgr_scroll", "mgr_status", "chap_scroll", "chap_hdr", "sum_lbl", "native_banner",
                   "status4", "pct_lbl", "pb4", "run_lbl", "done_row", "trans_lbl", "trans_pb", "tl_lbl",
                   "dump_status", "dump_pb", "b_start", "b_all", "b_dump", "b_list", "b_open", "chap_box", "dump_row",
-                  "dash_list", "dash_summary", "q_list", "q_status", "chat_box", "chat_input", "chat_src",
+                  "dash_list", "dash_summary", "dash_search_box", "q_list", "q_status", "chat_box", "chat_input", "chat_src",
                   "cloud_status"):
             if hasattr(self, a): delattr(self, a)
 
@@ -513,6 +513,19 @@ class App:
         self.dash_summary = ctk.CTkLabel(sumc, text="⏳  Đang quét kho khóa…", font=(FT, 13), text_color=TEXT2, justify="left", wraplength=560)
         self.dash_summary.pack(anchor="w", padx=16, pady=12)
 
+        # search toan kho (Phase 3)
+        srow = ctk.CTkFrame(self.content, fg_color="transparent"); srow.pack(fill="x", pady=(0, 6))
+        self.dash_search_var = ctk.StringVar(value="")
+        ent = ctk.CTkEntry(srow, textvariable=self.dash_search_var, placeholder_text="🔍 Tìm trong toàn bộ khóa (transcript / mô tả)…",
+                           font=(FT, 13), height=34)
+        ent.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ent.bind("<Return>", lambda e: self.dash_run_search())
+        btn(srow, "Tìm", self.dash_run_search, kind="secondary", width=70, height=34).pack(side="left", padx=(0, 4))
+        btn(srow, "Báo cáo", self.dash_export_report, kind="ghost", width=90, height=34).pack(side="left")
+
+        self.dash_search_box = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=12, border_width=1, border_color=BORDER)
+        # pack when has results
+
         # toolbar
         bar = ctk.CTkFrame(self.content, fg_color="transparent"); bar.pack(fill="x", pady=(0, 6))
         btn(bar, "➕  Thêm khóa mới", self.go_import, width=150).pack(side="left")
@@ -524,11 +537,13 @@ class App:
         self.pick_var = ctk.StringVar(value="")
         self.dash_checks = {}  # item -> BooleanVar
         self.prog_labels = {}
+        self._dash_all_items = []
         items = self.existing_courses()
         if not items:
             ctk.CTkLabel(self.dash_list, text="(Chưa có khóa nào — bấm Thêm khóa mới)", font=(FT, 12), text_color=TEXT2).pack(padx=8, pady=20)
         else:
             self.pick_var.set(items[0])
+            self._dash_all_items = list(items)
             for it in items:
                 self._dash_skeleton_card(it)
             self._dash_scan_async()
@@ -606,6 +621,73 @@ class App:
 
     def _dash_refresh(self):
         self.show_dashboard()
+
+    def dash_run_search(self):
+        q = (self.dash_search_var.get() if hasattr(self, "dash_search_var") else "").strip()
+        if not q:
+            messagebox.showinfo("Trống", "Nhập từ khóa để tìm trong kho khóa."); return
+        self.write(f"🔍 Đang tìm: {q}…")
+        def work():
+            try:
+                import search_lib as S
+                return S.search_all(q, top_k=15, ensure_index=False)
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("Tìm kiếm", str(r)); return
+            self._dash_show_hits(q, r or [])
+        self.run_async(work, cb)
+
+    def _dash_show_hits(self, q, hits):
+        if not (hasattr(self, "dash_search_box") and self.dash_search_box.winfo_exists()):
+            return
+        for w in self.dash_search_box.winfo_children():
+            w.destroy()
+        self.dash_search_box.pack(fill="x", pady=(0, 8), before=self.dash_list if hasattr(self, "dash_list") else None)
+        ctk.CTkLabel(self.dash_search_box, text=f"Kết quả «{q}» — {len(hits)} bài",
+                     font=(FT, 12, "bold"), text_color=PRIMARY).pack(anchor="w", padx=12, pady=(10, 4))
+        if not hits:
+            ctk.CTkLabel(self.dash_search_box, text="Không thấy. Thử Index lại trong Chat RAG rồi tìm lại.",
+                         font=(FT, 12), text_color=TEXT2).pack(anchor="w", padx=12, pady=(0, 10))
+            return
+        for h in hits[:12]:
+            row = ctk.CTkFrame(self.dash_search_box, fg_color="transparent"); row.pack(fill="x", padx=10, pady=2)
+            label = f"[{h.get('course')}] {h.get('chapter')} / {h.get('title')}"
+            ctk.CTkLabel(row, text=label if len(label) < 70 else label[:67] + "…",
+                         font=(FT, 12), text_color=TEXT, anchor="w").pack(side="left", fill="x", expand=True)
+            course = h.get("course")
+            # map course name -> display item
+            def open_hit(c=course):
+                items = self.existing_courses()
+                for it in items:
+                    if self.item_course(it) == c or it == c or (c == "SkoolCourse" and it.startswith("SkoolCourse")):
+                        self._dash_open(it); return
+                messagebox.showinfo("Khóa", f"Không map được khóa: {c}")
+            btn(row, "Mở", open_hit, kind="ghost", width=50, height=26).pack(side="right")
+        ctk.CTkLabel(self.dash_search_box, text="", height=4).pack()
+
+    def dash_export_report(self):
+        self.write("Đang tạo báo cáo kho…")
+        def work():
+            try:
+                import search_lib as S
+                import config as C2
+                md, entries = S.warehouse_report()
+                out = C2.BASE / "courses" / "_Warehouse_Report.md"
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_text(md, encoding="utf-8")
+                return str(out), len(entries)
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("Báo cáo", str(r)); return
+            path, n = r
+            self.write(f"✓ Báo cáo: {path} ({n} khóa)")
+            messagebox.showinfo("Báo cáo", f"Đã ghi:\n{path}")
+            self._open_path(Path(path).parent)
+        self.run_async(work, cb)
 
     def _fmt_prog(self, s):
         if isinstance(s, Exception) or not s or not s.get("has_data"): return "chưa có dữ liệu"
@@ -1599,7 +1681,7 @@ class App:
     # ====================== CLOUD R2 + GDrive (Phase 2) ======================
     def show_cloud(self):
         self.clear()
-        self.head("Cloud upload", "Đồng bộ knowledge (md/txt/srt/resources). Provider: Cloudflare R2 hoặc Google Drive. Mặc định không upload video.")
+        self.head("Cloud upload", "Đồng bộ knowledge (md/txt/srt/resources). Provider: R2 · Google Drive · OneDrive. Mặc định không upload video.")
         try:
             from cloud.sync import load_cloud_settings
             cfg = load_cloud_settings() or {}
@@ -1607,12 +1689,13 @@ class App:
             cfg = {}
         r2 = cfg.get("r2") or {}
         gd = cfg.get("gdrive") or {}
+        od = cfg.get("onedrive") or {}
 
         card = self.card()
         prow = ctk.CTkFrame(card, fg_color="transparent"); prow.pack(fill="x", padx=14, pady=(12, 6))
         ctk.CTkLabel(prow, text="Provider", font=(FT, 12, "bold"), text_color=TEXT2, width=180, anchor="w").pack(side="left")
         self.cloud_provider = ctk.StringVar(value=cfg.get("provider") or "r2")
-        ctk.CTkOptionMenu(prow, variable=self.cloud_provider, values=["r2", "gdrive"], width=160,
+        ctk.CTkOptionMenu(prow, variable=self.cloud_provider, values=["r2", "gdrive", "onedrive"], width=160,
                           fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
                           text_color=TEXT).pack(side="left")
 
@@ -1651,6 +1734,21 @@ class App:
             ctk.CTkEntry(row, textvariable=var, font=("Consolas", 11)).pack(side="left", fill="x", expand=True)
             self.cloud_vars[key] = var
 
+        ctk.CTkLabel(card, text="OneDrive (Microsoft Graph)", font=(FT, 12, "bold"), text_color=TEXT2).pack(anchor="w", padx=14, pady=(12, 4))
+        ctk.CTkLabel(card, text="Azure App (public client) + device code lần đầu. pip install msal",
+                     font=(FT, 11), text_color=TEXT2, wraplength=520, justify="left").pack(anchor="w", padx=14, pady=(0, 4))
+        od_fields = [
+            ("Client ID", "od_client", od.get("client_id") or ""),
+            ("Tenant (consumers/common)", "od_tenant", od.get("tenant") or "consumers"),
+            ("Folder name", "od_folder", od.get("folder") or "SkoolArchiver"),
+        ]
+        for label, key, val in od_fields:
+            row = ctk.CTkFrame(card, fg_color="transparent"); row.pack(fill="x", padx=14, pady=2)
+            ctk.CTkLabel(row, text=label, font=(FT, 12), text_color=TEXT, width=180, anchor="w").pack(side="left")
+            var = ctk.StringVar(value=val)
+            ctk.CTkEntry(row, textvariable=var, font=("Consolas", 11)).pack(side="left", fill="x", expand=True)
+            self.cloud_vars[key] = var
+
         mode_row = ctk.CTkFrame(card, fg_color="transparent"); mode_row.pack(fill="x", padx=14, pady=(8, 4))
         ctk.CTkLabel(mode_row, text="Mode", font=(FT, 12), text_color=TEXT, width=180, anchor="w").pack(side="left")
         self.cloud_mode = ctk.StringVar(value=cfg.get("mode") or "knowledge")
@@ -1680,6 +1778,7 @@ class App:
                               text_color=TEXT).pack(anchor="w", padx=14, pady=4)
             srow = ctk.CTkFrame(sync_card, fg_color="transparent"); srow.pack(fill="x", padx=14, pady=(6, 12))
             btn(srow, "☁  Sync khóa này", self.cloud_sync_selected, kind="success", width=160).pack(side="left")
+            btn(srow, "☁ Sync tất cả", self.cloud_sync_all, kind="secondary", width=130).pack(side="left", padx=6)
             btn(srow, "Dry-run", self.cloud_dry_run, kind="secondary", width=100).pack(side="left", padx=8)
         else:
             ctk.CTkLabel(sync_card, text="(Chưa có khóa)", font=(FT, 12), text_color=TEXT2).pack(padx=14, pady=12)
@@ -1703,9 +1802,17 @@ class App:
                 gd["client_secrets_json"] = self.cloud_vars["gd_secrets"].get().strip()
             if "gd_folder" in self.cloud_vars:
                 gd["folder_id"] = self.cloud_vars["gd_folder"].get().strip()
+            od = dict(cfg.get("onedrive") or {})
+            if "od_client" in self.cloud_vars:
+                od["client_id"] = self.cloud_vars["od_client"].get().strip()
+            if "od_tenant" in self.cloud_vars:
+                od["tenant"] = self.cloud_vars["od_tenant"].get().strip() or "consumers"
+            if "od_folder" in self.cloud_vars:
+                od["folder"] = self.cloud_vars["od_folder"].get().strip() or "SkoolArchiver"
             cfg["provider"] = (self.cloud_provider.get() if hasattr(self, "cloud_provider") else "r2") or "r2"
             cfg["r2"] = r2
             cfg["gdrive"] = gd
+            cfg["onedrive"] = od
             cfg["mode"] = self.cloud_mode.get() if hasattr(self, "cloud_mode") else "knowledge"
             cfg["after_download"] = bool(self.cloud_after.get()) if hasattr(self, "cloud_after") else False
             if "prefix" in self.cloud_vars:
@@ -1722,7 +1829,7 @@ class App:
         def work():
             try:
                 from cloud.sync import test_connection
-                return test_connection()
+                return test_connection(log=lambda s: self.ui_q.put(lambda m=s: self.write(m)))
             except Exception as e:
                 return False, str(e)
         def cb(r):
@@ -1732,6 +1839,26 @@ class App:
                 self.cloud_status.configure(text=msg)
             if not ok:
                 messagebox.showerror("Kết nối thất bại", msg)
+            else:
+                messagebox.showinfo("Kết nối OK", msg)
+        self.run_async(work, cb)
+
+    def cloud_sync_all(self):
+        self.cloud_save()
+        if not messagebox.askyesno("Sync tất cả", "Đồng bộ knowledge mọi khóa lên cloud?\n(Có thể lâu nếu nhiều file)"):
+            return
+        self.write("☁ Sync tất cả khóa…")
+        def work():
+            try:
+                from cloud.sync import sync_all_courses
+                return sync_all_courses(log=lambda s: self.ui_q.put(lambda m=s: self.write(m)))
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("Cloud", str(r)); return
+            ok = sum(1 for x in r if x.get("ok"))
+            messagebox.showinfo("Cloud", f"Xong: {ok}/{len(r)} khóa OK")
         self.run_async(work, cb)
 
     def _cloud_sync_course(self, item, dry_run=False):

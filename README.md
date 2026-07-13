@@ -58,8 +58,9 @@ Double-click **`SkoolArchiver.cmd`** → mở app cửa sổ. Lần đầu trên
 | **⌂ Dashboard** | Card mỗi khóa: % / dung lượng / badge (đủ · còn N · hết hạn token) · quick actions | `progress.scan_all` |
 | **☰ Hàng đợi** | Multi-course queue, **song song 1–4 workers**, pause/resume, `queue_state.json` | `--queue "A,B"` · `queue_engine --workers 2 --run` |
 | **🔄 Cập nhật v2** | Diff chương mới + bài thiếu local + native hết hạn; quét local toàn kho | `updates.py` · `_update_diff.json` |
-| **☁ Cloud** | **R2** hoặc **Google Drive**; knowledge mode; resume `_cloud_sync.json` | `python -m cloud.sync --course X` (`boto3` / `google-api-python-client`) |
+| **☁ Cloud** | **R2** · **Google Drive** · **OneDrive**; knowledge mode; sync 1 khóa / tất cả | `python -m cloud.sync --course X` · `--all` · `--test` |
 | **💬 Chat RAG** | TF-IDF vector + keyword; **multi-course**; Claude trả lời kèm nguồn | `python -m rag.chat --course X --ask "..."` · `--multi "A,B"` |
+| **🔍 Tìm kiếm** | Tìm transcript/mô tả toàn kho (không cần Claude); báo cáo tiến độ MD | `python search_lib.py "webhook"` · `--report` |
 
 **Hoàn thiện việc tải (Nhóm B):**
 
@@ -153,10 +154,16 @@ python app\preflight.py --course "X"           # chỉ kiểm tra môi trường
 python app\export.py   --course "X" --docx     # gộp & xuất Word (Nhóm A)
 python app\ai_tools.py --course "X" --translate --summary   # dịch + tóm tắt/to-do (cần API key / deep-translator)
 python app\updates.py  --course "X" --scan-local            # sức khỏe local / diff helper
-python -m cloud.sync   --course "X"            # sync knowledge lên R2 (cần cấu hình)
-python -m rag.chat     --course "X" --index    # build catalog chat
+python -m cloud.sync   --course "X"            # sync knowledge (r2|gdrive|onedrive)
+python -m cloud.sync   --all                   # sync mọi khóa
+python -m cloud.sync   --test                  # thử kết nối provider đang chọn
+python -m rag.chat     --course "X" --index    # build catalog + TF-IDF
 python -m rag.chat     --course "X" --ask "..." # hỏi đáp RAG
+python -m rag.chat     --multi "A,B" --ask "..."
+python app\search_lib.py "webhook"             # tìm toàn kho (không cần Claude)
+python app\search_lib.py --report              # _Warehouse_Report.md
 ```
+
 
 Mỗi lần chạy ghi log vào `Archiver\logs\run_<thời gian>.log`. Không truyền `--course` ⇒ dùng `SkoolCourse` (khóa cũ).
 

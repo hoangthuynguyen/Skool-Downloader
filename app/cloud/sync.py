@@ -41,7 +41,7 @@ def save_cloud_settings(cloud_cfg):
     save_settings(s)
 
 
-def test_connection():
+def test_connection(log=print):
     cfg = load_cloud_settings()
     provider = (cfg.get("provider") or "r2").lower()
     if provider == "r2":
@@ -49,7 +49,10 @@ def test_connection():
     if provider == "gdrive":
         from cloud import gdrive as GD
         return GD.test_connection(cfg.get("gdrive") or {})
-    return False, f"Provider chưa hỗ trợ: {provider} (r2 | gdrive)"
+    if provider == "onedrive":
+        from cloud import onedrive as OD
+        return OD.test_connection(cfg.get("onedrive") or {}, log=log)
+    return False, f"Provider chưa hỗ trợ: {provider} (r2 | gdrive | onedrive)"
 
 
 def _file_sig(path: Path):
@@ -75,7 +78,7 @@ def save_sync_state(root, state):
 
 
 def sync_course(root, course_name=None, mode=None, dry_run=False, log=print, force=False):
-    """Upload file theo policy. Tra ve dict stats. provider: r2 | gdrive."""
+    """Upload file theo policy. provider: r2 | gdrive | onedrive."""
     root = Path(root)
     cloud = load_cloud_settings()
     provider = (cloud.get("provider") or "r2").lower()
@@ -85,6 +88,7 @@ def sync_course(root, course_name=None, mode=None, dry_run=False, log=print, for
     state = load_sync_state(root)
     files_state = state.setdefault("files", {})
 
+    r2cfg = gdcfg = odcfg = None
     if provider == "r2":
         r2cfg = cloud.get("r2") or {}
         if not (r2cfg.get("bucket") and (r2cfg.get("access_key") or r2cfg.get("secret_key"))):
@@ -94,8 +98,13 @@ def sync_course(root, course_name=None, mode=None, dry_run=False, log=print, for
         if not (gdcfg.get("service_account_json") or gdcfg.get("client_secrets_json")):
             raise RuntimeError("Chưa cấu hình Google Drive (service_account_json hoặc client_secrets_json).")
         from cloud import gdrive as GD
+    elif provider == "onedrive":
+        odcfg = cloud.get("onedrive") or {}
+        if not odcfg.get("client_id"):
+            raise RuntimeError("Chưa cấu hình OneDrive (client_id). Vào Cloud trong app.")
+        from cloud import onedrive as OD
     else:
-        raise RuntimeError(f"Provider chưa hỗ trợ: {provider} (r2 | gdrive)")
+        raise RuntimeError(f"Provider chưa hỗ trợ: {provider} (r2 | gdrive | onedrive)")
 
     planned = list(iter_upload_files(root, mode=mode))
     stats = {"total": len(planned), "uploaded": 0, "skipped": 0, "failed": 0, "bytes": 0,
@@ -112,8 +121,12 @@ def sync_course(root, course_name=None, mode=None, dry_run=False, log=print, for
             stats["skipped"] += 1
             continue
         if dry_run:
-            dest = (R2.remote_key(course_name, rel_s, prefix=prefix) if provider == "r2"
-                    else f"gdrive:courses/{course_name}/{rel_s}")
+            if provider == "r2":
+                dest = R2.remote_key(course_name, rel_s, prefix=prefix)
+            elif provider == "gdrive":
+                dest = f"gdrive:courses/{course_name}/{rel_s}"
+            else:
+                dest = f"onedrive:{(odcfg or {}).get('folder') or 'SkoolArchiver'}/courses/{course_name}/{rel_s}"
             log(f"   [dry] {rel_s} -> {dest}")
             stats["uploaded"] += 1
             continue
@@ -123,8 +136,10 @@ def sync_course(root, course_name=None, mode=None, dry_run=False, log=print, for
                 key = R2.remote_key(course_name, rel_s, prefix=prefix)
                 R2.upload_file(r2cfg, path, key)
                 remote_id = key
-            else:
+            elif provider == "gdrive":
                 remote_id = GD.upload_file(gdcfg, path, rel_s, course_name=course_name)
+            else:
+                remote_id = OD.upload_file(odcfg, path, rel_s, course_name=course_name, log=log)
             files_state[rel_s] = {**sig, "key": remote_id, "provider": provider, "ts": int(time.time())}
             stats["uploaded"] += 1
             stats["bytes"] += sig["size"]
@@ -143,12 +158,30 @@ def sync_course(root, course_name=None, mode=None, dry_run=False, log=print, for
     return stats
 
 
+def sync_all_courses(mode=None, dry_run=False, force=False, log=print):
+    """Sync moi khoa duoi BASE/courses (+ legacy)."""
+    import progress as P
+    results = []
+    for meta in P.list_course_items():
+        name = meta.get("course") or "SkoolCourse"
+        log(f"\n==== {meta.get('item')} ====")
+        try:
+            st = sync_course(meta["root"], course_name=name, mode=mode,
+                             dry_run=dry_run, force=force, log=log)
+            results.append({"item": meta["item"], "ok": True, "stats": st})
+        except Exception as e:
+            log(f"[FAIL] {e}")
+            results.append({"item": meta["item"], "ok": False, "error": str(e)})
+    return results
+
+
 def main():
     import common as K
     K.setup_console()
-    ap = argparse.ArgumentParser(description="Sync course to R2")
+    ap = argparse.ArgumentParser(description="Sync course to R2 / GDrive / OneDrive")
     ap.add_argument("--course")
     ap.add_argument("--root")
+    ap.add_argument("--all", action="store_true", help="Sync tat ca khoa")
     ap.add_argument("--mode", choices=["knowledge", "full"], default=None)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--force", action="store_true")
@@ -157,6 +190,9 @@ def main():
     if a.test:
         ok, msg = test_connection()
         print(("OK: " if ok else "FAIL: ") + msg)
+        return
+    if a.all:
+        sync_all_courses(mode=a.mode, dry_run=a.dry_run, force=a.force)
         return
     if a.root:
         C.set_root(a.root)
