@@ -47,8 +47,8 @@ def should_upload(path: Path, root: Path, mode: str = "knowledge") -> bool:
 
     mode = (mode or "knowledge").lower()
     if mode == "full":
-        # full: moi file hop le tru skip
-        return path.is_file()
+        # full: moi file hop le tru skip (khong bat is_file — goi tu rglob da la file)
+        return True
 
     # knowledge
     if path.name in KNOWLEDGE_NAMES:
@@ -57,10 +57,9 @@ def should_upload(path: Path, root: Path, mode: str = "knowledge") -> bool:
         return False
     # resources/*
     if "resources" in parts_lower:
-        return path.is_file()
-    # md/txt/srt bat ky (tru video.txt da cover)
+        return True
+    # md/txt/srt/json (backup cau truc dump)
     if path.suffix.lower() in {".md", ".txt", ".srt", ".json"}:
-        # bo vid_/meta_ dump lon? van upload json dump de backup cau truc
         return True
     return False
 

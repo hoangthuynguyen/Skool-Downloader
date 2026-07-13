@@ -140,8 +140,22 @@ class App:
         btn(row, "📁  Mở thư mục log", lambda: self._open_path(ARCHIVER / "logs"), kind="secondary", width=170).pack(side="left", padx=8)
 
     def _open_path(self, p):
-        try: os.startfile(str(p))
-        except Exception: pass
+        """Mo folder/file tren Windows / macOS / Linux."""
+        p = Path(p)
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        try:
+            if os.name == "nt":
+                os.startfile(str(p))  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(p)])
+            else:
+                subprocess.Popen(["xdg-open", str(p)])
+        except Exception as e:
+            try: self.write(f"[mở folder] {e}")
+            except Exception: pass
 
     # ---------- sidebar steps ----------
     def render_sidebar(self):
@@ -450,9 +464,7 @@ class App:
     def open_report_folder(self):
         course, _ = self._report_args()
         if course is None and not (hasattr(self, "rep_var") and self.rep_var.get()): return
-        r = self.course_root(course); r.mkdir(parents=True, exist_ok=True)
-        try: os.startfile(str(r))
-        except Exception as e: messagebox.showerror("Lỗi", f"Không mở được thư mục: {e}")
+        self._open_path(self.course_root(course))
 
     def do_export(self):
         course, args = self._report_args()
@@ -994,6 +1006,7 @@ class App:
         self.refresh4()
         if hasattr(self, "run_lbl"): self.run_lbl.configure(text="✓  Hoàn tất", text_color=SUCCESS)
         if getattr(self, "opt_sub", None) and self.opt_sub.get(): self.write("Bật phụ đề chạy ngầm..."); self.run_sub_on()
+        self._maybe_cloud_after(self.course_name)
         btn(self.done_row, "📁  Mở thư mục dự án", self.open_folder, kind="secondary", width=200).pack(side="left", padx=(0, 8))
         btn(self.done_row, "📄  Xuất & Báo cáo", self.show_report, kind="secondary", width=180).pack(side="left", padx=(0, 8))
         btn(self.done_row, "↻  Dashboard", self.show_dashboard, width=140).pack(side="left")
@@ -1122,6 +1135,7 @@ class App:
 
     def _mgr_after_dl(self):
         self.mgr_busy = None; self._mgr_scan_async()
+        self._maybe_cloud_after(self.course_name)
 
     def _mgr_update_status(self):
         if not (hasattr(self, "mgr_status") and self.mgr_status.winfo_exists()): return
@@ -1303,9 +1317,35 @@ class App:
                 self.mgr_busy = None; self.mgr_status.configure(text="■  Đã dừng. Bài đã tải vẫn được giữ.", text_color=DANGER)
 
     def open_folder(self):
-        r = self.course_root(); r.mkdir(parents=True, exist_ok=True)
-        try: os.startfile(str(r))
-        except Exception as e: messagebox.showerror("Lỗi", f"Không mở được thư mục: {e}")
+        self._open_path(self.course_root())
+
+    def _maybe_cloud_after(self, course_name=None):
+        """Neu cloud.after_download bat + da cau hinh R2 -> sync knowledge nen."""
+        try:
+            from cloud.sync import load_cloud_settings, sync_course
+            cfg = load_cloud_settings() or {}
+            if not cfg.get("after_download"):
+                return
+            r2 = cfg.get("r2") or {}
+            if not (r2.get("bucket") and r2.get("access_key")):
+                return
+            root = self.course_root(course_name)
+            name = course_name if course_name is not None else (self.course_name or "SkoolCourse")
+            self.write(f"☁ Auto-sync cloud: {name}…")
+            def work():
+                try:
+                    return sync_course(root, course_name=name or "SkoolCourse",
+                                      log=lambda s: self.ui_q.put(lambda m=s: self.write(m)))
+                except Exception as e:
+                    return e
+            def cb(r):
+                if isinstance(r, Exception):
+                    self.write(f"[cloud auto] {r}")
+                else:
+                    self.write(f"☁ Auto-sync xong: up={r.get('uploaded')} skip={r.get('skipped')} fail={r.get('failed')}")
+            self.run_async(work, cb)
+        except Exception as e:
+            self.write(f"[cloud auto] {e}")
 
     def poll(self):
         # TU CHUA LANH: bao boc toan bo + reschedule trong finally -> 1 loi le KHONG bao gio dung vong lap.
@@ -1440,6 +1480,8 @@ class App:
             ctk.CTkLabel(row, text=j.get("label") or j.get("course") or "SkoolCourse",
                          font=(FT, 12), text_color=TEXT, anchor="w").pack(side="left", fill="x", expand=True)
             jid = j.get("id")
+            btn(row, "↓", lambda i=jid: self._queue_move(i, +1), kind="ghost", width=28, height=26).pack(side="right", padx=1)
+            btn(row, "↑", lambda i=jid: self._queue_move(i, -1), kind="ghost", width=28, height=26).pack(side="right", padx=1)
             if st == "queued":
                 btn(row, "Hủy", lambda i=jid: self._queue_cancel(i), kind="ghost", width=50, height=26).pack(side="right")
             btn(row, "✕", lambda i=jid: self._queue_remove(i), kind="ghost", width=36, height=26).pack(side="right", padx=2)
@@ -1466,6 +1508,11 @@ class App:
         import queue_engine as QE
         QE.remove_job(jid); self.show_queue()
 
+    def _queue_move(self, jid, delta):
+        import queue_engine as QE
+        QE.move_job(jid, delta)
+        self._queue_render_jobs()
+
     def queue_clear_done(self):
         import queue_engine as QE
         QE.clear_done(); self.show_queue()
@@ -1487,6 +1534,8 @@ class App:
                 j = ev["job"]
                 self.ui_q.put(lambda: self.write(f"--- job {j.get('status')} (rc={j.get('returncode')}) ---"))
                 self.ui_q.put(self._queue_soft_refresh)
+                if j.get("status") == "done":
+                    self.ui_q.put(lambda c=j.get("course"): self._maybe_cloud_after(c))
             elif t == "finished":
                 self.ui_q.put(lambda: self.write(f"✓ Hàng đợi xong ({ev.get('ran')} job)"))
                 self.ui_q.put(self._queue_soft_refresh)
@@ -1557,6 +1606,11 @@ class App:
                           fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
                           text_color=TEXT).pack(side="left")
 
+        self.cloud_after = ctk.BooleanVar(value=bool(cfg.get("after_download")))
+        ctk.CTkCheckBox(card, text="Tự đồng bộ knowledge lên R2 sau khi tải xong (download / queue)",
+                        variable=self.cloud_after, font=(FT, 12), text_color=TEXT,
+                        fg_color=PRIMARY, hover_color=PRIMARY_H).pack(anchor="w", padx=14, pady=(6, 4))
+
         brow = ctk.CTkFrame(card, fg_color="transparent"); brow.pack(fill="x", padx=14, pady=(8, 12))
         btn(brow, "💾  Lưu cấu hình", self.cloud_save, width=140).pack(side="left")
         btn(brow, "🔌  Test kết nối", self.cloud_test, kind="secondary", width=130).pack(side="left", padx=8)
@@ -1591,6 +1645,7 @@ class App:
             cfg["provider"] = "r2"
             cfg["r2"] = r2
             cfg["mode"] = self.cloud_mode.get() if hasattr(self, "cloud_mode") else "knowledge"
+            cfg["after_download"] = bool(self.cloud_after.get()) if hasattr(self, "cloud_after") else False
             if "prefix" in self.cloud_vars:
                 cfg["prefix"] = self.cloud_vars["prefix"].get().strip()
             save_cloud_settings(cfg)
@@ -1752,7 +1807,13 @@ class App:
         root = self.item_root(v)
         def work():
             try:
+                from pathlib import Path as _P
+                from rag.index import build_catalog
                 from rag.chat import answer
+                full = _P(root) / ".rag" / "catalog_full.json"
+                if not full.exists():
+                    self.ui_q.put(lambda: self.write("RAG: chưa có index — đang index lần đầu…"))
+                    build_catalog(root, log=lambda s: self.ui_q.put(lambda m=s: self.write(m)))
                 return answer(root, q, log=lambda s: self.ui_q.put(lambda m=s: self.write(m)))
             except Exception as e:
                 return e

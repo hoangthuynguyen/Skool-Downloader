@@ -171,6 +171,24 @@ def reorder(job_ids, path=None):
     save_state(state, path)
 
 
+def move_job(job_id, delta, path=None):
+    """Doi cho job trong danh sach: delta=-1 len, +1 xuong. Tra ve True neu doi duoc."""
+    state = load_state(path)
+    jobs = state.get("jobs") or []
+    idx = next((i for i, j in enumerate(jobs) if j.get("id") == job_id), None)
+    if idx is None:
+        return False
+    new_idx = idx + int(delta)
+    if new_idx < 0 or new_idx >= len(jobs):
+        return False
+    jobs[idx], jobs[new_idx] = jobs[new_idx], jobs[idx]
+    for i, j in enumerate(jobs):
+        j["priority"] = i
+    state["jobs"] = jobs
+    save_state(state, path)
+    return True
+
+
 def next_queued(state):
     queued = [j for j in state["jobs"] if j.get("status") == "queued"]
     if not queued:
