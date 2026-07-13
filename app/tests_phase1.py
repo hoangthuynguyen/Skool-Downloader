@@ -189,6 +189,17 @@ def test_version_module():
     print("  PASS  version module")
 
 
+def test_warehouse_fails_field():
+    import progress as P
+    st = P.warehouse_stats([])
+    assert "fails" in st and st["fails"] == 0
+    # health summary has fails key
+    import health_check as H
+    r = H.run_health()
+    assert "fails" in r["summary"]
+    print("  PASS  warehouse/health fails field")
+
+
 def test_cleanup_fails():
     import cleanup as CL
     with tempfile.TemporaryDirectory() as td:
@@ -272,7 +283,7 @@ def test_config_base_and_doctor_requeue():
 
 
 def main():
-    print("Phase 1–9 smoke tests")
+    print("Phase 1–10 smoke tests")
     fails = 0
     for fn in (test_progress_badge, test_queue_persist, test_cloud_policy,
                test_updates_diff, test_rag_score, test_tfidf_and_multi,
@@ -280,7 +291,7 @@ def main():
                test_search_and_report, test_onedrive_module, test_health_and_web,
                test_export_site_and_embed, test_config_base_and_doctor_requeue,
                test_video_classify_and_lesson_path, test_cleanup_fails,
-               test_version_module):
+               test_version_module, test_warehouse_fails_field):
         try:
             fn()
         except Exception as e:

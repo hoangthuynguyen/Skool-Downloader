@@ -14,6 +14,10 @@ app/.onedrive_token.json
 .onedrive_token.json
 **/_cloud_sync.json
 **/_update_diff.json
+**/video_fails.json
+**/_health.json
+**/_health.md
+**/_Warehouse_Report.md
 **/.rag/
 **/_site/
 courses/_site/

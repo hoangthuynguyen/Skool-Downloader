@@ -255,9 +255,9 @@ def scan_all(base=None, on_one=None):
 
 
 def warehouse_stats(entries):
-    """Tong hop toan kho tu ket qua scan_all."""
+    """Tong hop toan kho tu ket qua scan_all (+ dem video_fails neu co)."""
     n = len(entries)
-    total = done = size = missing = expired = 0
+    total = done = size = missing = expired = fails = 0
     for e in entries:
         s = e.get("scan") or {}
         if isinstance(s, Exception):
@@ -267,5 +267,12 @@ def warehouse_stats(entries):
         size += s.get("size") or 0
         missing += len(s.get("missing") or [])
         expired += len(s.get("native_expired") or [])
+        root = e.get("root")
+        if root is not None:
+            try:
+                import cleanup as CL
+                fails += len(CL.load_fails(root))
+            except Exception:
+                pass
     return {"courses": n, "total": total, "done": done, "size": size,
-            "missing": missing, "expired": expired}
+            "missing": missing, "expired": expired, "fails": fails}

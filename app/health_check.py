@@ -31,8 +31,12 @@ def run_health(base=None):
     """Quet toan kho. Tra ve dict tong hop."""
     base = Path(base or C.BASE)
     courses = []
-    total_missing = total_expired = total_lessons = total_done = total_size = 0
+    total_missing = total_expired = total_lessons = total_done = total_size = total_fails = 0
     attention = 0
+    try:
+        import cleanup as CL
+    except Exception:
+        CL = None
     for meta in P.list_course_items(base):
         try:
             h = U.local_health(meta["root"])
@@ -41,13 +45,19 @@ def run_health(base=None):
             courses.append({
                 "item": meta["item"], "course": meta["course"],
                 "root": str(meta["root"]), "error": str(e),
-                "needs_attention": True,
+                "needs_attention": True, "fails": 0,
             })
             attention += 1
             continue
         missing = len(s.get("missing") or [])
         expired = len(s.get("native_expired") or [])
-        needs = bool(h.get("needs_attention"))
+        n_fail = 0
+        if CL:
+            try:
+                n_fail = len(CL.load_fails(meta["root"]))
+            except Exception:
+                n_fail = 0
+        needs = bool(h.get("needs_attention") or n_fail)
         if needs:
             attention += 1
         rec = {
@@ -59,6 +69,7 @@ def run_health(base=None):
             "size": s.get("size") or 0,
             "missing": missing,
             "expired": expired,
+            "fails": n_fail,
             "badge": h.get("badge"),
             "needs_attention": needs,
             "has_data": s.get("has_data"),
@@ -66,6 +77,7 @@ def run_health(base=None):
         courses.append(rec)
         total_missing += missing
         total_expired += expired
+        total_fails += n_fail
         total_lessons += rec["total"]
         total_done += rec["done"]
         total_size += rec["size"]
@@ -73,7 +85,8 @@ def run_health(base=None):
         if needs:
             try:
                 U.mark_update_meta(meta["root"], {
-                    "summary": f"Còn {missing} bài · {expired} hết hạn",
+                    "summary": f"Còn {missing} bài · {expired} hết hạn"
+                               + (f" · {n_fail} fail" if n_fail else ""),
                     "has_updates": True,
                     "new_chapters": [],
                     "missing_lessons": s.get("missing") or [],
@@ -95,6 +108,7 @@ def run_health(base=None):
             "size": total_size,
             "missing": total_missing,
             "expired": total_expired,
+            "fails": total_fails,
             "needs_attention": attention,
         },
     }
@@ -112,19 +126,20 @@ def write_health(report, base=None):
         f"# Health check — {report['checked_at']}",
         "",
         f"- Khóa: **{sm['n_courses']}** · Bài **{sm['done']}/{sm['total']}**",
-        f"- Thiếu: **{sm['missing']}** · Token hết hạn: **{sm['expired']}**",
+        f"- Thiếu: **{sm['missing']}** · Token hết hạn: **{sm['expired']}** · Fail: **{sm.get('fails', 0)}**",
         f"- Cần chú ý: **{sm['needs_attention']}** khóa",
         "",
-        "| Khóa | Tiến độ | Thiếu | Hết hạn | Badge |",
-        "|------|---------|-------|---------|-------|",
+        "| Khóa | Tiến độ | Thiếu | Hết hạn | Fail | Badge |",
+        "|------|---------|-------|---------|------|-------|",
     ]
     for c in report["courses"]:
         if c.get("error"):
-            lines.append(f"| {c['item']} | ERR | - | - | {c['error'][:40]} |")
+            lines.append(f"| {c['item']} | ERR | - | - | - | {c['error'][:40]} |")
             continue
         badge = (c.get("badge") or {}).get("label") or ""
         lines.append(
-            f"| {c['item']} | {c['done']}/{c['total']} | {c['missing']} | {c['expired']} | {badge} |"
+            f"| {c['item']} | {c['done']}/{c['total']} | {c['missing']} | {c['expired']} | "
+            f"{c.get('fails', 0)} | {badge} |"
         )
     lines.append("")
     mp = out_dir / "_health.md"
@@ -172,10 +187,13 @@ def main():
             print(f"Health @ {report['checked_at']}")
             print(f"  {sm['n_courses']} khóa · {sm['done']}/{sm['total']} bài · "
                   f"thiếu {sm['missing']} · hết hạn {sm['expired']} · "
-                  f"cần chú ý {sm['needs_attention']}")
+                  f"fail {sm.get('fails', 0)} · cần chú ý {sm['needs_attention']}")
             for c in report["courses"]:
                 if c.get("needs_attention") or c.get("error"):
-                    tag = c.get("error") or f"missing={c.get('missing')} expired={c.get('expired')}"
+                    tag = c.get("error") or (
+                        f"missing={c.get('missing')} expired={c.get('expired')}"
+                        + (f" fails={c.get('fails')}" if c.get("fails") else "")
+                    )
                     print(f"  ! {c['item']}: {tag}")
             if paths:
                 print(f"  >> {paths[0]}")

@@ -613,8 +613,12 @@ class App:
         btn(acts, "💬 Chat", lambda it=item: self._dash_chat(it), kind="secondary", width=72, height=28).pack(side="left", padx=2)
         btn(acts, "☁ Sync", lambda it=item: self._dash_sync(it), kind="secondary", width=72, height=28).pack(side="left", padx=2)
         btn(acts, "+ Queue", lambda it=item: self._dash_enqueue_one(it), kind="secondary", width=80, height=28).pack(side="left", padx=2)
+        fail_btn = btn(acts, "⚠ Fail", lambda it=item: self._dash_show_fails(it), kind="warn", width=72, height=28)
+        # an ban dau; _dash_apply se pack khi co fail
+        fail_btn.pack_forget()
         btn(acts, "🗑", lambda it=item: self._dash_delete(it), kind="danger", width=40, height=28).pack(side="right")
-        self.prog_labels[item] = {"prog": prog, "badge": badge, "pb": pb, "card": card}
+        self.prog_labels[item] = {"prog": prog, "badge": badge, "pb": pb, "card": card,
+                                  "fail_btn": fail_btn, "acts": acts}
 
     def _dash_scan_async(self):
         def work():
@@ -672,14 +676,26 @@ class App:
             w["prog"].configure(text=prog_txt)
             tot = s.get("total") or 0; done = s.get("done") or 0
             w["pb"].set((done / tot) if tot else 0)
+            fb = w.get("fail_btn")
+            if fb is not None:
+                try:
+                    if n_fail:
+                        if not fb.winfo_ismapped():
+                            fb.pack(side="left", padx=2)
+                        fb.configure(text=f"⚠ {n_fail}")
+                    else:
+                        fb.pack_forget()
+                except Exception:
+                    pass
         st = P.warehouse_stats(entries)
         if hasattr(self, "dash_summary") and self.dash_summary.winfo_exists():
             left = st["total"] - st["done"]
+            nf = st.get("fails") or total_fails
             self.dash_summary.configure(
                 text=(f"{st['courses']} khóa  ·  {st['done']}/{st['total']} bài  ·  {fmt_size(st['size'])}"
                       + (f"  ·  còn {left} bài" if left else "  ·  ✓ đủ")
                       + (f"  ·  🔑 {st['expired']} hết hạn" if st["expired"] else "")
-                      + (f"  ·  ⚠ {total_fails} fail" if total_fails else ""))
+                      + (f"  ·  ⚠ {nf} fail" if nf else ""))
             )
 
     def _dash_refresh(self):
@@ -770,6 +786,17 @@ class App:
     def _dash_open(self, item):
         self.pick_var.set(item)
         self.mode = "existing"; self.course_name = self.item_course(item); self.show_manager()
+
+    def _dash_show_fails(self, item):
+        """Mo khoa + hien dialog fail (tu Dashboard)."""
+        self.pick_var.set(item)
+        self.course_name = self.item_course(item)
+        fails = self._load_fails(self.course_name)
+        if not fails:
+            messagebox.showinfo("Fails", f"«{item}» không có video_fails.json."); return
+        self._show_fails_dialog(fails)
+        if messagebox.askyesno("Mở trình tải?", f"Mở «{item}» để tải lại / cứu native?"):
+            self._dash_open(item)
 
     def _dash_update(self, item):
         self.pick_var.set(item); self.check_updates()
