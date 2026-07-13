@@ -2,7 +2,7 @@
 
 Công cụ lưu trữ **toàn bộ một khóa học Skool** về máy: cây thư mục theo chương/bài, video (native Skool + Loom + YouTube), mô tả bài, tài liệu (resources) và **phụ đề tiếng Anh (Whisper)** — chạy bằng **một lệnh**, có **kiểm tra môi trường trước khi chạy** và **báo lỗi kèm cách xử lý**.
 
-> Phiên bản hiện tại: **2.11.0** — LLM custom prompt (dịch/cập nhật theo prompt bạn chọn) (`python app/main.py --version`).  
+> Phiên bản hiện tại: **2.12.0** — multi-LLM (Gemini · OpenRouter · GLM · Qwen · Kimi · …) + fallback (`python app/main.py --version`).  
 > Đã kiểm chứng trên khóa *AI Automations by Jack* (584 bài, ~170 GB).
 
 ---
@@ -232,7 +232,12 @@ python app\llm_prompt.py --course "X" --source tonghop --preset translate_vi
 python app\llm_prompt.py --course "X" --source tonghop --user-prompt "Dich sang tieng Viet, giong trang trong"
 python app\llm_prompt.py --course "X" --source lesson --lesson "01 - C/01 - L" --preset summary_todo
 python app\llm_prompt.py --check
-python app\llm_prompt.py --set-provider openai --set-openai-key "sk-..." --set-openai-model gpt-4o-mini
+python app\llm_prompt.py --list-providers
+python app\llm_prompt.py --set-provider openrouter --set-key openrouter "sk-or-..."
+python app\llm_prompt.py --set-key gemini "AIza..." --set-model gemini gemini-2.0-flash
+python app\llm_prompt.py --set-key qwen "sk-..." --set-key glm "..." --set-key kimi "..."
+python app\llm_prompt.py --set-fallback "openrouter,gemini,qwen,glm,kimi,deepseek,openai,anthropic"
+python app\llm_prompt.py --course "X" --preset translate_vi --provider qwen
 python app\main.py --course "X" --only transcribe           # phu de chi thieu
 python app\main.py --course "X" --index        # build RAG index sau pipeline
 python app\export.py   --course "X" --docx     # gộp & xuất Word (Nhóm A)

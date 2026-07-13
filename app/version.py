@@ -1,6 +1,6 @@
 """Phien ban Skool Archiver (Phase ship)."""
-__version__ = "2.11.0"
-__codename__ = "llm-prompt"
+__version__ = "2.12.0"
+__codename__ = "multi-llm"
 
 # Phase milestones (gan dung commit history)
 HISTORY = (
@@ -26,6 +26,7 @@ HISTORY = (
     "2.9.0 notes + disk report + study ICS + dash download strip",
     "2.10.0 notes search + sync badge + favorites + shortcuts + alias",
     "2.11.0 LLM custom prompt translate/update (Claude + OpenAI-compat)",
+    "2.12.0 multi-LLM: Gemini/OpenRouter/GLM/Qwen/Kimi/… + fallback chain",
 )
 
 

@@ -957,114 +957,176 @@ class App:
         return (k[:10] + "…" + k[-4:]) if len(k) > 18 else "••••"
 
     def _render_apikey(self):
-        import ai_tools
+        """Multi-provider LLM keys: Claude, OpenAI, Gemini, OpenRouter, GLM, Qwen, Kimi…"""
         card = self.card()
-        ctk.CTkLabel(card, text="API LLM  (Claude và/hoặc OpenAI-compatible)",
+        ctk.CTkLabel(card, text="API LLM — nhiều nhà cung cấp + fallback",
                      font=(FT, 12, "bold"), text_color=TEXT2).pack(anchor="w", padx=16, pady=(12, 4))
-        # provider
         try:
-            import llm_prompt as LP
-            prov = LP.get_provider()
-            oc = LP.get_openai_config()
+            import llm_providers as PROV
+            prov_ids = list(PROV.PROVIDERS.keys())
+            cur = PROV.get_provider()
+            cfg = PROV.get_provider_config(cur)
+            fb = ", ".join(PROV.get_fallback_chain()[:8])
+            ready_n = PROV.providers_status().get("ready_count", 0)
         except Exception:
-            prov, oc = "anthropic", {"api_key": "", "base_url": "", "model": ""}
-        prow = ctk.CTkFrame(card, fg_color="transparent"); prow.pack(fill="x", padx=14, pady=(0, 6))
-        ctk.CTkLabel(prow, text="Provider mặc định", font=(FT, 12), text_color=TEXT, width=140, anchor="w").pack(side="left")
-        self.llm_provider_var = ctk.StringVar(value="openai" if prov == "openai" else "anthropic")
-        ctk.CTkOptionMenu(prow, variable=self.llm_provider_var, values=["anthropic", "openai"], width=140,
-                          fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
-                          text_color=TEXT, command=lambda _=None: self._save_llm_provider()).pack(side="left")
+            PROV = None
+            prov_ids = ["anthropic", "openai", "gemini", "openrouter", "qwen", "glm", "kimi", "deepseek"]
+            cur, cfg, fb, ready_n = "anthropic", {}, "", 0
 
-        if ai_tools.api_key_source() == "env":
-            ctk.CTkLabel(card, text="✓ Claude: ANTHROPIC_API_KEY (env)",
-                         font=(FT, 12), text_color=SUCCESS).pack(anchor="w", padx=16, pady=(0, 4))
-        else:
-            saved = ai_tools.get_api_key()
-            if saved:
-                ctk.CTkLabel(card, text=f"✓ Claude key: {self._mask_key(saved)}",
-                             font=(FT, 12), text_color=SUCCESS).pack(anchor="w", padx=16, pady=(0, 4))
-            row = ctk.CTkFrame(card, fg_color="transparent"); row.pack(fill="x", padx=14, pady=(0, 4))
-            self.apikey_var = ctk.StringVar(value="")
-            ent = ctk.CTkEntry(row, textvariable=self.apikey_var, font=("Consolas", 12), show="•",
-                               placeholder_text="Claude API key (sk-ant-…)")
-            ent.pack(side="left", fill="x", expand=True, padx=(0, 8))
-            btn(row, "💾 Claude", self.save_api_key, width=100).pack(side="left")
-            if saved:
-                btn(row, "Xóa", self.clear_api_key, kind="ghost", width=56).pack(side="left", padx=(6, 0))
+        ctk.CTkLabel(card, text=f"Đã cấu hình key: {ready_n} provider · fallback: {fb or '—'}",
+                     font=(FT, 11), text_color=TEXT2, wraplength=560, justify="left").pack(
+            anchor="w", padx=16, pady=(0, 6))
 
-        # OpenAI-compatible
-        ctk.CTkLabel(card, text="OpenAI-compatible (OpenAI / Groq / local…)",
-                     font=(FT, 11, "bold"), text_color=TEXT2).pack(anchor="w", padx=16, pady=(8, 2))
-        if oc.get("api_key"):
-            ctk.CTkLabel(card, text=f"✓ OpenAI key: {self._mask_key(oc['api_key'])} · model={oc.get('model')}",
-                         font=(FT, 11), text_color=SUCCESS).pack(anchor="w", padx=16, pady=(0, 2))
-        orow = ctk.CTkFrame(card, fg_color="transparent"); orow.pack(fill="x", padx=14, pady=2)
-        self.openai_key_var = ctk.StringVar(value="")
-        ctk.CTkEntry(orow, textvariable=self.openai_key_var, font=("Consolas", 11), show="•",
-                     placeholder_text="OPENAI_API_KEY / sk-…").pack(side="left", fill="x", expand=True, padx=(0, 6))
-        btn(orow, "💾 OpenAI", self.save_openai_key, width=100, height=30).pack(side="left")
-        mrow = ctk.CTkFrame(card, fg_color="transparent"); mrow.pack(fill="x", padx=14, pady=(2, 4))
-        self.openai_base_var = ctk.StringVar(value=oc.get("base_url") or "https://api.openai.com/v1")
-        self.openai_model_var = ctk.StringVar(value=oc.get("model") or "gpt-4o-mini")
-        ctk.CTkEntry(mrow, textvariable=self.openai_base_var, font=("Consolas", 10),
-                     placeholder_text="Base URL").pack(side="left", fill="x", expand=True, padx=(0, 6))
-        ctk.CTkEntry(mrow, textvariable=self.openai_model_var, font=("Consolas", 10), width=140,
-                     placeholder_text="model").pack(side="left", padx=(0, 6))
-        btn(mrow, "Lưu URL/model", self.save_openai_model, kind="secondary", width=120, height=28).pack(side="left")
-        ctk.CTkLabel(card, text="Key chỉ lưu máy này (.settings.json). Claude: console.anthropic.com · OpenAI: platform.openai.com",
-                     font=(FT, 11), text_color=TEXT2, justify="left", wraplength=540).pack(anchor="w", padx=16, pady=(2, 12))
+        prow = ctk.CTkFrame(card, fg_color="transparent"); prow.pack(fill="x", padx=14, pady=2)
+        ctk.CTkLabel(prow, text="Provider", font=(FT, 12), width=90, anchor="w").pack(side="left")
+        self.llm_provider_var = ctk.StringVar(value=cur if cur in prov_ids else prov_ids[0])
+        ctk.CTkOptionMenu(
+            prow, variable=self.llm_provider_var, values=prov_ids, width=160,
+            fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H, text_color=TEXT,
+            command=lambda _=None: self._on_llm_provider_change(),
+        ).pack(side="left", padx=6)
+        btn(prow, "Đặt mặc định", self._save_llm_provider, kind="secondary", width=110, height=30).pack(side="left", padx=4)
+
+        mrow = ctk.CTkFrame(card, fg_color="transparent"); mrow.pack(fill="x", padx=14, pady=2)
+        ctk.CTkLabel(mrow, text="Model", font=(FT, 12), width=90, anchor="w").pack(side="left")
+        models = list(cfg.get("models") or [cfg.get("model") or "gpt-4o-mini"])
+        cur_model = cfg.get("model") or models[0]
+        if cur_model not in models:
+            models = [cur_model] + models
+        self.llm_model_var = ctk.StringVar(value=cur_model)
+        self.llm_model_menu = ctk.CTkOptionMenu(
+            mrow, variable=self.llm_model_var, values=models, width=280,
+            fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H, text_color=TEXT,
+        )
+        self.llm_model_menu.pack(side="left", padx=6)
+
+        brow = ctk.CTkFrame(card, fg_color="transparent"); brow.pack(fill="x", padx=14, pady=2)
+        ctk.CTkLabel(brow, text="Base URL", font=(FT, 12), width=90, anchor="w").pack(side="left")
+        self.llm_base_var = ctk.StringVar(value=cfg.get("base_url") or "")
+        ctk.CTkEntry(brow, textvariable=self.llm_base_var, font=("Consolas", 10),
+                     placeholder_text="(auto theo provider)").pack(side="left", fill="x", expand=True, padx=6)
+
+        krow = ctk.CTkFrame(card, fg_color="transparent"); krow.pack(fill="x", padx=14, pady=(4, 2))
+        ctk.CTkLabel(krow, text="API Key", font=(FT, 12), width=90, anchor="w").pack(side="left")
+        self.llm_key_var = ctk.StringVar(value="")
+        ctk.CTkEntry(krow, textvariable=self.llm_key_var, font=("Consolas", 11), show="•",
+                     placeholder_text=("✓ đã lưu — dán key mới để ghi đè" if cfg.get("configured")
+                                       else "Dán API key cho provider đang chọn")).pack(
+            side="left", fill="x", expand=True, padx=6)
+        btn(krow, "💾 Lưu", self.save_llm_provider_config, kind="accent", width=90, height=30).pack(side="left")
+
+        frow = ctk.CTkFrame(card, fg_color="transparent"); frow.pack(fill="x", padx=14, pady=(6, 4))
+        ctk.CTkLabel(frow, text="Fallback", font=(FT, 12), width=90, anchor="w").pack(side="left")
+        self.llm_fallback_var = ctk.StringVar(value=",".join(
+            (__import__("llm_providers", fromlist=["get_fallback_chain"]).get_fallback_chain()
+             if True else [])
+        ))
+        try:
+            import llm_providers as PROV2
+            self.llm_fallback_var.set(",".join(PROV2.get_fallback_chain()))
+        except Exception:
+            pass
+        ctk.CTkEntry(frow, textvariable=self.llm_fallback_var, font=("Consolas", 10),
+                     placeholder_text="openrouter,gemini,qwen,glm,kimi,deepseek,openai,anthropic").pack(
+            side="left", fill="x", expand=True, padx=6)
+        btn(frow, "Lưu chain", self.save_llm_fallback, kind="secondary", width=100, height=28).pack(side="left")
+
+        ctk.CTkLabel(
+            card,
+            text="Claude · OpenAI · OpenRouter · Gemini · GLM · Qwen · DeepSeek · Kimi(kiwi) · "
+                 "SiliconFlow · Doubao · StepFun · Yi · Baichuan · MiniMax · Groq · Custom. "
+                 "Key chỉ lưu máy (.settings.json).",
+            font=(FT, 10), text_color=TEXT2, wraplength=560, justify="left",
+        ).pack(anchor="w", padx=16, pady=(4, 12))
+
+        # keep legacy attrs so old methods don't break
+        self.apikey_var = self.llm_key_var
+        self.openai_key_var = self.llm_key_var
+        self.openai_base_var = self.llm_base_var
+        self.openai_model_var = self.llm_model_var
+
+    def _on_llm_provider_change(self):
+        try:
+            import llm_providers as PROV
+            pid = self.llm_provider_var.get()
+            cfg = PROV.get_provider_config(pid)
+            models = list(cfg.get("models") or [cfg.get("model")])
+            m = cfg.get("model") or models[0]
+            if m not in models:
+                models = [m] + models
+            self.llm_model_var.set(m)
+            if hasattr(self, "llm_model_menu") and self.llm_model_menu.winfo_exists():
+                self.llm_model_menu.configure(values=models)
+            self.llm_base_var.set(cfg.get("base_url") or "")
+            self.llm_key_var.set("")
+            self.write(f"Provider: {cfg.get('title')} · model={m}")
+        except Exception as e:
+            self.write(f"[provider] {e}")
 
     def _save_llm_provider(self):
         try:
-            import llm_prompt as LP
+            import llm_providers as PROV
             p = self.llm_provider_var.get() if hasattr(self, "llm_provider_var") else "anthropic"
-            LP.save_setting("llm_provider", p)
-            self.write(f"✓ LLM provider = {p}")
+            PROV.set_provider(p)
+            # also save current model/base if set
+            self.save_llm_provider_config(silent=True)
+            self.write(f"✓ LLM provider mặc định = {p}")
+            messagebox.showinfo("Provider", f"Đã đặt mặc định: {p}")
         except Exception as e:
-            self.write(f"[llm provider] {e}")
+            messagebox.showerror("Provider", str(e))
+
+    def save_llm_provider_config(self, silent=False):
+        try:
+            import llm_providers as PROV
+            pid = self.llm_provider_var.get() if hasattr(self, "llm_provider_var") else "anthropic"
+            key = (self.llm_key_var.get() if hasattr(self, "llm_key_var") else "").strip()
+            model = (self.llm_model_var.get() if hasattr(self, "llm_model_var") else "").strip()
+            base = (self.llm_base_var.get() if hasattr(self, "llm_base_var") else "").strip()
+            kw = {"model": model or None, "base_url": base or None}
+            if key:
+                kw["api_key"] = key
+            PROV.save_provider_config(pid, **{k: v for k, v in kw.items() if v is not None})
+            self.write(f"✓ Đã lưu config [{pid}] model={model or '—'}")
+            if not silent:
+                messagebox.showinfo("OK", f"Đã lưu key/model cho «{pid}»")
+                self.show_report()
+        except Exception as e:
+            if not silent:
+                messagebox.showerror("LLM", str(e))
+
+    def save_llm_fallback(self):
+        try:
+            import llm_providers as PROV
+            chain = self.llm_fallback_var.get() if hasattr(self, "llm_fallback_var") else ""
+            out = PROV.set_fallback_chain(chain)
+            self.write(f"✓ Fallback: {', '.join(out)}")
+            messagebox.showinfo("Fallback", "Chuỗi fallback:\n" + " → ".join(out))
+        except Exception as e:
+            messagebox.showerror("Fallback", str(e))
 
     def save_openai_key(self):
-        try:
-            import llm_prompt as LP
-            k = (self.openai_key_var.get() if hasattr(self, "openai_key_var") else "").strip()
-            if not k:
-                messagebox.showinfo("Trống", "Dán OpenAI-compatible API key."); return
-            LP.save_setting("openai_api_key", k)
-            self.write("✓ Đã lưu OpenAI API key")
-            messagebox.showinfo("OK", "Đã lưu OpenAI-compatible key.")
-            self.show_report()
-        except Exception as e:
-            messagebox.showerror("OpenAI", str(e))
+        self.save_llm_provider_config()
 
     def save_openai_model(self):
-        try:
-            import llm_prompt as LP
-            if hasattr(self, "openai_base_var"):
-                LP.save_setting("openai_base_url", self.openai_base_var.get().strip())
-            if hasattr(self, "openai_model_var"):
-                LP.save_setting("openai_model", self.openai_model_var.get().strip())
-            self.write("✓ Đã lưu OpenAI base/model")
-            messagebox.showinfo("OK", "Đã lưu base URL + model.")
-        except Exception as e:
-            messagebox.showerror("OpenAI", str(e))
+        self.save_llm_provider_config()
 
     def save_api_key(self):
-        import ai_tools
-        k = self.apikey_var.get().strip() if hasattr(self, "apikey_var") else ""
-        if not k:
-            messagebox.showinfo("Trống", "Hãy dán API key trước khi lưu."); return
-        if not k.startswith("sk-") and not messagebox.askyesno("Khác thường", "Key không bắt đầu bằng “sk-”. Vẫn lưu?"):
-            return
-        ai_tools.save_setting("anthropic_api_key", k)
-        self.write("✓ Đã lưu API key Claude (trên máy này).")
-        self.show_report()
+        self.save_llm_provider_config()
 
     def clear_api_key(self):
-        import ai_tools
-        if not messagebox.askyesno("Xóa key", "Xóa API key đã lưu trên máy này?"): return
-        ai_tools.save_setting("anthropic_api_key", "")
-        self.write("Đã xóa API key.")
-        self.show_report()
+        try:
+            import llm_providers as PROV
+            pid = self.llm_provider_var.get() if hasattr(self, "llm_provider_var") else "anthropic"
+            if not messagebox.askyesno("Xóa key", f"Xóa API key của «{pid}»?"):
+                return
+            PROV.save_provider_config(pid, api_key="")
+            if pid == "anthropic":
+                import ai_tools
+                ai_tools.save_setting("anthropic_api_key", "")
+            self.write(f"Đã xóa key [{pid}]")
+            self.show_report()
+        except Exception as e:
+            messagebox.showerror("LLM", str(e))
 
     def _report_args(self):
         v = self.rep_var.get().strip() if hasattr(self, "rep_var") else ""
@@ -1287,12 +1349,36 @@ class App:
         ctk.CTkEntry(lrow, textvariable=self.llm_lesson, font=("Consolas", 11),
                      placeholder_text="01 - Chapter/01 - Lesson").pack(side="left", fill="x", expand=True, padx=8)
 
-        prow = ctk.CTkFrame(card2, fg_color="transparent"); prow.pack(fill="x", padx=14, pady=(2, 10))
+        prow = ctk.CTkFrame(card2, fg_color="transparent"); prow.pack(fill="x", padx=14, pady=(2, 4))
         ctk.CTkLabel(prow, text="Provider", font=(FT, 12), width=80, anchor="w").pack(side="left")
-        self.llm_run_provider = ctk.StringVar(value=st.get("provider") or "anthropic")
-        ctk.CTkOptionMenu(prow, variable=self.llm_run_provider, values=["anthropic", "openai"],
-                          width=140, fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
-                          text_color=TEXT).pack(side="left", padx=8)
+        try:
+            import llm_providers as PROV
+            pids = list(PROV.PROVIDERS.keys())
+            ready = {r["id"] for r in PROV.providers_status()["providers"] if r["configured"]}
+            # ready first
+            pids = sorted(pids, key=lambda x: (0 if x in ready else 1, x))
+        except Exception:
+            pids = ["anthropic", "openai", "openrouter", "gemini", "qwen", "glm", "kimi", "deepseek"]
+            ready = set()
+        cur_p = st.get("provider") or "anthropic"
+        if cur_p not in pids:
+            cur_p = pids[0]
+        self.llm_run_provider = ctk.StringVar(value=cur_p)
+        ctk.CTkOptionMenu(prow, variable=self.llm_run_provider, values=pids,
+                          width=160, fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
+                          text_color=TEXT, command=lambda _=None: self._llm_refresh_models()).pack(side="left", padx=8)
+        ctk.CTkLabel(prow, text="Model", font=(FT, 12), width=50, anchor="w").pack(side="left", padx=(8, 0))
+        self.llm_run_model = ctk.StringVar(value="")
+        self.llm_run_model_menu = ctk.CTkOptionMenu(
+            prow, variable=self.llm_run_model, values=["(default)"], width=220,
+            fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H, text_color=TEXT,
+        )
+        self.llm_run_model_menu.pack(side="left", padx=6)
+        self._llm_refresh_models()
+        self.llm_use_fallback = ctk.BooleanVar(value=True)
+        ctk.CTkCheckBox(card2, text="Fallback: thử provider khác nếu lỗi (openrouter→gemini→qwen→…)",
+                        variable=self.llm_use_fallback, font=(FT, 11), text_color=TEXT2,
+                        fg_color=ACCENT, hover_color=ACCENT_H).pack(anchor="w", padx=14, pady=(2, 10))
 
         # prompts
         card3 = self.card()
@@ -1330,6 +1416,20 @@ class App:
                  "«Chỉ dịch phần transcript» · «Cập nhật to-do cho giáo viên THPT»",
             font=(FT, 11), text_color=TEXT2, wraplength=560, justify="left",
         ).pack(anchor="w", padx=14, pady=12)
+
+    def _llm_refresh_models(self):
+        try:
+            import llm_providers as PROV
+            pid = self.llm_run_provider.get() if hasattr(self, "llm_run_provider") else "anthropic"
+            cfg = PROV.get_provider_config(pid)
+            models = ["(default)"] + list(cfg.get("models") or [])
+            m = cfg.get("model") or "(default)"
+            if hasattr(self, "llm_run_model"):
+                self.llm_run_model.set(m if m in models else "(default)")
+            if hasattr(self, "llm_run_model_menu") and self.llm_run_model_menu.winfo_exists():
+                self.llm_run_model_menu.configure(values=models)
+        except Exception:
+            pass
 
     def _llm_on_preset(self, label=None):
         try:
@@ -1391,12 +1491,16 @@ class App:
         prompt = self.llm_prompt_box.get("1.0", "end").strip()
         user_extra = self.llm_user_extra.get("1.0", "end").strip()
         provider = self.llm_run_provider.get() if hasattr(self, "llm_run_provider") else None
+        model = self.llm_run_model.get() if hasattr(self, "llm_run_model") else None
+        if model in (None, "", "(default)"):
+            model = None
+        fallback = bool(self.llm_use_fallback.get()) if hasattr(self, "llm_use_fallback") else True
         preset = getattr(self, "_llm_active_preset", None)
         suffix = getattr(self, "_llm_out_suffix", ".llm.md")
         if not prompt and not user_extra:
             messagebox.showinfo("Trống", "Nhập prompt hoặc chọn preset."); return
 
-        self.write(f"✨ LLM {provider or st.get('provider')} · {source} · preset={preset}…")
+        self.write(f"✨ LLM {provider} model={model or 'default'} fallback={fallback} · {source}…")
         def work():
             try:
                 return LP.run_prompt(
@@ -1409,6 +1513,8 @@ class App:
                     user_prompt=user_extra,
                     out_suffix=suffix,
                     provider=provider,
+                    model=model,
+                    fallback=fallback,
                     log=lambda s: self.ui_q.put(lambda m=s: self.write(m)),
                 )
             except Exception as e:
@@ -1416,10 +1522,14 @@ class App:
         def cb(r):
             if isinstance(r, Exception):
                 messagebox.showerror("LLM", str(r)); return
-            msg = f"Xong · {r.get('chars')} chars\n{r.get('path')}\nchunks={r.get('chunks')}"
+            msg = (
+                f"Xong · {r.get('chars')} chars\n"
+                f"Provider: {r.get('provider')}\n"
+                f"{r.get('path')}\nchunks={r.get('chunks')}"
+            )
             if messagebox.askyesno("LLM xong", msg + "\n\nMở thư mục?"):
                 self._open_path(Path(r["path"]).parent)
-            self.write(f"✨ → {r.get('path')}")
+            self.write(f"✨ → {r.get('path')} via {r.get('provider')}")
         self.run_async(work, cb)
 
     # ====================== DASHBOARD (S1) ======================

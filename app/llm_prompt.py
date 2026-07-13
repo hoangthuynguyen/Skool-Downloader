@@ -8,9 +8,10 @@ Sprint LLM — dich / cap nhat noi dung theo PROMPT tu chon (API LLM).
   python llm_prompt.py --list-presets
   python llm_prompt.py --save-preset my_vi --prompt "..." --system "..."
 
-Providers:
-  - anthropic (Claude) — ANTHROPIC_API_KEY / settings anthropic_api_key
-  - openai   — OpenAI-compatible (OpenAI, Groq, local…). settings openai_*
+Providers (multi + fallback):
+  anthropic, openai, openrouter, gemini, glm, qwen, deepseek, kimi (kiwi),
+  siliconflow, doubao, stepfun, yi, baichuan, minimax, groq, custom
+  See llm_providers.py
 """
 from __future__ import annotations
 
@@ -20,6 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config as C
 import ai_tools as AI
+import llm_providers as PROV
 
 SETTINGS = AI.SETTINGS_FILE
 CHUNK = 7000
@@ -107,31 +109,33 @@ def save_setting(key, value):
 
 
 def get_provider() -> str:
-    s = load_settings()
-    p = (os.environ.get("LLM_PROVIDER") or s.get("llm_provider") or "anthropic").strip().lower()
-    return p if p in ("anthropic", "openai", "claude") else "anthropic"
+    return PROV.get_provider()
 
 
 def get_openai_config():
-    s = load_settings()
+    """Legacy helper — map to openai provider config."""
+    c = PROV.get_provider_config("openai")
     return {
-        "api_key": (os.environ.get("OPENAI_API_KEY") or s.get("openai_api_key") or "").strip(),
-        "base_url": (os.environ.get("OPENAI_BASE_URL") or s.get("openai_base_url")
-                     or "https://api.openai.com/v1").rstrip("/"),
-        "model": (os.environ.get("OPENAI_MODEL") or s.get("openai_model") or "gpt-4o-mini").strip(),
+        "api_key": c.get("api_key") or "",
+        "base_url": c.get("base_url") or "https://api.openai.com/v1",
+        "model": c.get("model") or "gpt-4o-mini",
     }
 
 
 def llm_status():
     st = AI.status()
+    ps = PROV.providers_status()
     oc = get_openai_config()
     return {
         **st,
-        "provider": get_provider(),
+        "provider": ps.get("provider"),
         "openai": bool(oc["api_key"]),
         "openai_model": oc["model"],
         "openai_base": oc["base_url"],
-        "ready": AI.have_api() or bool(oc["api_key"]),
+        "ready": bool(ps.get("ready")),
+        "ready_count": ps.get("ready_count"),
+        "fallback": ps.get("fallback"),
+        "providers": ps.get("providers"),
     }
 
 
@@ -176,72 +180,18 @@ def get_preset(pid: str) -> dict | None:
     return user_presets().get(pid)
 
 
-def _claude_call(system, user_text, max_tokens=8000):
-    return AI._claude(
-        [{"role": "user", "content": user_text}],
-        system=system or None,
+def llm_complete(system: str, user_text: str, provider=None, max_tokens=8000,
+                 model=None, fallback=True, log=print):
+    """Goi LLM multi-provider + fallback. Tra ve text."""
+    text, used = PROV.complete_with_fallback(
+        system, user_text,
+        provider=provider,
+        fallback=fallback,
         max_tokens=max_tokens,
+        model=model,
+        log=log,
     )
-
-
-def _openai_call(system, user_text, max_tokens=8000):
-    import requests
-    cfg = get_openai_config()
-    if not cfg["api_key"]:
-        raise RuntimeError(
-            "Chưa có OpenAI API key. Vào Xuất & Báo cáo / LLM Prompt → dán key, "
-            "hoặc OPENAI_API_KEY."
-        )
-    url = f"{cfg['base_url']}/chat/completions"
-    messages = []
-    if system:
-        messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": user_text})
-    body = {
-        "model": cfg["model"],
-        "messages": messages,
-        "max_tokens": max_tokens,
-        "temperature": 0.3,
-    }
-    headers = {
-        "Authorization": f"Bearer {cfg['api_key']}",
-        "Content-Type": "application/json",
-    }
-    last = ""
-    for a in range(4):
-        try:
-            r = requests.post(url, headers=headers, json=body, timeout=180)
-        except Exception as e:
-            last = str(e)
-            time.sleep(4 * (a + 1))
-            continue
-        if r.status_code == 200:
-            data = r.json()
-            ch = (data.get("choices") or [{}])[0]
-            msg = ch.get("message") or {}
-            return (msg.get("content") or "").strip()
-        last = f"{r.status_code}: {r.text[:300]}"
-        if r.status_code in (429, 500, 502, 503):
-            time.sleep(5 * (a + 1))
-            continue
-        break
-    raise RuntimeError(f"OpenAI-compatible API lỗi → {last}")
-
-
-def llm_complete(system: str, user_text: str, provider=None, max_tokens=8000, log=print):
-    """Goi LLM. provider: anthropic|openai|None=auto."""
-    provider = (provider or get_provider()).lower()
-    if provider in ("claude", "anthropic"):
-        if not AI.have_api():
-            # fallback openai neu co
-            if get_openai_config()["api_key"]:
-                log("   (Claude không có key → dùng OpenAI-compatible)")
-                return _openai_call(system, user_text, max_tokens=max_tokens)
-            raise RuntimeError("Chưa có Claude API key.")
-        return _claude_call(system, user_text, max_tokens=max_tokens)
-    if provider == "openai":
-        return _openai_call(system, user_text, max_tokens=max_tokens)
-    raise RuntimeError(f"Provider không hỗ trợ: {provider}")
+    return text
 
 
 def render_prompt(template: str, content: str, user_prompt: str = "", **extra) -> str:
@@ -332,6 +282,8 @@ def run_prompt(
     out_path=None,
     out_suffix=None,
     provider=None,
+    model=None,
+    fallback=True,
     max_chars=None,
     log=print,
 ):
@@ -340,12 +292,14 @@ def run_prompt(
     - preset: id builtin/user
     - system/prompt: override
     - user_prompt: text them vao {{user_prompt}} (cho preset custom)
+    - provider/model/fallback: multi-provider
     """
     root = Path(root)
     st = llm_status()
     if not st["ready"]:
         raise RuntimeError(
-            "Chưa có LLM API. Cần Claude (ANTHROPIC_API_KEY) hoặc OpenAI-compatible key."
+            "Chưa có LLM API key. Cấu hình Claude / OpenAI / Gemini / OpenRouter / "
+            "Qwen / GLM / Kimi / DeepSeek… trong Xuất & Báo cáo."
         )
 
     preset_data = get_preset(preset) if preset else None
@@ -368,11 +322,10 @@ def run_prompt(
         content = content[:max_chars]
 
     course_name = C.COURSE or root.name
-    # chunk process for rewrite of long content when template is just content-focused
     parts_out = []
+    used_providers = []
     cs = AI.chunks(content, CHUNK) if content else [""]
-    # Neu prompt co nhieu hon content (user instruction heavy), van chunk content
-    log(f">> LLM [{provider or get_provider()}] source={source} chunks={len(cs)}")
+    log(f">> LLM [{provider or get_provider()}] fallback={fallback} source={source} chunks={len(cs)}")
     for i, chunk in enumerate(cs, 1):
         if len(cs) > 1:
             log(f"   chunk {i}/{len(cs)}…")
@@ -384,10 +337,18 @@ def run_prompt(
             source=source,
             chunk=f"{i}/{len(cs)}",
         )
-        text = llm_complete(system, filled, provider=provider, log=log)
+        text, used = PROV.complete_with_fallback(
+            system, filled,
+            provider=provider,
+            fallback=fallback,
+            model=model,
+            log=log,
+        )
+        used_providers.append(used)
         parts_out.append(text)
 
     result = "\n\n".join(parts_out).strip() + "\n"
+    used_main = used_providers[0] if used_providers else (provider or get_provider())
 
     if out_path:
         out = Path(out_path)
@@ -400,17 +361,18 @@ def run_prompt(
     out.parent.mkdir(parents=True, exist_ok=True)
     # header meta
     header = (
-        f"<!-- llm_prompt: preset={preset or 'custom'} provider={provider or get_provider()} "
+        f"<!-- llm_prompt: preset={preset or 'custom'} provider={used_main} "
         f"source={source} at={time.strftime('%Y-%m-%dT%H:%M:%S')} -->\n\n"
     )
     out.write_text(header + result, encoding="utf-8")
-    log(f">> Đã ghi: {out} ({len(result)} chars)")
+    log(f">> Đã ghi: {out} ({len(result)} chars) via {used_main}")
     return {
         "path": str(out),
         "chars": len(result),
         "preset": preset,
         "source": source,
-        "provider": provider or get_provider(),
+        "provider": used_main,
+        "providers_used": used_providers,
         "chunks": len(cs),
     }
 
@@ -431,30 +393,55 @@ def main():
     ap.add_argument("--system", help="System prompt override")
     ap.add_argument("--out", help="Duong dan file output")
     ap.add_argument("--out-suffix", help="vd .vi.md")
-    ap.add_argument("--provider", choices=["anthropic", "openai", "claude"])
+    ap.add_argument("--provider", help="anthropic|openai|openrouter|gemini|glm|qwen|deepseek|kimi|…")
+    ap.add_argument("--model", help="Override model id")
+    ap.add_argument("--no-fallback", action="store_true", help="Khong thu provider khac khi loi")
     ap.add_argument("--max-chars", type=int, default=None)
     ap.add_argument("--list-presets", action="store_true")
+    ap.add_argument("--list-providers", action="store_true")
     ap.add_argument("--save-preset", metavar="ID", help="Luu preset user")
     ap.add_argument("--title", default="", help="Tieu de khi --save-preset")
     ap.add_argument("--check", action="store_true")
-    ap.add_argument("--set-provider", choices=["anthropic", "openai"])
-    ap.add_argument("--set-openai-key")
-    ap.add_argument("--set-openai-base")
-    ap.add_argument("--set-openai-model")
+    ap.add_argument("--set-provider", help="Dat provider mac dinh")
+    ap.add_argument("--set-key", nargs=2, metavar=("PROVIDER", "KEY"), help="Luu API key cho provider")
+    ap.add_argument("--set-model", nargs=2, metavar=("PROVIDER", "MODEL"))
+    ap.add_argument("--set-base", nargs=2, metavar=("PROVIDER", "URL"))
+    ap.add_argument("--set-fallback", help="Chuoi fallback, vd: openrouter,gemini,qwen,glm,kimi")
+    ap.add_argument("--set-openai-key", help="(legacy) openai key")
+    ap.add_argument("--set-openai-base", help="(legacy)")
+    ap.add_argument("--set-openai-model", help="(legacy)")
     a = ap.parse_args()
 
     if a.set_provider:
-        save_setting("llm_provider", a.set_provider)
-        print("llm_provider =", a.set_provider)
+        PROV.set_provider(a.set_provider)
+        print("llm_provider =", PROV.get_provider())
+    if a.set_fallback:
+        print("fallback =", PROV.set_fallback_chain(a.set_fallback))
+    if a.set_key:
+        PROV.save_provider_config(a.set_key[0], api_key=a.set_key[1])
+        print("saved key for", PROV.normalize_provider(a.set_key[0]))
+    if a.set_model:
+        PROV.save_provider_config(a.set_model[0], model=a.set_model[1])
+        print("saved model for", a.set_model[0], "=", a.set_model[1])
+    if a.set_base:
+        PROV.save_provider_config(a.set_base[0], base_url=a.set_base[1])
+        print("saved base for", a.set_base[0])
     if a.set_openai_key is not None:
-        save_setting("openai_api_key", a.set_openai_key.strip())
+        PROV.save_provider_config("openai", api_key=a.set_openai_key.strip())
         print("openai_api_key saved")
     if a.set_openai_base:
-        save_setting("openai_base_url", a.set_openai_base.strip())
+        PROV.save_provider_config("openai", base_url=a.set_openai_base.strip())
     if a.set_openai_model:
-        save_setting("openai_model", a.set_openai_model.strip())
+        PROV.save_provider_config("openai", model=a.set_openai_model.strip())
 
-    if a.check or a.set_provider or a.set_openai_key is not None:
+    if a.list_providers:
+        for r in PROV.providers_status()["providers"]:
+            mark = "✓" if r["configured"] else "·"
+            print(f"  {mark} {r['id']:14} {r['title'][:28]:28} model={r['model']}")
+        print("fallback:", ", ".join(PROV.get_fallback_chain()))
+        return
+
+    if a.check or a.set_provider or a.set_key or a.set_openai_key is not None:
         print(json.dumps(llm_status(), ensure_ascii=False, indent=2))
         if a.check or not (a.preset or a.prompt or a.user_prompt or a.save_preset or a.list_presets):
             if a.check:
@@ -485,7 +472,7 @@ def main():
         C.set_course(a.course)
 
     if not (a.preset or a.prompt or a.user_prompt):
-        ap.error("Can --preset / --prompt / --user-prompt (hoac --list-presets / --check)")
+        ap.error("Can --preset / --prompt / --user-prompt (hoac --list-presets / --check / --list-providers)")
 
     r = run_prompt(
         C.ROOT,
@@ -499,6 +486,8 @@ def main():
         out_path=a.out,
         out_suffix=a.out_suffix,
         provider=a.provider,
+        model=a.model,
+        fallback=not a.no_fallback,
         max_chars=a.max_chars,
     )
     print(json.dumps(r, ensure_ascii=False, indent=2))

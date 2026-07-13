@@ -525,8 +525,9 @@ def test_sprint_y_ac():
 
 
 def test_llm_prompt_module():
-    """LLM prompt: presets, render, save user preset."""
+    """LLM prompt: presets, render, save user preset + multi providers."""
     import llm_prompt as LP
+    import llm_providers as PROV
     presets = LP.list_presets()
     assert "translate_vi" in presets and "custom" in presets
     filled = LP.render_prompt(
@@ -544,13 +545,23 @@ def test_llm_prompt_module():
     assert p and p.get("prompt")
     st = LP.llm_status()
     assert "provider" in st and "ready" in st
+    # multi-provider catalog
+    for need in ("anthropic", "openai", "openrouter", "gemini", "glm", "qwen",
+                 "deepseek", "kimi", "siliconflow", "doubao"):
+        assert need in PROV.PROVIDERS
+    assert PROV.normalize_provider("kiwi") == "kimi"
+    assert PROV.normalize_provider("claude") == "anthropic"
+    chain = PROV.set_fallback_chain("openrouter,gemini,qwen,glm,kimi")
+    assert chain[0] == "openrouter" and "qwen" in chain
+    cfg = PROV.get_provider_config("qwen")
+    assert "dashscope" in (cfg.get("base_url") or "")
     # cleanup user preset
     s = LP.load_settings()
     presets_u = dict(s.get("llm_presets") or {})
     presets_u.pop("__test_preset__", None)
     s["llm_presets"] = presets_u
     LP.SETTINGS.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
-    print("  PASS  llm prompt presets/render")
+    print("  PASS  llm prompt presets/render + multi-provider")
 
 
 def test_warehouse_fails_field():
