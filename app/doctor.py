@@ -105,6 +105,7 @@ def run_doctor(fix_base=None):
         "knowledge_pack", "notify", "session_state", "anki_export", "quiz",
         "progress_live", "learn_playlist", "content_diff", "vault_export",
         "tools_fix", "notes", "disk_report", "study_plan", "cloud.pack_backup",
+        "llm_prompt",
     ):
         try:
             __import__(mod)

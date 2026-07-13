@@ -524,6 +524,35 @@ def test_sprint_y_ac():
     print("  PASS  sprint Y–AC notes-search/fav/alias")
 
 
+def test_llm_prompt_module():
+    """LLM prompt: presets, render, save user preset."""
+    import llm_prompt as LP
+    presets = LP.list_presets()
+    assert "translate_vi" in presets and "custom" in presets
+    filled = LP.render_prompt(
+        "Yeu cau: {{user_prompt}}\n\n{{content}}",
+        content="Hello world",
+        user_prompt="Dich sang VI",
+    )
+    assert "Hello world" in filled and "Dich sang VI" in filled
+    pid = LP.save_user_preset(
+        "__test_preset__", "Test", "sys", "Do: {{user_prompt}}\n{{content}}",
+        out_suffix=".test.md",
+    )
+    assert pid
+    p = LP.get_preset(pid)
+    assert p and p.get("prompt")
+    st = LP.llm_status()
+    assert "provider" in st and "ready" in st
+    # cleanup user preset
+    s = LP.load_settings()
+    presets_u = dict(s.get("llm_presets") or {})
+    presets_u.pop("__test_preset__", None)
+    s["llm_presets"] = presets_u
+    LP.SETTINGS.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
+    print("  PASS  llm prompt presets/render")
+
+
 def test_warehouse_fails_field():
     import progress as P
     st = P.warehouse_stats([])
@@ -631,7 +660,7 @@ def main():
                test_smart_update_and_chapters, test_search_snippet_highlight,
                test_pack_backup_restore, test_notify_session_workers_digest,
                test_sprint_jklmn, test_sprint_opqrs, test_sprint_tuvwx,
-               test_sprint_y_ac):
+               test_sprint_y_ac, test_llm_prompt_module):
         try:
             fn()
         except Exception as e:

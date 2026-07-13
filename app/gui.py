@@ -897,20 +897,34 @@ class App:
         self._render_apikey()
 
         try:
-            import ai_tools; st = ai_tools.status()
-        except Exception: st = {"claude": False, "google": False, "model": "", "source": None}
-        tline = ("Dịch: " + ("Claude ✓" if st["claude"] else ("Google miễn phí ✓" if st["google"] else "✗ chưa có"))
-                 + "    ·    Tóm tắt/To-do: " + ("Claude ✓" if st["claude"] else "✗ cần API key Claude (điền ở trên)"))
+            import llm_prompt as LP
+            st = LP.llm_status()
+        except Exception:
+            try:
+                import ai_tools
+                st = {**ai_tools.status(), "openai": False, "ready": ai_tools.have_api(), "provider": "anthropic"}
+            except Exception:
+                st = {"claude": False, "google": False, "openai": False, "ready": False, "provider": "?"}
+        tline = (
+            f"LLM: {st.get('provider', '?')} · "
+            f"Claude {'✓' if st.get('claude') else '✗'} · "
+            f"OpenAI-compat {'✓' if st.get('openai') else '✗'} · "
+            f"Google dich {'✓' if st.get('google') else '✗'}"
+        )
         ctk.CTkLabel(self.content, text=tline, font=(FT, 11), text_color=TEXT2, justify="left", wraplength=540).pack(anchor="w", pady=(2, 8))
 
         act = self.card()
         ctk.CTkLabel(act, text="Việc cần làm", font=(FT, 12, "bold"), text_color=TEXT2).pack(anchor="w", padx=16, pady=(12, 6))
+        r0 = ctk.CTkFrame(act, fg_color="transparent"); r0.pack(fill="x", padx=14, pady=(0, 6))
+        btn(r0, "✨  LLM Prompt (tự nhập)", self.show_llm_prompt, kind="accent", width=220).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r0, text="Dịch / cập nhật theo prompt bạn chọn (Claude hoặc OpenAI-compatible)",
+                     font=(FT, 11), text_color=TEXT2).pack(side="left")
         r1 = ctk.CTkFrame(act, fg_color="transparent"); r1.pack(fill="x", padx=14, pady=(0, 4))
         btn(r1, "📄  Gộp & xuất Word", self.do_export, width=210).pack(side="left", padx=(0, 8))
         ctk.CTkLabel(r1, text="Gộp mô tả + lời giảng → 1 file .md và .docx", font=(FT, 11), text_color=TEXT2).pack(side="left")
         r2 = ctk.CTkFrame(act, fg_color="transparent"); r2.pack(fill="x", padx=14, pady=4)
         btn(r2, "🌐  Dịch tiếng Việt", self.do_translate, kind="secondary", width=210).pack(side="left", padx=(0, 8))
-        ctk.CTkLabel(r2, text="Dịch file tổng hợp sang tiếng Việt", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        ctk.CTkLabel(r2, text="Dịch file tổng hợp sang tiếng Việt (nhanh)", font=(FT, 11), text_color=TEXT2).pack(side="left")
         r3 = ctk.CTkFrame(act, fg_color="transparent"); r3.pack(fill="x", padx=14, pady=4)
         btn(r3, "📝  Tóm tắt + To-do (AI)", self.do_summary, kind="secondary", width=210).pack(side="left", padx=(0, 8))
         ctk.CTkLabel(r3, text="Tóm tắt từng chương + to-do áp dụng", font=(FT, 11), text_color=TEXT2).pack(side="left")
@@ -945,30 +959,98 @@ class App:
     def _render_apikey(self):
         import ai_tools
         card = self.card()
-        ctk.CTkLabel(card, text="Khóa API Claude  (cho Dịch chất lượng cao & Tóm tắt/To-do)",
+        ctk.CTkLabel(card, text="API LLM  (Claude và/hoặc OpenAI-compatible)",
                      font=(FT, 12, "bold"), text_color=TEXT2).pack(anchor="w", padx=16, pady=(12, 4))
+        # provider
+        try:
+            import llm_prompt as LP
+            prov = LP.get_provider()
+            oc = LP.get_openai_config()
+        except Exception:
+            prov, oc = "anthropic", {"api_key": "", "base_url": "", "model": ""}
+        prow = ctk.CTkFrame(card, fg_color="transparent"); prow.pack(fill="x", padx=14, pady=(0, 6))
+        ctk.CTkLabel(prow, text="Provider mặc định", font=(FT, 12), text_color=TEXT, width=140, anchor="w").pack(side="left")
+        self.llm_provider_var = ctk.StringVar(value="openai" if prov == "openai" else "anthropic")
+        ctk.CTkOptionMenu(prow, variable=self.llm_provider_var, values=["anthropic", "openai"], width=140,
+                          fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
+                          text_color=TEXT, command=lambda _=None: self._save_llm_provider()).pack(side="left")
+
         if ai_tools.api_key_source() == "env":
-            ctk.CTkLabel(card, text="✓ Đang dùng API key từ biến môi trường ANTHROPIC_API_KEY.",
-                         font=(FT, 12), text_color=SUCCESS).pack(anchor="w", padx=16, pady=(0, 12))
-            return
-        saved = ai_tools.get_api_key()
-        if saved:
-            ctk.CTkLabel(card, text=f"✓ Đã lưu trên máy này: {self._mask_key(saved)}",
-                         font=(FT, 12), text_color=SUCCESS).pack(anchor="w", padx=16, pady=(0, 6))
-        row = ctk.CTkFrame(card, fg_color="transparent"); row.pack(fill="x", padx=14, pady=(0, 4))
-        self.apikey_var = ctk.StringVar(value="")
-        ent = ctk.CTkEntry(row, textvariable=self.apikey_var, font=("Consolas", 12), show="•",
-                           placeholder_text="Dán API key (sk-ant-…) rồi bấm Lưu")
-        ent.pack(side="left", fill="x", expand=True, padx=(0, 8))
-        btn(row, "💾  Lưu", self.save_api_key, width=90).pack(side="left")
-        if saved:
-            btn(row, "Xóa", self.clear_api_key, kind="ghost", width=64).pack(side="left", padx=(6, 0))
-        ctk.CTkLabel(card, text="Lấy ở console.anthropic.com → API Keys. Key chỉ lưu trên máy này (file .settings.json), chỉ gửi tới API Claude.",
+            ctk.CTkLabel(card, text="✓ Claude: ANTHROPIC_API_KEY (env)",
+                         font=(FT, 12), text_color=SUCCESS).pack(anchor="w", padx=16, pady=(0, 4))
+        else:
+            saved = ai_tools.get_api_key()
+            if saved:
+                ctk.CTkLabel(card, text=f"✓ Claude key: {self._mask_key(saved)}",
+                             font=(FT, 12), text_color=SUCCESS).pack(anchor="w", padx=16, pady=(0, 4))
+            row = ctk.CTkFrame(card, fg_color="transparent"); row.pack(fill="x", padx=14, pady=(0, 4))
+            self.apikey_var = ctk.StringVar(value="")
+            ent = ctk.CTkEntry(row, textvariable=self.apikey_var, font=("Consolas", 12), show="•",
+                               placeholder_text="Claude API key (sk-ant-…)")
+            ent.pack(side="left", fill="x", expand=True, padx=(0, 8))
+            btn(row, "💾 Claude", self.save_api_key, width=100).pack(side="left")
+            if saved:
+                btn(row, "Xóa", self.clear_api_key, kind="ghost", width=56).pack(side="left", padx=(6, 0))
+
+        # OpenAI-compatible
+        ctk.CTkLabel(card, text="OpenAI-compatible (OpenAI / Groq / local…)",
+                     font=(FT, 11, "bold"), text_color=TEXT2).pack(anchor="w", padx=16, pady=(8, 2))
+        if oc.get("api_key"):
+            ctk.CTkLabel(card, text=f"✓ OpenAI key: {self._mask_key(oc['api_key'])} · model={oc.get('model')}",
+                         font=(FT, 11), text_color=SUCCESS).pack(anchor="w", padx=16, pady=(0, 2))
+        orow = ctk.CTkFrame(card, fg_color="transparent"); orow.pack(fill="x", padx=14, pady=2)
+        self.openai_key_var = ctk.StringVar(value="")
+        ctk.CTkEntry(orow, textvariable=self.openai_key_var, font=("Consolas", 11), show="•",
+                     placeholder_text="OPENAI_API_KEY / sk-…").pack(side="left", fill="x", expand=True, padx=(0, 6))
+        btn(orow, "💾 OpenAI", self.save_openai_key, width=100, height=30).pack(side="left")
+        mrow = ctk.CTkFrame(card, fg_color="transparent"); mrow.pack(fill="x", padx=14, pady=(2, 4))
+        self.openai_base_var = ctk.StringVar(value=oc.get("base_url") or "https://api.openai.com/v1")
+        self.openai_model_var = ctk.StringVar(value=oc.get("model") or "gpt-4o-mini")
+        ctk.CTkEntry(mrow, textvariable=self.openai_base_var, font=("Consolas", 10),
+                     placeholder_text="Base URL").pack(side="left", fill="x", expand=True, padx=(0, 6))
+        ctk.CTkEntry(mrow, textvariable=self.openai_model_var, font=("Consolas", 10), width=140,
+                     placeholder_text="model").pack(side="left", padx=(0, 6))
+        btn(mrow, "Lưu URL/model", self.save_openai_model, kind="secondary", width=120, height=28).pack(side="left")
+        ctk.CTkLabel(card, text="Key chỉ lưu máy này (.settings.json). Claude: console.anthropic.com · OpenAI: platform.openai.com",
                      font=(FT, 11), text_color=TEXT2, justify="left", wraplength=540).pack(anchor="w", padx=16, pady=(2, 12))
+
+    def _save_llm_provider(self):
+        try:
+            import llm_prompt as LP
+            p = self.llm_provider_var.get() if hasattr(self, "llm_provider_var") else "anthropic"
+            LP.save_setting("llm_provider", p)
+            self.write(f"✓ LLM provider = {p}")
+        except Exception as e:
+            self.write(f"[llm provider] {e}")
+
+    def save_openai_key(self):
+        try:
+            import llm_prompt as LP
+            k = (self.openai_key_var.get() if hasattr(self, "openai_key_var") else "").strip()
+            if not k:
+                messagebox.showinfo("Trống", "Dán OpenAI-compatible API key."); return
+            LP.save_setting("openai_api_key", k)
+            self.write("✓ Đã lưu OpenAI API key")
+            messagebox.showinfo("OK", "Đã lưu OpenAI-compatible key.")
+            self.show_report()
+        except Exception as e:
+            messagebox.showerror("OpenAI", str(e))
+
+    def save_openai_model(self):
+        try:
+            import llm_prompt as LP
+            if hasattr(self, "openai_base_var"):
+                LP.save_setting("openai_base_url", self.openai_base_var.get().strip())
+            if hasattr(self, "openai_model_var"):
+                LP.save_setting("openai_model", self.openai_model_var.get().strip())
+            self.write("✓ Đã lưu OpenAI base/model")
+            messagebox.showinfo("OK", "Đã lưu base URL + model.")
+        except Exception as e:
+            messagebox.showerror("OpenAI", str(e))
 
     def save_api_key(self):
         import ai_tools
-        k = self.apikey_var.get().strip()
+        k = self.apikey_var.get().strip() if hasattr(self, "apikey_var") else ""
         if not k:
             messagebox.showinfo("Trống", "Hãy dán API key trước khi lưu."); return
         if not k.startswith("sk-") and not messagebox.askyesno("Khác thường", "Key không bắt đầu bằng “sk-”. Vẫn lưu?"):
@@ -1146,6 +1228,198 @@ class App:
                         messagebox.showerror("Snapshot", str(e))
                 return
             messagebox.showinfo("Content diff", f"{msg}\n\n{path}")
+        self.run_async(work, cb)
+
+    # ====================== LLM PROMPT (dich / cap nhat theo prompt) ======================
+    def show_llm_prompt(self):
+        """Man hinh: chon preset + nhap prompt + chay LLM."""
+        self.set_nav("report")
+        self.clear()
+        self.head("LLM Prompt", "Dịch / cập nhật nội dung theo prompt bạn chọn. Claude hoặc OpenAI-compatible.")
+        try:
+            import llm_prompt as LP
+            presets = LP.list_presets()
+            st = LP.llm_status()
+        except Exception as e:
+            messagebox.showerror("LLM", str(e)); self.show_report(); return
+
+        status = (
+            f"Provider: {st.get('provider')} · Claude={'✓' if st.get('claude') else '✗'} · "
+            f"OpenAI={'✓' if st.get('openai') else '✗'} · ready={'✓' if st.get('ready') else '✗'}"
+        )
+        ctk.CTkLabel(self.content, text=status, font=(FT, 11), text_color=TEXT2).pack(anchor="w", pady=(0, 8))
+
+        # course
+        items = self.existing_courses()
+        card = self.card()
+        ctk.CTkLabel(card, text="1. Khóa học", font=(FT, 12, "bold"), text_color=TEXT2).pack(anchor="w", padx=14, pady=(12, 4))
+        self.llm_course = ctk.StringVar(value=(self.rep_var.get() if hasattr(self, "rep_var") and self.rep_var.get() else (items[0] if items else "")))
+        if items:
+            ctk.CTkOptionMenu(card, variable=self.llm_course, values=items, width=360,
+                              fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
+                              text_color=TEXT).pack(anchor="w", padx=14, pady=(0, 10))
+        else:
+            ctk.CTkLabel(card, text="(Chưa có khóa)", font=(FT, 12), text_color=TEXT2).pack(padx=14, pady=10)
+
+        # source + preset
+        card2 = self.card()
+        ctk.CTkLabel(card2, text="2. Nguồn nội dung + Preset", font=(FT, 12, "bold"), text_color=TEXT2).pack(
+            anchor="w", padx=14, pady=(12, 4))
+        row = ctk.CTkFrame(card2, fg_color="transparent"); row.pack(fill="x", padx=14, pady=4)
+        ctk.CTkLabel(row, text="Nguồn", font=(FT, 12), width=80, anchor="w").pack(side="left")
+        self.llm_source = ctk.StringVar(value="tonghop")
+        ctk.CTkOptionMenu(row, variable=self.llm_source,
+                          values=["tonghop", "tonghop_vi", "tomtat", "notes", "lesson"],
+                          width=160, fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
+                          text_color=TEXT).pack(side="left", padx=8)
+        ctk.CTkLabel(row, text="Preset", font=(FT, 12), width=60, anchor="w").pack(side="left", padx=(12, 0))
+        preset_ids = list(presets.keys())
+        labels = [f"{pid} — {presets[pid].get('title', '')}" for pid in preset_ids]
+        self._llm_preset_map = dict(zip(labels, preset_ids))
+        self.llm_preset_label = ctk.StringVar(value=labels[0] if labels else "custom — Prompt tùy chỉnh")
+        ctk.CTkOptionMenu(row, variable=self.llm_preset_label, values=labels or ["custom"],
+                          width=280, fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
+                          text_color=TEXT, command=self._llm_on_preset).pack(side="left", padx=8)
+
+        lrow = ctk.CTkFrame(card2, fg_color="transparent"); lrow.pack(fill="x", padx=14, pady=(2, 4))
+        ctk.CTkLabel(lrow, text="Lesson (nếu nguồn=lesson)", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        self.llm_lesson = ctk.StringVar(value="")
+        ctk.CTkEntry(lrow, textvariable=self.llm_lesson, font=("Consolas", 11),
+                     placeholder_text="01 - Chapter/01 - Lesson").pack(side="left", fill="x", expand=True, padx=8)
+
+        prow = ctk.CTkFrame(card2, fg_color="transparent"); prow.pack(fill="x", padx=14, pady=(2, 10))
+        ctk.CTkLabel(prow, text="Provider", font=(FT, 12), width=80, anchor="w").pack(side="left")
+        self.llm_run_provider = ctk.StringVar(value=st.get("provider") or "anthropic")
+        ctk.CTkOptionMenu(prow, variable=self.llm_run_provider, values=["anthropic", "openai"],
+                          width=140, fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
+                          text_color=TEXT).pack(side="left", padx=8)
+
+        # prompts
+        card3 = self.card()
+        ctk.CTkLabel(card3, text="3. Prompt của bạn (có thể sửa)", font=(FT, 12, "bold"), text_color=TEXT2).pack(
+            anchor="w", padx=14, pady=(12, 4))
+        ctk.CTkLabel(card3, text="System (vai trò AI)", font=(FT, 11), text_color=TEXT2).pack(anchor="w", padx=14)
+        self.llm_system_box = ctk.CTkTextbox(card3, height=70, font=(FT, 12), fg_color=LOG_BG, text_color=TEXT,
+                                             corner_radius=8)
+        self.llm_system_box.pack(fill="x", padx=14, pady=(2, 6))
+        ctk.CTkLabel(card3, text="User prompt — dùng {{content}} cho nội dung nguồn, {{user_prompt}} cho yêu cầu thêm",
+                     font=(FT, 11), text_color=TEXT2).pack(anchor="w", padx=14)
+        self.llm_prompt_box = ctk.CTkTextbox(card3, height=110, font=(FT, 12), fg_color=LOG_BG, text_color=TEXT,
+                                             corner_radius=8)
+        self.llm_prompt_box.pack(fill="x", padx=14, pady=(2, 6))
+        ctk.CTkLabel(card3, text="Yêu cầu thêm ({{user_prompt}}) — tùy chọn",
+                     font=(FT, 11), text_color=TEXT2).pack(anchor="w", padx=14)
+        self.llm_user_extra = ctk.CTkTextbox(card3, height=50, font=(FT, 12), fg_color=LOG_BG, text_color=TEXT,
+                                             corner_radius=8)
+        self.llm_user_extra.pack(fill="x", padx=14, pady=(2, 10))
+
+        # load default preset
+        self._llm_on_preset(self.llm_preset_label.get())
+
+        # actions
+        brow = ctk.CTkFrame(self.content, fg_color="transparent"); brow.pack(fill="x", pady=10)
+        btn(brow, "▶  Chạy LLM", self.do_llm_run, kind="accent", width=140).pack(side="left")
+        btn(brow, "💾 Lưu preset…", self.do_llm_save_preset, kind="secondary", width=130).pack(side="left", padx=8)
+        btn(brow, "←  Báo cáo", self.show_report, kind="ghost", width=110).pack(side="left", padx=4)
+        btn(brow, "Dashboard", self.show_dashboard, kind="ghost", width=110).pack(side="right")
+
+        tip = self.card()
+        ctk.CTkLabel(
+            tip,
+            text="Ví dụ yêu cầu thêm: «Giọng trang trọng, giữ thuật ngữ tiếng Anh» · "
+                 "«Chỉ dịch phần transcript» · «Cập nhật to-do cho giáo viên THPT»",
+            font=(FT, 11), text_color=TEXT2, wraplength=560, justify="left",
+        ).pack(anchor="w", padx=14, pady=12)
+
+    def _llm_on_preset(self, label=None):
+        try:
+            import llm_prompt as LP
+            label = label or (self.llm_preset_label.get() if hasattr(self, "llm_preset_label") else "")
+            pid = (self._llm_preset_map or {}).get(label) or "custom"
+            p = LP.get_preset(pid) or LP.BUILTIN_PRESETS.get("custom") or {}
+            if hasattr(self, "llm_system_box") and self.llm_system_box.winfo_exists():
+                self.llm_system_box.delete("1.0", "end")
+                self.llm_system_box.insert("1.0", p.get("system") or "")
+            if hasattr(self, "llm_prompt_box") and self.llm_prompt_box.winfo_exists():
+                self.llm_prompt_box.delete("1.0", "end")
+                self.llm_prompt_box.insert("1.0", p.get("prompt") or "{{content}}")
+            self._llm_active_preset = pid
+            self._llm_out_suffix = p.get("out_suffix") or ".llm.md"
+        except Exception as e:
+            self.write(f"[preset] {e}")
+
+    def do_llm_save_preset(self):
+        try:
+            import llm_prompt as LP
+            from tkinter import simpledialog
+            pid = simpledialog.askstring("Lưu preset", "ID preset (a-z, 0-9, _):", parent=self.root)
+            if not pid:
+                return
+            title = simpledialog.askstring("Tiêu đề", "Tên hiển thị:", initialvalue=pid, parent=self.root) or pid
+            system = self.llm_system_box.get("1.0", "end").strip()
+            prompt = self.llm_prompt_box.get("1.0", "end").strip()
+            LP.save_user_preset(pid, title, system, prompt,
+                                out_suffix=getattr(self, "_llm_out_suffix", ".llm.md"))
+            messagebox.showinfo("Preset", f"Đã lưu preset «{pid}»")
+            self.show_llm_prompt()
+        except Exception as e:
+            messagebox.showerror("Preset", str(e))
+
+    def do_llm_run(self):
+        """Chay LLM voi prompt hien tai."""
+        try:
+            import llm_prompt as LP
+        except Exception as e:
+            messagebox.showerror("LLM", str(e)); return
+        st = LP.llm_status()
+        if not st.get("ready"):
+            messagebox.showinfo(
+                "Cần API key",
+                "Chưa có Claude hoặc OpenAI key.\nVào Xuất & Báo cáo → dán key rồi Lưu.",
+            )
+            return
+        item = (self.llm_course.get() if hasattr(self, "llm_course") else "").strip()
+        if not item:
+            messagebox.showinfo("Chưa chọn", "Chọn khóa học."); return
+        course = self.item_course(item)
+        root = self.item_root(item)
+        source = self.llm_source.get() if hasattr(self, "llm_source") else "tonghop"
+        lesson = (self.llm_lesson.get() if hasattr(self, "llm_lesson") else "").strip() or None
+        if source == "lesson" and not lesson:
+            messagebox.showinfo("Lesson", "Nhập đường dẫn bài (rel) khi nguồn = lesson."); return
+        system = self.llm_system_box.get("1.0", "end").strip()
+        prompt = self.llm_prompt_box.get("1.0", "end").strip()
+        user_extra = self.llm_user_extra.get("1.0", "end").strip()
+        provider = self.llm_run_provider.get() if hasattr(self, "llm_run_provider") else None
+        preset = getattr(self, "_llm_active_preset", None)
+        suffix = getattr(self, "_llm_out_suffix", ".llm.md")
+        if not prompt and not user_extra:
+            messagebox.showinfo("Trống", "Nhập prompt hoặc chọn preset."); return
+
+        self.write(f"✨ LLM {provider or st.get('provider')} · {source} · preset={preset}…")
+        def work():
+            try:
+                return LP.run_prompt(
+                    root,
+                    source=source,
+                    lesson=lesson,
+                    preset=None,  # dung system/prompt da edit
+                    system=system,
+                    prompt=prompt or None,
+                    user_prompt=user_extra,
+                    out_suffix=suffix,
+                    provider=provider,
+                    log=lambda s: self.ui_q.put(lambda m=s: self.write(m)),
+                )
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("LLM", str(r)); return
+            msg = f"Xong · {r.get('chars')} chars\n{r.get('path')}\nchunks={r.get('chunks')}"
+            if messagebox.askyesno("LLM xong", msg + "\n\nMở thư mục?"):
+                self._open_path(Path(r["path"]).parent)
+            self.write(f"✨ → {r.get('path')}")
         self.run_async(work, cb)
 
     # ====================== DASHBOARD (S1) ======================

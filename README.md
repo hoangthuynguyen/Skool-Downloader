@@ -2,7 +2,7 @@
 
 Công cụ lưu trữ **toàn bộ một khóa học Skool** về máy: cây thư mục theo chương/bài, video (native Skool + Loom + YouTube), mô tả bài, tài liệu (resources) và **phụ đề tiếng Anh (Whisper)** — chạy bằng **một lệnh**, có **kiểm tra môi trường trước khi chạy** và **báo lỗi kèm cách xử lý**.
 
-> Phiên bản hiện tại: **2.10.0** — notes search · sync badge · favorites · shortcuts · alias (`python app/main.py --version`).  
+> Phiên bản hiện tại: **2.11.0** — LLM custom prompt (dịch/cập nhật theo prompt bạn chọn) (`python app/main.py --version`).  
 > Đã kiểm chứng trên khóa *AI Automations by Jack* (584 bài, ~170 GB).
 
 ---
@@ -227,6 +227,12 @@ python app\notes.py --course "X" --list
 python app\notes.py --course "X" --path "01 - C/01 - L" --set "Ghi chu"
 python app\disk_report.py --write
 python app\study_plan.py --all --days 14
+python app\llm_prompt.py --list-presets
+python app\llm_prompt.py --course "X" --source tonghop --preset translate_vi
+python app\llm_prompt.py --course "X" --source tonghop --user-prompt "Dich sang tieng Viet, giong trang trong"
+python app\llm_prompt.py --course "X" --source lesson --lesson "01 - C/01 - L" --preset summary_todo
+python app\llm_prompt.py --check
+python app\llm_prompt.py --set-provider openai --set-openai-key "sk-..." --set-openai-model gpt-4o-mini
 python app\main.py --course "X" --only transcribe           # phu de chi thieu
 python app\main.py --course "X" --index        # build RAG index sau pipeline
 python app\export.py   --course "X" --docx     # gộp & xuất Word (Nhóm A)
