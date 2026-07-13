@@ -502,6 +502,7 @@ class App:
         self.chap_widgets = {}
         for a in ("mgr_scroll", "mgr_status", "chap_scroll", "chap_hdr", "sum_lbl", "native_banner",
                   "status4", "pct_lbl", "pb4", "run_lbl", "done_row", "trans_lbl", "trans_pb", "tl_lbl",
+                  "cur_lesson_lbl", "step4_live", "mgr_live",
                   "dump_status", "dump_pb", "b_start", "b_all", "b_dump", "b_list", "b_open", "chap_box", "dump_row",
                   "dash_list", "dash_summary", "dash_search_box", "q_list", "q_status", "chat_box", "chat_input", "chat_src",
                   "cloud_status", "mgr_fail_box", "doctor_box", "stat_row"):
@@ -1541,13 +1542,9 @@ class App:
         self.set_nav("dashboard")
         self.set_step(1); self.clear(); self.purpose = "import"
         self.head("Dashboard", "Tổng quan kho khóa — tiến độ, dung lượng, cảnh báo. Chọn khóa để tải tiếp, xếp hàng đợi, chat hoặc đồng bộ cloud.")
-        try:
-            bi = C.base_info()
-            base_line = f"📁  {bi['base']}   ·   {bi['source']}"
-        except Exception:
-            base_line = f"📁  {C.BASE}"
-        ctk.CTkLabel(self.content, text=base_line, font=("Consolas", 11), text_color=TEXT2,
-                     wraplength=640, justify="left").pack(anchor="w", pady=(0, 8))
+
+        # --- Chọn folder lưu (BASE) ---
+        self._build_output_folder_card(self.content)
 
         try:
             miss = self.env_missing()
@@ -2006,12 +2003,145 @@ class App:
             messagebox.showinfo("Resume", f"Không tìm thấy khóa gần nhất: {lc or 'SkoolCourse'}"); return
         self._dash_open(target)
 
+    def _build_output_folder_card(self, parent):
+        """Cho phep user chon folder luu khoa (BASE). Hien tren Dashboard + Doctor."""
+        try:
+            bi = C.base_info()
+            base_val = str(bi.get("base") or C.BASE)
+            src = bi.get("source") or ""
+        except Exception:
+            base_val, src = str(C.BASE), ""
+        card = ctk.CTkFrame(parent, fg_color=CARD, corner_radius=14,
+                            border_width=1, border_color=BORDER)
+        card.pack(fill="x", pady=(0, 10))
+        top = ctk.CTkFrame(card, fg_color="transparent")
+        top.pack(fill="x", padx=14, pady=(12, 4))
+        ctk.CTkLabel(top, text="📁  Thư mục lưu khóa (output)",
+                     font=(FT, 13, "bold"), text_color=TEXT).pack(side="left")
+        if src:
+            ctk.CTkLabel(top, text=f"· {src}", font=(FT, 11), text_color=TEXT2).pack(
+                side="left", padx=8)
+        ctk.CTkLabel(card,
+                     text="Khóa học sẽ lưu tại:  <folder>/courses/<tên khóa>/",
+                     font=(FT, 11), text_color=TEXT2).pack(anchor="w", padx=14, pady=(0, 6))
+        row = ctk.CTkFrame(card, fg_color="transparent")
+        row.pack(fill="x", padx=14, pady=(0, 12))
+        self.base_var = ctk.StringVar(value=base_val)
+        ctk.CTkEntry(row, textvariable=self.base_var, font=("Consolas", 12),
+                     height=dens("entry_h", 36), corner_radius=10,
+                     fg_color=CARD2, border_color=BORDER).pack(
+            side="left", fill="x", expand=True, padx=(0, 6))
+        btn(row, "Chọn…", self.pick_output_folder, kind="secondary", width=80).pack(side="left", padx=2)
+        btn(row, "💾 Lưu", self.save_output_folder, kind="accent", width=80).pack(side="left", padx=2)
+        btn(row, "Mở", lambda: self._open_path(C.BASE), kind="soft", width=60).pack(side="left", padx=2)
+        return card
+
+    def pick_output_folder(self):
+        from tkinter import filedialog
+        init = ""
+        try:
+            init = (self.base_var.get() if hasattr(self, "base_var") else "") or str(C.BASE)
+        except Exception:
+            init = str(C.BASE)
+        path = filedialog.askdirectory(
+            title="Chọn thư mục lưu khóa Skool (BASE)",
+            initialdir=init if Path(init).is_dir() else str(Path.home()),
+        )
+        if not path:
+            return
+        if hasattr(self, "base_var"):
+            self.base_var.set(path)
+        self.save_output_folder(path=path, silent=False)
+
+    def save_output_folder(self, path=None, silent=False):
+        p = (path or (self.base_var.get() if hasattr(self, "base_var") else "") or "").strip()
+        if not p:
+            messagebox.showinfo("Trống", "Chọn hoặc nhập đường dẫn thư mục lưu."); return
+        try:
+            dest = Path(p).expanduser().resolve()
+            dest.mkdir(parents=True, exist_ok=True)
+            (dest / "courses").mkdir(parents=True, exist_ok=True)
+            C.set_base(str(dest), persist=True)
+            self.write(f"✓ Thư mục lưu = {C.BASE}")
+            if not silent:
+                messagebox.showinfo(
+                    "Đã lưu",
+                    f"Thư mục lưu khóa:\n{C.BASE}\n\n"
+                    f"Các khóa: {C.BASE / 'courses'}\n\n"
+                    "Dashboard sẽ quét lại danh sách khóa.",
+                )
+            # refresh current page if dashboard/doctor
+            page = getattr(self, "nav_page", "") or ""
+            if page == "dashboard":
+                self.show_dashboard()
+            elif page == "doctor":
+                self.show_doctor()
+        except Exception as e:
+            messagebox.showerror("Thư mục lưu", str(e))
+
+    def _render_live_progress_into(self, box, data, title=None):
+        """Ve panel chi tiet: khoa, folder, video, bai dang/xong/cho + progress bar."""
+        for w in box.winfo_children():
+            w.destroy()
+        if not data:
+            return
+        import progress_live as PL
+        st = (data.get("status") or "").lower()
+        icon = "⏳" if st == "running" else ("✓" if st == "done" else "■")
+        color = ACCENT if st == "running" else (SUCCESS if st == "done" else WARNING)
+        course = data.get("course") or title or "?"
+        ctk.CTkLabel(box, text=f"{icon}  Đang tải: {course}" if st == "running"
+                     else f"{icon}  Tải: {course} ({st or '?'})",
+                     font=(FT, 13, "bold"), text_color=color).pack(
+            anchor="w", padx=14, pady=(12, 4))
+        for line in PL.format_detail_lines(data):
+            ctk.CTkLabel(box, text=line, font=("Consolas", 11), text_color=TEXT2,
+                         anchor="w", justify="left", wraplength=620).pack(
+                anchor="w", padx=14, pady=0)
+        frac = PL.progress_fraction(data)
+        pct = int(round(frac * 100))
+        prow = ctk.CTkFrame(box, fg_color="transparent")
+        prow.pack(fill="x", padx=14, pady=(8, 4))
+        pb = ctk.CTkProgressBar(prow, height=12, corner_radius=6,
+                                progress_color=ACCENT if st == "running" else SUCCESS,
+                                fg_color=CARD2)
+        pb.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        pb.set(frac)
+        ctk.CTkLabel(prow, text=f"{pct}%", font=(FT, 13, "bold"),
+                     text_color=TEXT, width=48).pack(side="right")
+        # buckets: done / active / pending
+        done_items, active_items, pending_items = PL.status_buckets(data)
+        cols = ctk.CTkFrame(box, fg_color="transparent")
+        cols.pack(fill="x", padx=10, pady=(6, 12))
+
+        def col(parent, header, items, fg):
+            f = ctk.CTkFrame(parent, fg_color=CARD2, corner_radius=10)
+            f.pack(side="left", fill="both", expand=True, padx=4)
+            ctk.CTkLabel(f, text=header, font=(FT, 11, "bold"), text_color=fg).pack(
+                anchor="w", padx=10, pady=(8, 2))
+            if not items:
+                ctk.CTkLabel(f, text="—", font=(FT, 11), text_color=TEXT2).pack(
+                    anchor="w", padx=10, pady=(0, 8))
+                return
+            for it in items[:6]:
+                les = it.get("lesson") or it.get("folder_name") or "?"
+                ch = it.get("chapter") or ""
+                stt = PL.state_label(it.get("state") or "")
+                txt = f"{stt}  {les}" if not ch else f"{stt}  [{ch[:18]}] {les}"
+                if len(txt) > 48:
+                    txt = txt[:47] + "…"
+                ctk.CTkLabel(f, text=txt, font=(FT, 10), text_color=TEXT,
+                             anchor="w").pack(anchor="w", padx=10, pady=1)
+            ctk.CTkLabel(f, text="", font=(FT, 4)).pack(pady=4)
+
+        col(cols, f"✓ Đã xong ({len(done_items)})", done_items, SUCCESS)
+        col(cols, f"⏳ Đang / lỗi ({len(active_items)})", active_items, WARNING)
+        col(cols, f"• Chuẩn bị ({len(pending_items)})", pending_items, TEXT2)
+
     def _refresh_dash_download_strip(self):
-        """Sprint W: hien ETA neu co _download_progress running tren khoa dang chon/gan nhat."""
+        """Sprint W + 2.15: panel live download tren dashboard."""
         if not hasattr(self, "dash_dl_box") or not self.dash_dl_box.winfo_exists():
             return
-        for w in self.dash_dl_box.winfo_children():
-            w.destroy()
         try:
             import progress_live as PL
             import session_state as SS
@@ -2034,26 +2164,12 @@ class App:
                 self.dash_dl_box.pack_forget()
                 return
             name, data = best
-            # pack before course list if possible
             try:
                 self.dash_dl_box.pack(fill="x", pady=(0, 8),
                                      before=self.dash_list if hasattr(self, "dash_list") else None)
             except Exception:
                 self.dash_dl_box.pack(fill="x", pady=(0, 8))
-            line = PL.format_eta_line(data)
-            frac = PL.progress_fraction(data)
-            st = data.get("status") or ""
-            icon = "⏳" if st == "running" else "✓"
-            ctk.CTkLabel(self.dash_dl_box, text=f"{icon}  Tải: {name}",
-                         font=(FT, 12, "bold"),
-                         text_color=ACCENT if st == "running" else SUCCESS).pack(
-                anchor="w", padx=14, pady=(10, 2))
-            ctk.CTkLabel(self.dash_dl_box, text=line, font=(FT, 11), text_color=TEXT2).pack(
-                anchor="w", padx=14, pady=(0, 4))
-            pb = ctk.CTkProgressBar(self.dash_dl_box, height=8, corner_radius=4,
-                                    progress_color=ACCENT, fg_color=CARD2)
-            pb.pack(fill="x", padx=14, pady=(0, 12))
-            pb.set(frac)
+            self._render_live_progress_into(self.dash_dl_box, data, title=name)
         except Exception:
             try:
                 self.dash_dl_box.pack_forget()
@@ -2610,17 +2726,33 @@ class App:
         self.head("Đang tải khóa…", "Theo dõi tiến trình. Dừng bất cứ lúc nào — chạy lại sẽ resume. Mở thư mục để xem file ngay.")
         self.build_progress()
         ov = self.card()
-        ctk.CTkLabel(ov, text=f"Khóa: {self.course_name or 'SkoolCourse'}",
+        course_nm = self.course_name or "SkoolCourse"
+        try:
+            root_path = self.course_root(self.course_name)
+        except Exception:
+            root_path = C.BASE / "courses" / course_nm
+        ctk.CTkLabel(ov, text=f"Khóa: {course_nm}",
                      font=(FT, 13, "bold"), text_color=ACCENT).pack(anchor="w", padx=18, pady=(14, 2))
-        b = ctk.CTkFrame(ov, fg_color="transparent"); b.pack(fill="x", padx=18, pady=(2, 16))
+        ctk.CTkLabel(ov, text=f"Folder: {root_path}",
+                     font=("Consolas", 11), text_color=TEXT2, wraplength=620,
+                     justify="left").pack(anchor="w", padx=18, pady=(0, 4))
+        b = ctk.CTkFrame(ov, fg_color="transparent"); b.pack(fill="x", padx=18, pady=(2, 10))
         self.pct_lbl = ctk.CTkLabel(b, text="0%", font=(FT, 42, "bold"), text_color=TEXT)
         self.pct_lbl.pack(side="left")
         r = ctk.CTkFrame(b, fg_color="transparent"); r.pack(side="left", fill="x", expand=True, padx=18)
         self.pb4 = ctk.CTkProgressBar(r, height=14, corner_radius=8,
                                       progress_color=ACCENT, fg_color=CARD2)
         self.pb4.pack(fill="x", pady=(18, 6)); self.pb4.set(0)
-        self.status4 = ctk.CTkLabel(r, text="", font=("Consolas", 12), text_color=TEXT2)
+        self.status4 = ctk.CTkLabel(r, text="Video: 0/0  ·  đang chuẩn bị…",
+                                    font=("Consolas", 12), text_color=TEXT2)
         self.status4.pack(anchor="w")
+        self.cur_lesson_lbl = ctk.CTkLabel(ov, text="Bài: —", font=(FT, 12),
+                                           text_color=TEXT, wraplength=620, justify="left")
+        self.cur_lesson_lbl.pack(anchor="w", padx=18, pady=(0, 12))
+        # live lists: done / active / pending
+        self.step4_live = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=14,
+                                       border_width=1, border_color=BORDER)
+        self.step4_live.pack(fill="x", pady=(0, 8))
         self.chap_hdr = ctk.CTkLabel(self.content, text="Chương", font=(FT, 13, "bold"),
                                      text_color=TEXT2)
         self.chap_hdr.pack(anchor="w", pady=(10, 4))
@@ -2636,6 +2768,7 @@ class App:
         self.btn_stop = btn(self.done_row, "■  Dừng", self.do_stop, kind="danger", width=120)
         self.btn_stop.pack(side="left")
         self.build_chapter_rows(); self.refresh4()
+        self._refresh_live_eta()
 
     def build_chapter_rows(self):
         self.chap_widgets = {}; self._last4 = {}
@@ -2965,9 +3098,22 @@ class App:
                           text_color=TEXT).pack(side="left", padx=8)
         ctk.CTkLabel(wrow, text="(1 = tuần tự · 2–4 = song song, cẩn rate-limit)",
                      font=(FT, 11), text_color=TEXT2).pack(side="left")
+        # output path line
+        try:
+            root_path = self.course_root(self.course_name)
+            ctk.CTkLabel(bar, text=f"Folder: {root_path}", font=("Consolas", 11),
+                         text_color=TEXT2, wraplength=620, justify="left").pack(
+                anchor="w", padx=16, pady=(0, 4))
+        except Exception:
+            pass
         self.mgr_status = ctk.CTkLabel(bar, text="⏳  Đang đọc danh sách chương…", font=(FT, 12),
                                        text_color=TEXT2, justify="left", wraplength=560)
-        self.mgr_status.pack(anchor="w", padx=16, pady=(2, 12))
+        self.mgr_status.pack(anchor="w", padx=16, pady=(2, 8))
+        # live progress panel (khoa / folder / video / bai)
+        self.mgr_live = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=14,
+                                     border_width=1, border_color=BORDER)
+        self.mgr_live.pack(fill="x", pady=(0, 8))
+        self.mgr_live.pack_forget()
         self.mgr_fail_box = ctk.CTkFrame(self.content, fg_color="transparent")
         self.mgr_fail_box.pack(fill="x", pady=(0, 6))
         self.mgr_scroll = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=16,
@@ -2978,6 +3124,7 @@ class App:
         btn(nav, "Tạo phụ đề  →", self.show_transcribe, kind="accent", width=150).pack(side="right")
         self._mgr_scan_async()
         self._mgr_refresh_fails()
+        self._refresh_live_eta()
 
     def _mgr_scan_async(self):
         def cb(t):
@@ -3042,11 +3189,24 @@ class App:
 
     def _mgr_render_lesson(self, L):
         lrow = ctk.CTkFrame(self.mgr_scroll, fg_color="transparent"); lrow.pack(fill="x", padx=(38, 4), pady=0)
-        ic = ctk.CTkLabel(lrow, text=("✓" if L["done"] else "•"), text_color=(SUCCESS if L["done"] else TEXT2), width=18, font=(FT, 13)); ic.pack(side="left")
-        t = L["title"] or "(bài)"; t = t if len(t) <= 38 else t[:37] + "…"
-        ctk.CTkLabel(lrow, text=t, font=(FT, 12), text_color=TEXT, width=280, anchor="w").pack(side="left")
-        host = (L["host"] or "").replace("www.", "")[:14]
-        ctk.CTkLabel(lrow, text=host, font=("Consolas", 10), text_color=TEXT2, width=100, anchor="w").pack(side="left")
+        # trang thai: done / dang tai (tu progress) / cho
+        st_icon, st_col, st_tag = "•", TEXT2, "chờ"
+        if L.get("done"):
+            st_icon, st_col, st_tag = "✓", SUCCESS, "xong"
+        else:
+            try:
+                cur = getattr(self, "_live_current_folder", None) or ""
+                folder = str(L.get("folder") or "")
+                if folder and cur and (folder == cur or folder.endswith(cur) or cur.endswith(folder)):
+                    st_icon, st_col, st_tag = "⏳", WARNING, "đang"
+            except Exception:
+                pass
+        ic = ctk.CTkLabel(lrow, text=st_icon, text_color=st_col, width=18, font=(FT, 13)); ic.pack(side="left")
+        t = L["title"] or "(bài)"; t = t if len(t) <= 34 else t[:33] + "…"
+        ctk.CTkLabel(lrow, text=t, font=(FT, 12), text_color=TEXT, width=250, anchor="w").pack(side="left")
+        ctk.CTkLabel(lrow, text=st_tag, font=(FT, 10), text_color=st_col, width=40, anchor="w").pack(side="left")
+        host = (L["host"] or "").replace("www.", "")[:12]
+        ctk.CTkLabel(lrow, text=host, font=("Consolas", 10), text_color=TEXT2, width=90, anchor="w").pack(side="left")
         btn(lrow, "⬇", (lambda r=L["rel"], tt=(L["title"] or "bài"): self.dl_lesson(r, tt)), kind="ghost", width=32, height=26).pack(side="right", padx=2)
         btn(lrow, "★", (lambda L=L: self._bookmark_lesson(L)), kind="ghost", width=28, height=26).pack(side="right", padx=1)
         btn(lrow, "✎", (lambda L=L: self._edit_lesson_note(L)), kind="ghost", width=28, height=26).pack(side="right", padx=1)
@@ -3470,14 +3630,23 @@ class App:
                     self._lastref = time.time(); self.refresh_manager()
                 elif self.proc and hasattr(self, "trans_lbl") and self.trans_lbl.winfo_exists():
                     self._lastref = time.time(); self._trans_scan_async()
-            # Sprint O: live ETA tu _download_progress.json
-            if self.proc and time.time() - getattr(self, "_last_eta", 0) > 1.2:
-                self._last_eta = time.time()
-                self._refresh_live_eta()
+            # Sprint O/2.15: live ETA + panel chi tiet tu _download_progress.json
+            if time.time() - getattr(self, "_last_eta", 0) > 1.0:
+                need_eta = bool(self.proc)
+                if not need_eta:
+                    # van refresh panel neu dang o manager/step4/dashboard
+                    need_eta = (
+                        (hasattr(self, "mgr_live") and self.mgr_live.winfo_exists())
+                        or (hasattr(self, "step4_live") and self.step4_live.winfo_exists())
+                        or (hasattr(self, "dash_dl_box") and self.dash_dl_box.winfo_exists())
+                    )
+                if need_eta:
+                    self._last_eta = time.time()
+                    self._refresh_live_eta()
             # Sprint W: cap nhat strip dashboard neu dang o dashboard
             if (hasattr(self, "dash_dl_box") and self.dash_dl_box.winfo_exists()
                     and hasattr(self, "dash_list") and self.dash_list.winfo_exists()):
-                if time.time() - getattr(self, "_last_dash_dl", 0) > 2.5:
+                if time.time() - getattr(self, "_last_dash_dl", 0) > 2.0:
                     self._last_dash_dl = time.time()
                     self._refresh_dash_download_strip()
         except Exception as e:
@@ -3488,35 +3657,83 @@ class App:
             except Exception: pass
 
     def _refresh_live_eta(self):
-        """Doc progress file + cap nhat run_lbl / status4 / mgr_status."""
+        """Doc progress file + cap nhat run_lbl / status4 / mgr_status + panel chi tiet."""
         try:
             import progress_live as PL
             root = self.course_root(self.course_name)
             data = PL.read_download_progress(root)
-            if not data or data.get("status") == "done":
+            if not data:
                 return
+            st = (data.get("status") or "").lower()
+            cur = data.get("current") or {}
+            self._live_current_folder = cur.get("folder") or ""
             line = PL.format_eta_line(data)
             frac = PL.progress_fraction(data)
-            if not line:
+            # always update detail panels while running (or just finished)
+            if hasattr(self, "mgr_live") and self.mgr_live.winfo_exists():
+                if st in ("running", "stopped") or (st == "done" and self.proc):
+                    try:
+                        self.mgr_live.pack(fill="x", pady=(0, 8),
+                                           before=self.mgr_fail_box if hasattr(self, "mgr_fail_box") else None)
+                    except Exception:
+                        self.mgr_live.pack(fill="x", pady=(0, 8))
+                    self._render_live_progress_into(
+                        self.mgr_live, data, title=data.get("course") or self.course_name)
+                elif st == "done" and not self.proc:
+                    # keep last snapshot briefly
+                    try:
+                        self._render_live_progress_into(
+                            self.mgr_live, data, title=data.get("course") or self.course_name)
+                        self.mgr_live.pack(fill="x", pady=(0, 8))
+                    except Exception:
+                        pass
+            if hasattr(self, "step4_live") and self.step4_live.winfo_exists():
+                self._render_live_progress_into(
+                    self.step4_live, data, title=data.get("course") or self.course_name)
+            if st == "done" and not self.proc:
+                # still update labels once
+                pass
+            elif st not in ("running", "stopped") and not self.proc:
+                return
+            if not line and st != "running":
                 return
             if hasattr(self, "run_lbl") and self.run_lbl.winfo_exists():
-                self.run_lbl.configure(text=f"⏳  {line}", text_color=WARNING)
+                if st == "running":
+                    self.run_lbl.configure(text=f"⏳  {line}", text_color=WARNING)
+                elif st == "done":
+                    self.run_lbl.configure(text=f"✓  {line}", text_color=SUCCESS)
+                elif st == "stopped":
+                    self.run_lbl.configure(text=f"■  {line}", text_color=WARNING)
             if hasattr(self, "status4") and self.status4.winfo_exists():
-                self.status4.configure(text=line)
-            if hasattr(self, "pb4") and self.pb4.winfo_exists() and frac > 0:
-                # uu tien video scan, nhung neu progress file chi tiet hon thi mix
+                done = data.get("done") or 0
+                total = data.get("total") or 0
+                self.status4.configure(
+                    text=f"Video: {done}/{total}  ·  {line}")
+            if hasattr(self, "cur_lesson_lbl") and self.cur_lesson_lbl.winfo_exists():
+                cur = data.get("current") or {}
+                if cur:
+                    ch = cur.get("chapter") or ""
+                    les = cur.get("lesson") or cur.get("folder_name") or ""
+                    stc = PL.state_label(cur.get("state") or "")
+                    txt = f"Bài: [{ch}] {les}  —  {stc}" if ch else f"Bài: {les}  —  {stc}"
+                    self.cur_lesson_lbl.configure(text=txt)
+            if hasattr(self, "pb4") and self.pb4.winfo_exists() and frac >= 0:
                 try:
-                    self.pb4.set(max(self.pb4.get(), frac * 0.95))
+                    if st == "running":
+                        self.pb4.set(max(self.pb4.get(), frac * 0.98) if frac > 0 else self.pb4.get())
+                    else:
+                        self.pb4.set(frac)
                 except Exception:
                     self.pb4.set(frac)
             if hasattr(self, "pct_lbl") and self.pct_lbl.winfo_exists() and data.get("total"):
                 pct = int(100 * frac)
                 self.pct_lbl.configure(text=f"{pct}%")
-            if hasattr(self, "mgr_status") and self.mgr_status.winfo_exists() and self.proc:
-                self.mgr_status.configure(
-                    text=f"⏳  {self.mgr_busy or 'đang tải'} · {line}",
-                    text_color=WARNING,
-                )
+            if hasattr(self, "mgr_status") and self.mgr_status.winfo_exists():
+                if self.proc or st == "running":
+                    self.mgr_status.configure(
+                        text=f"⏳  {self.mgr_busy or 'đang tải'} · {line}",
+                        text_color=WARNING,
+                    )
         except Exception:
             pass
 
@@ -4135,7 +4352,7 @@ class App:
         self.stat_card(info, "Version", ver_short, "selftest OK", "ok")
 
         card = self.card()
-        ctk.CTkLabel(card, text="Thư mục dữ liệu (BASE)", font=(FT, 13, "bold"),
+        ctk.CTkLabel(card, text="Thư mục lưu khóa (BASE / output)", font=(FT, 13, "bold"),
                      text_color=TEXT).pack(anchor="w", padx=16, pady=(14, 4))
         ctk.CTkLabel(card, text=f"{bi.get('base')}\ncourses: {bi.get('courses')}",
                      font=("Consolas", 11), text_color=TEXT2, justify="left",
@@ -4145,9 +4362,10 @@ class App:
         self.base_var = ctk.StringVar(value=str(bi.get("base") or ""))
         ctk.CTkEntry(row, textvariable=self.base_var, font=("Consolas", 12), height=dens("entry_h", 36),
                      corner_radius=10, fg_color=CARD2, border_color=BORDER).pack(
-            side="left", fill="x", expand=True, padx=(0, 8))
-        btn(row, "💾 Lưu BASE", self.doctor_save_base, kind="accent", width=120).pack(side="left")
-        ctk.CTkLabel(card, text="Hoặc SKOOL_BASE env. Đổi BASE xong mở lại Dashboard.",
+            side="left", fill="x", expand=True, padx=(0, 6))
+        btn(row, "Chọn…", self.pick_output_folder, kind="secondary", width=80).pack(side="left", padx=2)
+        btn(row, "💾 Lưu", self.save_output_folder, kind="accent", width=90).pack(side="left", padx=2)
+        ctk.CTkLabel(card, text="Chọn folder → Lưu. Khóa nằm trong <BASE>/courses/<tên>. Hoặc SKOOL_BASE env.",
                      font=(FT, 11), text_color=TEXT2, wraplength=600,
                      justify="left").pack(anchor="w", padx=16, pady=(0, 14))
 
@@ -4175,16 +4393,8 @@ class App:
         btn(self.content, "←  Dashboard", self.show_dashboard, kind="ghost", width=120).pack(anchor="w", pady=10)
 
     def doctor_save_base(self):
-        p = (self.base_var.get() if hasattr(self, "base_var") else "").strip()
-        if not p:
-            messagebox.showinfo("Trống", "Nhập đường dẫn BASE."); return
-        try:
-            C.set_base(p, persist=True)
-            self.write(f"✓ Đã lưu BASE = {C.BASE}")
-            messagebox.showinfo("BASE", f"Đã lưu:\n{C.BASE}\n\nMở lại Dashboard để quét khóa.")
-            self.show_doctor()
-        except Exception as e:
-            messagebox.showerror("BASE", str(e))
+        """Alias → save_output_folder (giu API cu)."""
+        self.save_output_folder()
 
     def doctor_fix_all(self):
         """Sprint S: yt-dlp -U + pip goi thieu theo doctor."""

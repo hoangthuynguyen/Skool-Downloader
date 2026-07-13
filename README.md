@@ -2,7 +2,7 @@
 
 Công cụ lưu trữ **toàn bộ một khóa học Skool** về máy: cây thư mục theo chương/bài, video (native Skool + Loom + YouTube), mô tả bài, tài liệu (resources) và **phụ đề tiếng Anh (Whisper)** — chạy bằng **một lệnh**, có **kiểm tra môi trường trước khi chạy** và **báo lỗi kèm cách xử lý**.
 
-> Phiên bản hiện tại: **2.14.2** — mở app 1 click (Desktop shortcut) · multi-LLM + Grok · …  
+> Phiên bản hiện tại: **2.15.0** — mở app 1 click (Desktop shortcut) · multi-LLM + Grok · …  
 > Hướng dẫn: **[docs/HUONG_DAN_FEATURES_WORKFLOWS.md](docs/HUONG_DAN_FEATURES_WORKFLOWS.md)** · `python app/main.py --version`  
 > Đã kiểm chứng trên khóa *AI Automations by Jack* (584 bài, ~170 GB).
 

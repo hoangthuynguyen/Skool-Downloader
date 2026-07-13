@@ -280,7 +280,8 @@ def run():
     _warn_expired_tokens(plan)
 
     # gop danh sach viec (Sprint E parallel)
-    jobs = []  # (folder, url, chap_name)
+    # job: (folder, url, chap_name, lesson_title)
+    jobs = []
     miss = 0
     for chap, lessons, ct in plan:
         if chap is None:
@@ -292,7 +293,8 @@ def run():
             url = node.get("url")
             if not url or not passes(url) or not lesson_ok(folder):
                 continue
-            jobs.append((folder, url, chap.name))
+            title = (node.get("title") or folder.name or "").strip()
+            jobs.append((folder, url, chap.name, title))
 
     total_jobs = len(jobs)
     idx = tai = skip = loi = 0
@@ -302,7 +304,33 @@ def run():
     bytes_done = [0]
     rate_hits = [0]
     cur_workers = [workers]
+    done_so_far = [0]  # shared counter for progress while workers>1
     progress_path = Path(C.ROOT) / "_download_progress.json"
+    course_label = getattr(C, "COURSE", None) or Path(C.ROOT).name or "SkoolCourse"
+    current_job = [None]   # dict dang xu ly
+    recent_done = []       # [{chapter, lesson, folder, state}] cuoi (toi da 12)
+    job_states = {}        # folder_str -> state (pending|downloading|ok|skip|fail|dry)
+
+    def _job_meta(item):
+        folder, url, chap_name, lesson_title = item
+        return {
+            "chapter": chap_name or "",
+            "lesson": lesson_title or (folder.name if hasattr(folder, "name") else str(folder)),
+            "folder": str(folder),
+            "folder_name": folder.name if hasattr(folder, "name") else str(folder),
+        }
+
+    def _pending_preview(n_done_count, limit=8):
+        out = []
+        for j in jobs[n_done_count:n_done_count + limit]:
+            m = _job_meta(j)
+            out.append({
+                "chapter": m["chapter"],
+                "lesson": m["lesson"],
+                "folder": m["folder"],
+                "state": "pending",
+            })
+        return out
 
     def _eta_line(n, total, extra=""):
         """Sprint K: ETA + toc do bai/phut."""
@@ -320,17 +348,34 @@ def run():
         mb = bytes_done[0] / (1024 * 1024)
         return f"ETA~{eta} · {jpm:.1f} bai/phut · {mb:.1f}MB{extra}"
 
-    def _write_progress(n, total, status="running", workers_now=1):
+    def _write_progress(n, total, status="running", workers_now=1, current=None):
         try:
+            cur = current if current is not None else current_job[0]
+            pending_n = max(0, (total or 0) - (n or 0))
+            if status == "running" and cur:
+                phase = "downloading"
+            elif status == "done":
+                phase = "done"
+            elif status == "stopped":
+                phase = "stopped"
+            else:
+                phase = status or "running"
             payload = {
                 "status": status,
+                "phase": phase,
+                "course": course_label,
+                "root": str(C.ROOT),
                 "done": n, "total": total,
+                "pending": pending_n,
                 "tai": tai, "skip": skip, "loi": loi,
                 "workers": workers_now,
-                "eta": _eta_line(n, total),
+                "eta": _eta_line(n, total) if total else "",
                 "elapsed_s": int(time.time() - t0),
                 "bytes": bytes_done[0],
                 "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "current": cur,
+                "recent": list(recent_done[-12:]),
+                "pending_preview": _pending_preview(n, 8) if status == "running" else [],
             }
             progress_path.write_text(
                 __import__("json").dumps(payload, ensure_ascii=False, indent=2),
@@ -340,12 +385,17 @@ def run():
             pass
 
     def _one(item, quiet=True):
-        folder, url, chap_name = item
+        folder, url, chap_name, lesson_title = item
         host = url.split("/")[2] if "://" in url else url[:24]
+        meta = _job_meta(item)
+        meta["state"] = "downloading"
+        current_job[0] = meta
+        job_states[str(folder)] = "downloading"
+        _write_progress(done_so_far[0], total_jobs, workers_now=cur_workers[0], current=meta)
         if done_file(folder):
-            return ("skip", folder, chap_name, host, None, 0)
+            return ("skip", folder, chap_name, lesson_title, host, None, 0)
         if C.DRY_RUN:
-            return ("dry", folder, chap_name, host, None, 0)
+            return ("dry", folder, chap_name, lesson_title, host, None, 0)
         ok, reason = download(url, folder, quiet=quiet)
         sz = 0
         if ok:
@@ -357,25 +407,30 @@ def run():
                         break
             except OSError:
                 pass
-            return ("ok", folder, chap_name, host, None, sz)
-        return ("fail", folder, chap_name, host, reason, 0)
+            return ("ok", folder, chap_name, lesson_title, host, None, sz)
+        return ("fail", folder, chap_name, lesson_title, host, reason, 0)
 
-    def _handle_result(status, folder, chap_name, host, reason, sz, n, total_jobs, workers_now):
+    def _handle_result(status, folder, chap_name, lesson_title, host, reason, sz, n, total_jobs, workers_now):
         nonlocal tai, skip, loi
-        tag = folder.name if hasattr(folder, "name") else str(folder)
+        tag = lesson_title or (folder.name if hasattr(folder, "name") else str(folder))
         pct = round(n * 100 / total_jobs, 1) if total_jobs else 0
         eta = _eta_line(n, total_jobs, f" · w={workers_now}" if workers_now > 1 else "")
+        state = "ok"
         if status == "skip":
             skip += 1
+            state = "skip"
             _plog(f"[{n}/{total_jobs} = {pct}%] skip  {tag}  | {eta}")
         elif status == "dry":
+            state = "dry"
             _plog(f"[{n}/{total_jobs} = {pct}%] dry   {tag}")
         elif status == "ok":
             tai += 1
+            state = "ok"
             bytes_done[0] += sz or 0
             _plog(f"[{n}/{total_jobs} = {pct}%] OK    {tag}  <{host}>  | {eta}")
         else:
             loi += 1
+            state = "fail"
             ma, mo, fix = reason or ("unknown", "?", "?")
             fails.append((str(folder), ma, mo, fix))
             _plog(f"[{n}/{total_jobs} = {pct}%] FAIL  {tag}  {mo}  | {eta}")
@@ -389,20 +444,38 @@ def run():
                     time.sleep(15)
             elif ma != "rate":
                 rate_hits[0] = 0
-        _write_progress(n, total_jobs, workers_now=workers_now)
+        entry = {
+            "chapter": chap_name or "",
+            "lesson": lesson_title or tag,
+            "folder": str(folder),
+            "folder_name": folder.name if hasattr(folder, "name") else str(folder),
+            "state": state,
+        }
+        recent_done.append(entry)
+        if len(recent_done) > 20:
+            del recent_done[:-20]
+        job_states[str(folder)] = state
+        current_job[0] = entry
+        done_so_far[0] = n
+        _write_progress(n, total_jobs, workers_now=workers_now, current=entry)
 
+    # initial progress snapshot
+    _write_progress(0, total_jobs, status="running", workers_now=workers,
+                    current=None)
     try:
         if workers <= 1:
             last_chap = None
-            for folder, url, chap_name in jobs:
+            for folder, url, chap_name, lesson_title in jobs:
                 if chap_name != last_chap:
                     print(f"=== [{chap_name}] ===")
                     last_chap = chap_name
                 host = url.split("/")[2] if "://" in url else url[:24]
-                print(f"→ {folder.name}  <{host}>", flush=True)
-                status, _fd, _ch, _host, reason, sz = _one((folder, url, chap_name), quiet=False)
+                print(f"→ {lesson_title or folder.name}  <{host}>", flush=True)
+                status, _fd, _ch, _lt, _host, reason, sz = _one(
+                    (folder, url, chap_name, lesson_title), quiet=False)
                 idx += 1
-                _handle_result(status, folder, chap_name, host, reason, sz, idx, total_jobs, 1)
+                _handle_result(status, folder, chap_name, lesson_title, host, reason, sz,
+                               idx, total_jobs, 1)
             if last_chap:
                 print()
         else:
@@ -415,11 +488,18 @@ def run():
                 w = cur_workers[0]
                 batch = pending[:w]
                 pending = pending[w:]
+                # mark batch as downloading
+                for j in batch:
+                    meta = _job_meta(j)
+                    meta["state"] = "downloading"
+                    job_states[str(j[0])] = "downloading"
+                    current_job[0] = meta
+                _write_progress(n_done, total_jobs, workers_now=w, current=current_job[0])
                 with ThreadPoolExecutor(max_workers=w) as pool:
                     futs = {pool.submit(_one, j, True): j for j in batch}
                     for fut in as_completed(futs):
                         try:
-                            status, folder, chap_name, host, reason, sz = fut.result()
+                            status, folder, chap_name, lesson_title, host, reason, sz = fut.result()
                         except Exception as e:
                             j = futs[fut]
                             loi += 1
@@ -428,7 +508,7 @@ def run():
                             _plog(f"[ERR] {j[0].name}: {e}")
                             continue
                         n_done += 1
-                        _handle_result(status, folder, chap_name, host, reason, sz,
+                        _handle_result(status, folder, chap_name, lesson_title, host, reason, sz,
                                        n_done, total_jobs, w)
                         # neu adaptive ha workers, phan con lai cua batch van chay xong
             idx = n_done
@@ -437,6 +517,7 @@ def run():
         _write_progress(idx, total_jobs, status="stopped", workers_now=cur_workers[0])
 
     final_w = cur_workers[0]
+    current_job[0] = None
     _write_progress(idx or total_jobs, total_jobs, status="done", workers_now=final_w)
     print(f"--- VIDEO: tai={tai} skip={skip} loi={loi} folder-thieu={miss} "
           f"({idx or total_jobs}/{total_jobs or total}) workers={final_w}"

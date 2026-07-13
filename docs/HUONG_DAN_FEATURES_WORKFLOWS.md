@@ -1,6 +1,6 @@
 # Skool Downloader — Hướng dẫn Features & Workflows
 
-> Phiên bản app: **2.14.2+** · Cập nhật: 2026-07  
+> Phiên bản app: **2.15.0+** · Cập nhật: 2026-07  
 > Launcher: `SkoolDownloader.cmd` (Win) · `SkoolDownloader.command` (macOS) · CLI: `app/main.py` · LLM: `app/llm_prompt.py`
 
 Tài liệu này mô tả **tính năng**, **luồng làm việc** và **cách cấu hình LLM** (Claude, OpenAI, **Grok**, Gemini, OpenRouter, Qwen, GLM, Kimi, …).
