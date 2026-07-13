@@ -19,31 +19,42 @@ PY = sys.executable.replace("pythonw.exe", "python.exe")
 NO_WIN = 0x08000000 if os.name == "nt" else 0
 SENTINEL = "\x00DONE\x00"
 
-# ===== palette UI v2 — light + accent xanh slate =====
-BG = "#F0F2F5"
-SIDE = "#0F172A"          # slate-900
-SIDE_HI = "#1E293B"       # slate-800
-SIDE_ACTIVE = "#334155"   # slate-700
-CARD = "#FFFFFF"
-CARD2 = "#F1F5F9"         # slate-100
-PRIMARY = "#0F172A"
-PRIMARY_H = "#1E293B"
-ACCENT = "#2563EB"        # blue-600
-ACCENT_H = "#1D4ED8"
-ACCENT_SOFT = "#EFF6FF"   # blue-50
-SUCCESS = "#059669"       # emerald-600
-SUCCESS_BG = "#ECFDF5"
-WARNING = "#D97706"       # amber-600
-WARNING_BG = "#FFFBEB"
-DANGER = "#DC2626"        # red-600
-DANGER_BG = "#FEF2F2"
-TEXT = "#0F172A"
-TEXT2 = "#64748B"         # slate-500
-ON_SIDE = "#94A3B8"       # slate-400
-BORDER = "#E2E8F0"        # slate-200
-FT = "Segoe UI"
+# ===== theme UI v2.1 — light / dark =====
+LIGHT = dict(
+    BG="#F0F2F5", SIDE="#0F172A", SIDE_HI="#1E293B", SIDE_ACTIVE="#334155",
+    CARD="#FFFFFF", CARD2="#F1F5F9", PRIMARY="#0F172A", PRIMARY_H="#1E293B",
+    ACCENT="#2563EB", ACCENT_H="#1D4ED8", ACCENT_SOFT="#EFF6FF",
+    SUCCESS="#059669", SUCCESS_BG="#ECFDF5", WARNING="#D97706", WARNING_BG="#FFFBEB",
+    DANGER="#DC2626", DANGER_BG="#FEF2F2", TEXT="#0F172A", TEXT2="#64748B",
+    ON_SIDE="#94A3B8", BORDER="#E2E8F0", LOG_BG="#F8FAFC",
+)
+DARK = dict(
+    BG="#0B1220", SIDE="#020617", SIDE_HI="#0F172A", SIDE_ACTIVE="#1E293B",
+    CARD="#111827", CARD2="#1F2937", PRIMARY="#E5E7EB", PRIMARY_H="#F9FAFB",
+    ACCENT="#3B82F6", ACCENT_H="#2563EB", ACCENT_SOFT="#1E3A5F",
+    SUCCESS="#34D399", SUCCESS_BG="#064E3B", WARNING="#FBBF24", WARNING_BG="#78350F",
+    DANGER="#F87171", DANGER_BG="#7F1D1D", TEXT="#F1F5F9", TEXT2="#94A3B8",
+    ON_SIDE="#64748B", BORDER="#1F2937", LOG_BG="#0F172A",
+)
+
+# module-level (cap nhat boi apply_theme)
+BG = SIDE = SIDE_HI = SIDE_ACTIVE = CARD = CARD2 = PRIMARY = PRIMARY_H = None
+ACCENT = ACCENT_H = ACCENT_SOFT = SUCCESS = SUCCESS_BG = WARNING = WARNING_BG = None
+DANGER = DANGER_BG = TEXT = TEXT2 = ON_SIDE = BORDER = LOG_BG = None
+ICON = {}
+THEME_MODE = "light"
+
+
+def pick_font():
+    if sys.platform == "darwin":
+        return "Helvetica Neue"
+    if os.name == "nt":
+        return "Segoe UI"
+    return "Sans"
+
+
+FT = pick_font()
 STEPS = ["Chọn khóa", "Lấy khóa", "Tùy chọn", "Tải về"]
-ICON = {"done": ("✓", SUCCESS), "loading": ("⏳", WARNING), "pending": ("•", "#CBD5E1")}
 
 # Nav items: (id, label, method_name)
 NAV_ITEMS = (
@@ -56,20 +67,64 @@ NAV_ITEMS = (
     ("doctor", "🩺   Doctor", "show_doctor"),
 )
 
-ctk.set_appearance_mode("light")
+
+def apply_theme(mode="light"):
+    """Gan mau global + CTk appearance."""
+    global BG, SIDE, SIDE_HI, SIDE_ACTIVE, CARD, CARD2, PRIMARY, PRIMARY_H
+    global ACCENT, ACCENT_H, ACCENT_SOFT, SUCCESS, SUCCESS_BG, WARNING, WARNING_BG
+    global DANGER, DANGER_BG, TEXT, TEXT2, ON_SIDE, BORDER, LOG_BG, ICON, THEME_MODE
+    src = DARK if mode == "dark" else LIGHT
+    THEME_MODE = "dark" if mode == "dark" else "light"
+    for k, v in src.items():
+        globals()[k] = v
+    ICON = {"done": ("✓", SUCCESS), "loading": ("⏳", WARNING), "pending": ("•", TEXT2)}
+    ctk.set_appearance_mode("dark" if THEME_MODE == "dark" else "light")
+
+
+def load_theme_pref():
+    try:
+        import ai_tools
+        return (ai_tools.load_settings().get("ui_theme") or "light").lower()
+    except Exception:
+        try:
+            import json
+            p = HERE / ".settings.json"
+            return (json.loads(p.read_text(encoding="utf-8")).get("ui_theme") or "light").lower()
+        except Exception:
+            return "light"
+
+
+def save_theme_pref(mode):
+    try:
+        import json
+        p = HERE / ".settings.json"
+        s = {}
+        if p.exists():
+            try:
+                s = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                s = {}
+        s["ui_theme"] = mode
+        p.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+apply_theme(load_theme_pref())
 ctk.set_default_color_theme("blue")
 
 
 def btn(parent, text, cmd, kind="primary", **kw):
     pal = {
-        "primary": (PRIMARY, PRIMARY_H, "white"),
-        "success": (SUCCESS, "#047857", "white"),
+        "primary": (PRIMARY, PRIMARY_H, ("white" if THEME_MODE == "light" else "#0F172A")),
+        "success": (SUCCESS, "#047857" if THEME_MODE == "light" else "#059669", "white"),
         "accent": (ACCENT, ACCENT_H, "white"),
-        "danger": (DANGER, "#B91C1C", "white"),
+        "danger": (DANGER, "#B91C1C" if THEME_MODE == "light" else "#DC2626", "white"),
         "secondary": (CARD2, BORDER, TEXT),
         "ghost": ("transparent", CARD2, TEXT),
-        "warn": (WARNING, "#B45309", "white"),
-        "soft": (ACCENT_SOFT, "#DBEAFE", ACCENT),
+        "warn": (WARNING, "#B45309" if THEME_MODE == "light" else "#D97706",
+                 ("white" if THEME_MODE == "light" else "#0F172A")),
+        "soft": (ACCENT_SOFT, ACCENT_SOFT, ACCENT),
     }
     fg, hov, tc = pal.get(kind, pal["primary"])
     opt = dict(corner_radius=10, height=38, font=(FT, 13, "bold"),
@@ -171,6 +226,13 @@ class App:
         foot.pack(side="bottom", fill="x", padx=12, pady=(8, 14))
         self.badge = ctk.CTkLabel(foot, text="", font=(FT, 11, "bold"), text_color=ACCENT)
         self.badge.pack(anchor="w", padx=8, pady=(0, 6))
+        self.theme_btn = btn(
+            foot,
+            "🌙  Dark mode" if THEME_MODE == "light" else "☀  Light mode",
+            self.toggle_theme, kind="ghost",
+            text_color="white", hover_color=SIDE_HI, anchor="w", height=34,
+            font=(FT, 12))
+        self.theme_btn.pack(fill="x", pady=(0, 4))
         btn(foot, "⚙  Kiểm tra môi trường", self.show_check, kind="ghost",
             text_color="white", hover_color=SIDE_HI, anchor="w", height=34,
             font=(FT, 12)).pack(fill="x")
@@ -195,8 +257,9 @@ class App:
         ctk.CTkLabel(ltop, text="Nhật ký", font=(FT, 12, "bold"), text_color=TEXT).pack(side="left")
         ctk.CTkLabel(ltop, text="pipeline · queue · cloud", font=(FT, 10),
                      text_color=TEXT2).pack(side="left", padx=8)
+        self.logwrap = logwrap
         self.log = ctk.CTkTextbox(logwrap, height=88, font=("Consolas", 11),
-                                  fg_color=CARD2, text_color=TEXT, corner_radius=10,
+                                  fg_color=LOG_BG, text_color=TEXT, corner_radius=10,
                                   border_width=0)
         self.log.pack(fill="x", padx=10, pady=(6, 10))
         self.log.configure(state="disabled")
@@ -207,6 +270,36 @@ class App:
         self.render_sidebar()
         self.show_dashboard()
         self.root.after(120, self.poll)
+
+    def toggle_theme(self):
+        """Dao light/dark, luu settings, ve lai man hien tai."""
+        new = "dark" if THEME_MODE == "light" else "light"
+        apply_theme(new)
+        save_theme_pref(new)
+        try:
+            self.root.configure(fg_color=BG)
+            self.side.configure(fg_color=SIDE)
+            if hasattr(self, "logwrap") and self.logwrap.winfo_exists():
+                self.logwrap.configure(fg_color=CARD, border_color=BORDER)
+            if hasattr(self, "log") and self.log.winfo_exists():
+                self.log.configure(fg_color=LOG_BG, text_color=TEXT)
+            if hasattr(self, "theme_btn") and self.theme_btn.winfo_exists():
+                self.theme_btn.configure(
+                    text="🌙  Dark mode" if new == "light" else "☀  Light mode",
+                    fg_color="transparent", hover_color=SIDE_HI, text_color="white")
+        except Exception:
+            pass
+        # rebuild chrome that uses constants
+        self._build_nav()
+        self.render_sidebar()
+        # refresh current page
+        page = self.nav_page or "dashboard"
+        method = next((m for i, _, m in NAV_ITEMS if i == page), "show_dashboard")
+        try:
+            getattr(self, method)()
+        except Exception:
+            self.show_dashboard()
+        self.write(f"Giao diện: {new} mode")
 
     def _build_nav(self):
         for w in self.nav_box.winfo_children():
@@ -1273,22 +1366,31 @@ class App:
     def show_step3(self):
         self.set_step(3); self.clear(); self.purpose = "import"
         nm = self.course_name or "SkoolCourse (khóa hiện tại)"
-        self.head(f"Tải khóa: {nm}", "App chỉ tải phần còn thiếu (bài đã có sẽ bỏ qua). Có thể bật phụ đề tiếng Anh chạy ngầm sau khi tải.")
+        self.head(f"Tải khóa: {nm}", "Chỉ tải phần còn thiếu. Có thể bật phụ đề tiếng Anh chạy ngầm sau khi tải.")
         sumcard = self.card()
-        self.sum_lbl = ctk.CTkLabel(sumcard, text="⏳  Đang kiểm tra tiến độ…", font=(FT, 13), text_color=TEXT2, justify="left", wraplength=520)
-        self.sum_lbl.pack(anchor="w", padx=16, pady=12)
-        self.native_banner = ctk.CTkFrame(self.content, fg_color="transparent"); self.native_banner.pack(fill="x")
+        self.sum_lbl = ctk.CTkLabel(sumcard, text="⏳  Đang kiểm tra tiến độ…", font=(FT, 13),
+                                    text_color=TEXT2, justify="left", wraplength=560)
+        self.sum_lbl.pack(anchor="w", padx=16, pady=14)
+        self.native_banner = ctk.CTkFrame(self.content, fg_color="transparent")
+        self.native_banner.pack(fill="x")
         card = self.card()
         self.opt_sub = ctk.BooleanVar(value=True)
-        ctk.CTkCheckBox(card, text="Tạo phụ đề tiếng Anh (chạy ngầm sau khi tải xong)", variable=self.opt_sub, font=(FT, 13), text_color=TEXT, fg_color=PRIMARY, hover_color=PRIMARY_H).pack(anchor="w", padx=16, pady=(12, 4))
+        ctk.CTkCheckBox(card, text="Tạo phụ đề tiếng Anh (chạy ngầm sau khi tải xong)",
+                        variable=self.opt_sub, font=(FT, 13), text_color=TEXT,
+                        fg_color=ACCENT, hover_color=ACCENT_H, border_color=BORDER).pack(anchor="w", padx=16, pady=(14, 6))
         self.opt_clean = ctk.BooleanVar(value=True)
-        ctk.CTkCheckBox(card, text="🔁 Tự thử lại đến khi tải đủ (chờ nếu bị Skool/YouTube giới hạn)", variable=self.opt_clean, font=(FT, 13), text_color=TEXT, fg_color=PRIMARY, hover_color=PRIMARY_H).pack(anchor="w", padx=16, pady=(0, 12))
+        ctk.CTkCheckBox(card, text="🔁 Tự thử lại đến khi tải đủ (chờ nếu bị giới hạn)",
+                        variable=self.opt_clean, font=(FT, 13), text_color=TEXT,
+                        fg_color=ACCENT, hover_color=ACCENT_H, border_color=BORDER).pack(anchor="w", padx=16, pady=(0, 14))
         self.opt_test = ctk.BooleanVar(value=self.admin)
         if self.admin:
-            ctk.CTkCheckBox(card, text="🔧 Chế độ TEST — chỉ kiểm tra, KHÔNG tải thật (dry-run)", variable=self.opt_test, font=(FT, 13, "bold"), text_color="#9A6700", fg_color=WARNING, hover_color="#B98700").pack(anchor="w", padx=16, pady=(0, 12))
+            ctk.CTkCheckBox(card, text="🔧 TEST — dry-run, không tải thật",
+                            variable=self.opt_test, font=(FT, 13, "bold"), text_color=WARNING,
+                            fg_color=WARNING, hover_color="#B45309", border_color=BORDER).pack(anchor="w", padx=16, pady=(0, 14))
         row = ctk.CTkFrame(self.content, fg_color="transparent"); row.pack(fill="x", pady=16)
         btn(row, "←  Quay lại", self.show_dashboard, kind="ghost", width=110).pack(side="left")
-        self.b_start = btn(row, "▶   Bắt đầu tải", self.start_download, kind="success", width=210, height=46); self.b_start.pack(side="right")
+        self.b_start = btn(row, "▶   Bắt đầu tải", self.start_download, kind="success", width=210, height=46)
+        self.b_start.pack(side="right")
         self._scan_current_async()
 
     def _scan_current_async(self):
@@ -1332,21 +1434,34 @@ class App:
     # ====================== BƯỚC 4 ======================
     def show_step4(self):
         self.set_step(4); self.clear()
-        self.head("Đang tải khóa…", "Theo dõi tiến trình ngay bên dưới. Có thể bấm Dừng bất cứ lúc nào (chạy lại sẽ tiếp tục), hoặc mở thư mục xem ngay.")
+        self.head("Đang tải khóa…", "Theo dõi tiến trình. Dừng bất cứ lúc nào — chạy lại sẽ resume. Mở thư mục để xem file ngay.")
         self.build_progress()
         ov = self.card()
-        ctk.CTkLabel(ov, text=f"Khóa: {self.course_name or 'SkoolCourse'}", font=(FT, 13, "bold"), text_color=PRIMARY).pack(anchor="w", padx=18, pady=(12, 2))
-        b = ctk.CTkFrame(ov, fg_color="transparent"); b.pack(fill="x", padx=18, pady=(2, 14))
-        self.pct_lbl = ctk.CTkLabel(b, text="0%", font=(FT, 38, "bold"), text_color=TEXT); self.pct_lbl.pack(side="left")
+        ctk.CTkLabel(ov, text=f"Khóa: {self.course_name or 'SkoolCourse'}",
+                     font=(FT, 13, "bold"), text_color=ACCENT).pack(anchor="w", padx=18, pady=(14, 2))
+        b = ctk.CTkFrame(ov, fg_color="transparent"); b.pack(fill="x", padx=18, pady=(2, 16))
+        self.pct_lbl = ctk.CTkLabel(b, text="0%", font=(FT, 42, "bold"), text_color=TEXT)
+        self.pct_lbl.pack(side="left")
         r = ctk.CTkFrame(b, fg_color="transparent"); r.pack(side="left", fill="x", expand=True, padx=18)
-        self.pb4 = ctk.CTkProgressBar(r, height=16, corner_radius=8, progress_color=PRIMARY); self.pb4.pack(fill="x", pady=(16, 6)); self.pb4.set(0)
-        self.status4 = ctk.CTkLabel(r, text="", font=("Consolas", 12), text_color=TEXT2); self.status4.pack(anchor="w")
-        self.chap_hdr = ctk.CTkLabel(self.content, text="Chương", font=(FT, 14, "bold"), text_color=TEXT); self.chap_hdr.pack(anchor="w", pady=(8, 2))
-        self.chap_scroll = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=14); self.chap_scroll.pack(fill="x", pady=(0, 6))   # cuon theo trang ngoai
-        self.run_lbl = ctk.CTkLabel(self.content, text="⏳  Đang chạy…", font=(FT, 13, "bold"), text_color=WARNING); self.run_lbl.pack(anchor="w", pady=(8, 4))
-        self.done_row = ctk.CTkFrame(self.content, fg_color="transparent"); self.done_row.pack(fill="x", pady=6)
-        btn(self.done_row, "📁  Mở thư mục dự án", self.open_folder, kind="secondary", width=210).pack(side="left", padx=(0, 8))
-        self.btn_stop = btn(self.done_row, "■  Dừng", self.do_stop, kind="danger", width=120); self.btn_stop.pack(side="left")
+        self.pb4 = ctk.CTkProgressBar(r, height=14, corner_radius=8,
+                                      progress_color=ACCENT, fg_color=CARD2)
+        self.pb4.pack(fill="x", pady=(18, 6)); self.pb4.set(0)
+        self.status4 = ctk.CTkLabel(r, text="", font=("Consolas", 12), text_color=TEXT2)
+        self.status4.pack(anchor="w")
+        self.chap_hdr = ctk.CTkLabel(self.content, text="Chương", font=(FT, 13, "bold"),
+                                     text_color=TEXT2)
+        self.chap_hdr.pack(anchor="w", pady=(10, 4))
+        self.chap_scroll = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=16,
+                                        border_width=1, border_color=BORDER)
+        self.chap_scroll.pack(fill="x", pady=(0, 6))
+        self.run_lbl = ctk.CTkLabel(self.content, text="⏳  Đang chạy…", font=(FT, 13, "bold"),
+                                    text_color=WARNING)
+        self.run_lbl.pack(anchor="w", pady=(10, 4))
+        self.done_row = ctk.CTkFrame(self.content, fg_color="transparent")
+        self.done_row.pack(fill="x", pady=8)
+        btn(self.done_row, "📁  Mở thư mục", self.open_folder, kind="secondary", width=160).pack(side="left", padx=(0, 8))
+        self.btn_stop = btn(self.done_row, "■  Dừng", self.do_stop, kind="danger", width=120)
+        self.btn_stop.pack(side="left")
         self.build_chapter_rows(); self.refresh4()
 
     def build_chapter_rows(self):
@@ -1517,21 +1632,28 @@ class App:
         if not hasattr(self, "mgr_expanded"): self.mgr_expanded = set()
         self.mgr_tree = []; self.mgr_widgets = {}; self.mgr_busy = None
         nm = self.course_name or "SkoolCourse (khóa hiện tại)"
-        self.head(f"Tải khóa: {nm}", "Bấm ▸ để mở các bài trong chương. Tải cả chương, tải từng bài, hoặc Tải toàn bộ. Bài đã tải sẽ bỏ qua; có thể Dừng bất cứ lúc nào.")
+        self.head(f"Tải khóa: {nm}", "Mở chương ▸ · tải từng bài / cả chương / toàn bộ. Resume an toàn — Dừng bất cứ lúc nào.")
         bar = self.card()
-        row = ctk.CTkFrame(bar, fg_color="transparent"); row.pack(fill="x", padx=14, pady=(12, 4))
-        self.b_all = btn(row, "⬇  Tải toàn bộ", self.dl_all, kind="success", width=150); self.b_all.pack(side="left")
+        row = ctk.CTkFrame(bar, fg_color="transparent"); row.pack(fill="x", padx=14, pady=(14, 6))
+        self.b_all = btn(row, "⬇  Tải toàn bộ", self.dl_all, kind="success", width=150)
+        self.b_all.pack(side="left")
         btn(row, "■  Dừng", self.do_stop, kind="danger", width=100).pack(side="left", padx=8)
         self.opt_clean = ctk.BooleanVar(value=True)
-        ctk.CTkCheckBox(row, text="🔁 Tự thử lại đến khi đủ", variable=self.opt_clean, font=(FT, 12), text_color=TEXT2, fg_color=PRIMARY, hover_color=PRIMARY_H).pack(side="left", padx=8)
-        btn(row, "🗑 Dọn dở", self.cleanup_partials, kind="ghost", width=90, height=32).pack(side="right", padx=4)
-        self.mgr_status = ctk.CTkLabel(bar, text="⏳  Đang đọc danh sách chương…", font=(FT, 12), text_color=TEXT2, justify="left", wraplength=520); self.mgr_status.pack(anchor="w", padx=16, pady=(2, 10))
+        ctk.CTkCheckBox(row, text="🔁 Thử lại đến khi đủ", variable=self.opt_clean,
+                        font=(FT, 12), text_color=TEXT2, fg_color=ACCENT, hover_color=ACCENT_H,
+                        border_color=BORDER).pack(side="left", padx=8)
+        btn(row, "🗑 Dọn dở", self.cleanup_partials, kind="secondary", width=96, height=32).pack(side="right", padx=4)
+        self.mgr_status = ctk.CTkLabel(bar, text="⏳  Đang đọc danh sách chương…", font=(FT, 12),
+                                       text_color=TEXT2, justify="left", wraplength=560)
+        self.mgr_status.pack(anchor="w", padx=16, pady=(2, 12))
         self.mgr_fail_box = ctk.CTkFrame(self.content, fg_color="transparent")
-        self.mgr_fail_box.pack(fill="x", pady=(0, 4))
-        self.mgr_scroll = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=14, border_width=1, border_color=BORDER); self.mgr_scroll.pack(fill="x", pady=(2, 6))
-        nav = ctk.CTkFrame(self.content, fg_color="transparent"); nav.pack(fill="x", pady=10)
+        self.mgr_fail_box.pack(fill="x", pady=(0, 6))
+        self.mgr_scroll = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=16,
+                                       border_width=1, border_color=BORDER)
+        self.mgr_scroll.pack(fill="x", pady=(2, 6))
+        nav = ctk.CTkFrame(self.content, fg_color="transparent"); nav.pack(fill="x", pady=12)
         btn(nav, "←  Dashboard", self.show_dashboard, kind="ghost", width=120).pack(side="left")
-        btn(nav, "Tạo phụ đề  →", self.show_transcribe, kind="secondary", width=160).pack(side="right")
+        btn(nav, "Tạo phụ đề  →", self.show_transcribe, kind="accent", width=150).pack(side="right")
         self._mgr_scan_async()
         self._mgr_refresh_fails()
 
@@ -1985,52 +2107,58 @@ class App:
     def show_queue(self):
         self.set_nav("queue")
         self.clear()
-        self.head("Hàng đợi multi-course", "Xếp nhiều khóa — có thể chạy song song (workers). Mỗi job = 1 subprocess main.py. Trạng thái: queue_state.json.")
+        self.head("Hàng đợi multi-course", "Xếp nhiều khóa — chạy song song (workers). Mỗi job = 1 subprocess main.py · queue_state.json.")
         import queue_engine as QE
         counts = QE.summary()
         qs = QE.load_queue_settings()
-        self.q_status = ctk.CTkLabel(
-            self.content,
-            text=f"queued={counts.get('queued',0)}  running={counts.get('running',0)}  "
-                 f"done={counts.get('done',0)}  failed={counts.get('failed',0)}  "
-                 f"· workers={qs.get('max_workers',1)}",
-            font=("Consolas", 12), text_color=TEXT2)
-        self.q_status.pack(anchor="w", pady=(0, 8))
-
-        wrow = ctk.CTkFrame(self.content, fg_color="transparent"); wrow.pack(fill="x", pady=(0, 6))
-        ctk.CTkLabel(wrow, text="Workers song song:", font=(FT, 12), text_color=TEXT).pack(side="left")
+        # KPI row
+        krow = ctk.CTkFrame(self.content, fg_color="transparent")
+        krow.pack(fill="x", pady=(0, 10))
+        for title, key, level in (
+            ("Queued", "queued", "info"),
+            ("Running", "running", "warn"),
+            ("Done", "done", "ok"),
+            ("Failed", "failed", "danger"),
+        ):
+            self.stat_card(krow, title, str(counts.get(key, 0)), f"workers={qs.get('max_workers',1)}" if key == "queued" else "", level)
+        self.q_status = ctk.CTkLabel(self.content, text="", font=(FT, 1), text_color=BG)
+        # controls card
+        ctrl = self.card()
+        wrow = ctk.CTkFrame(ctrl, fg_color="transparent"); wrow.pack(fill="x", padx=14, pady=(12, 6))
+        ctk.CTkLabel(wrow, text="Workers song song", font=(FT, 12, "bold"), text_color=TEXT).pack(side="left")
         self.q_workers = ctk.StringVar(value=str(qs.get("max_workers") or 1))
-        ctk.CTkOptionMenu(wrow, variable=self.q_workers, values=["1", "2", "3", "4"], width=70,
-                          fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
-                          text_color=TEXT, command=lambda _=None: self._queue_save_workers()).pack(side="left", padx=8)
-        ctk.CTkLabel(wrow, text="(transcribe vẫn 1 job/lần)", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        ctk.CTkOptionMenu(wrow, variable=self.q_workers, values=["1", "2", "3", "4"], width=72,
+                          fg_color=CARD2, button_color=ACCENT, button_hover_color=ACCENT_H,
+                          text_color=TEXT, command=lambda _=None: self._queue_save_workers()).pack(side="left", padx=10)
+        ctk.CTkLabel(wrow, text="transcribe vẫn serial", font=(FT, 11), text_color=TEXT2).pack(side="left")
 
-        bar = ctk.CTkFrame(self.content, fg_color="transparent"); bar.pack(fill="x", pady=4)
+        bar = ctk.CTkFrame(ctrl, fg_color="transparent"); bar.pack(fill="x", padx=14, pady=(4, 12))
         btn(bar, "▶  Chạy hàng đợi", self.queue_run, kind="success", width=150).pack(side="left")
         btn(bar, "■  Dừng", self.queue_stop, kind="danger", width=90).pack(side="left", padx=6)
         btn(bar, "Xóa đã xong", self.queue_clear_done, kind="secondary", width=120).pack(side="left", padx=4)
         btn(bar, "↺ Thử lại failed", self.queue_requeue_failed, kind="secondary", width=130).pack(side="left", padx=4)
-        btn(bar, "↻ Làm mới", self.show_queue, kind="ghost", width=100).pack(side="right")
+        btn(bar, "↻", self.show_queue, kind="ghost", width=44).pack(side="right")
 
         add_card = self.card()
-        ctk.CTkLabel(add_card, text="Thêm khóa vào hàng đợi", font=(FT, 12, "bold"), text_color=TEXT2).pack(anchor="w", padx=14, pady=(10, 4))
+        ctk.CTkLabel(add_card, text="Thêm khóa vào hàng đợi", font=(FT, 12, "bold"), text_color=TEXT2).pack(anchor="w", padx=14, pady=(12, 4))
         items = self.existing_courses()
         self.q_add_var = ctk.StringVar(value=items[0] if items else "")
         if items:
-            ctk.CTkOptionMenu(add_card, variable=self.q_add_var, values=items, width=320,
-                              fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
+            ctk.CTkOptionMenu(add_card, variable=self.q_add_var, values=items, width=340,
+                              fg_color=CARD2, button_color=ACCENT, button_hover_color=ACCENT_H,
                               text_color=TEXT).pack(anchor="w", padx=14, pady=4)
-            row = ctk.CTkFrame(add_card, fg_color="transparent"); row.pack(fill="x", padx=14, pady=(4, 12))
-            btn(row, "＋ Thêm", self.queue_add_current, width=100).pack(side="left")
+            row = ctk.CTkFrame(add_card, fg_color="transparent"); row.pack(fill="x", padx=14, pady=(6, 12))
+            btn(row, "＋ Thêm", self.queue_add_current, kind="accent", width=100).pack(side="left")
             btn(row, "＋ Thêm tất cả", self.queue_add_all, kind="secondary", width=130).pack(side="left", padx=8)
         else:
             ctk.CTkLabel(add_card, text="(Chưa có khóa)", font=(FT, 12), text_color=TEXT2).pack(padx=14, pady=12)
 
-        self.q_list = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=12, border_width=1, border_color=BORDER)
-        self.q_list.pack(fill="x", pady=8)
+        ctk.CTkLabel(self.content, text="JOBS", font=(FT, 11, "bold"), text_color=TEXT2).pack(anchor="w", pady=(4, 4))
+        self.q_list = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=16, border_width=1, border_color=BORDER)
+        self.q_list.pack(fill="x", pady=4)
         self._queue_render_jobs()
 
-        btn(self.content, "←  Dashboard", self.show_dashboard, kind="ghost", width=120).pack(anchor="w", pady=10)
+        btn(self.content, "←  Dashboard", self.show_dashboard, kind="ghost", width=120).pack(anchor="w", pady=12)
 
     def _queue_render_jobs(self):
         if not (hasattr(self, "q_list") and self.q_list.winfo_exists()): return
@@ -2039,24 +2167,26 @@ class App:
         state = QE.load_state()
         jobs = state.get("jobs") or []
         if not jobs:
-            ctk.CTkLabel(self.q_list, text="(Hàng đợi trống — thêm khóa từ Dashboard hoặc ở trên)",
-                         font=(FT, 12), text_color=TEXT2).pack(padx=14, pady=16)
+            ctk.CTkLabel(self.q_list, text="Hàng đợi trống — thêm khóa từ Dashboard hoặc form phía trên.",
+                         font=(FT, 12), text_color=TEXT2).pack(padx=16, pady=20)
             return
         for j in jobs:
-            row = ctk.CTkFrame(self.q_list, fg_color="transparent"); row.pack(fill="x", padx=8, pady=3)
+            row = ctk.CTkFrame(self.q_list, fg_color=CARD2, corner_radius=10)
+            row.pack(fill="x", padx=10, pady=4)
             st = j.get("status") or "?"
-            col = SUCCESS if st == "done" else (DANGER if st in ("failed", "stopped") else (WARNING if st == "running" else TEXT2))
-            ctk.CTkLabel(row, text=f"[{st}]", font=("Consolas", 11, "bold"), text_color=col, width=80, anchor="w").pack(side="left")
+            level = "ok" if st == "done" else ("danger" if st in ("failed", "stopped") else ("warn" if st == "running" else "muted"))
+            pill = self.pill(row, st, level)
+            pill.pack(side="left", padx=(10, 8), pady=8)
             ctk.CTkLabel(row, text=j.get("label") or j.get("course") or "SkoolCourse",
-                         font=(FT, 12), text_color=TEXT, anchor="w").pack(side="left", fill="x", expand=True)
+                         font=(FT, 12, "bold"), text_color=TEXT, anchor="w").pack(side="left", fill="x", expand=True, pady=8)
             jid = j.get("id")
-            btn(row, "↓", lambda i=jid: self._queue_move(i, +1), kind="ghost", width=28, height=26).pack(side="right", padx=1)
-            btn(row, "↑", lambda i=jid: self._queue_move(i, -1), kind="ghost", width=28, height=26).pack(side="right", padx=1)
+            btn(row, "↓", lambda i=jid: self._queue_move(i, +1), kind="ghost", width=28, height=28).pack(side="right", padx=1, pady=6)
+            btn(row, "↑", lambda i=jid: self._queue_move(i, -1), kind="ghost", width=28, height=28).pack(side="right", padx=1, pady=6)
             if st in ("failed", "stopped", "cancelled"):
-                btn(row, "↺", lambda i=jid: self._queue_requeue_one(i), kind="ghost", width=28, height=26).pack(side="right")
+                btn(row, "↺", lambda i=jid: self._queue_requeue_one(i), kind="soft", width=32, height=28).pack(side="right", padx=2, pady=6)
             if st == "queued":
-                btn(row, "Hủy", lambda i=jid: self._queue_cancel(i), kind="ghost", width=50, height=26).pack(side="right")
-            btn(row, "✕", lambda i=jid: self._queue_remove(i), kind="ghost", width=36, height=26).pack(side="right", padx=2)
+                btn(row, "Hủy", lambda i=jid: self._queue_cancel(i), kind="ghost", width=50, height=28).pack(side="right", pady=6)
+            btn(row, "✕", lambda i=jid: self._queue_remove(i), kind="ghost", width=32, height=28).pack(side="right", padx=(2, 8), pady=6)
 
     def queue_add_current(self):
         import queue_engine as QE
@@ -2684,7 +2814,7 @@ class App:
     def show_chat(self, preselect=None):
         self.set_nav("chat")
         self.clear()
-        self.head("Chat RAG", "Hỏi đáp trên mô tả + lời giảng — TF-IDF / dense embed + multi-khóa. Trả lời bằng Claude.")
+        self.head("Chat RAG", "Hỏi đáp trên mô tả + lời giảng — TF-IDF / dense / multi-khóa. Trả lời bằng Claude.")
         items = self.existing_courses()
         if preselect and preselect in items:
             cur = preselect
@@ -2694,50 +2824,61 @@ class App:
         else:
             cur = items[0] if items else ""
         top = self.card()
-        row = ctk.CTkFrame(top, fg_color="transparent"); row.pack(fill="x", padx=12, pady=(10, 4))
-        ctk.CTkLabel(row, text="Khóa:", font=(FT, 12), text_color=TEXT).pack(side="left")
+        row = ctk.CTkFrame(top, fg_color="transparent"); row.pack(fill="x", padx=14, pady=(14, 6))
+        ctk.CTkLabel(row, text="Khóa", font=(FT, 12, "bold"), text_color=TEXT2).pack(side="left")
         self.chat_course = ctk.StringVar(value=cur)
         if items:
-            ctk.CTkOptionMenu(row, variable=self.chat_course, values=items, width=240,
-                              fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
-                              text_color=TEXT).pack(side="left", padx=8)
-        btn(row, "📇 Index lại", self.chat_reindex, kind="secondary", width=110).pack(side="left", padx=4)
+            ctk.CTkOptionMenu(row, variable=self.chat_course, values=items, width=260,
+                              fg_color=CARD2, button_color=ACCENT, button_hover_color=ACCENT_H,
+                              text_color=TEXT).pack(side="left", padx=10)
+        btn(row, "📇 Index", self.chat_reindex, kind="secondary", width=100).pack(side="left", padx=4)
         try:
             import ai_tools
             has = ai_tools.have_api()
         except Exception:
             has = False
-        ctk.CTkLabel(row, text=("Claude ✓" if has else "⚠ Cần API key Claude"),
-                     font=(FT, 11), text_color=(SUCCESS if has else DANGER)).pack(side="right")
+        self.pill(row, "Claude ✓" if has else "Cần API key", "ok" if has else "danger").pack(side="right")
 
-        row2 = ctk.CTkFrame(top, fg_color="transparent"); row2.pack(fill="x", padx=12, pady=(0, 10))
+        row2 = ctk.CTkFrame(top, fg_color="transparent"); row2.pack(fill="x", padx=14, pady=(0, 12))
         self.chat_multi = ctk.BooleanVar(value=False)
-        ctk.CTkCheckBox(row2, text="Chat tất cả khóa (multi-course)", variable=self.chat_multi,
-                        font=(FT, 12), text_color=TEXT, fg_color=PRIMARY, hover_color=PRIMARY_H).pack(side="left")
-        ctk.CTkLabel(row2, text="Method:", font=(FT, 11), text_color=TEXT2).pack(side="left", padx=(16, 4))
+        ctk.CTkCheckBox(row2, text="Chat tất cả khóa", variable=self.chat_multi,
+                        font=(FT, 12), text_color=TEXT, fg_color=ACCENT, hover_color=ACCENT_H,
+                        border_color=BORDER).pack(side="left")
+        ctk.CTkLabel(row2, text="Method", font=(FT, 11), text_color=TEXT2).pack(side="left", padx=(16, 4))
         self.chat_method = ctk.StringVar(value="auto")
         ctk.CTkOptionMenu(row2, variable=self.chat_method, values=["auto", "dense", "tfidf", "keyword"], width=110,
-                          fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
+                          fg_color=CARD2, button_color=ACCENT, button_hover_color=ACCENT_H,
                           text_color=TEXT).pack(side="left")
 
-        self.chat_box = ctk.CTkTextbox(self.content, height=280, font=(FT, 13), fg_color=CARD, text_color=TEXT, corner_radius=12)
-        self.chat_box.pack(fill="x", pady=6)
+        chat_card = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=16,
+                                 border_width=1, border_color=BORDER)
+        chat_card.pack(fill="x", pady=6)
+        self.chat_box = ctk.CTkTextbox(chat_card, height=300, font=(FT, 13),
+                                       fg_color=LOG_BG, text_color=TEXT, corner_radius=12, border_width=0)
+        self.chat_box.pack(fill="x", padx=10, pady=10)
         self.chat_box.configure(state="disabled")
         for role, text in self.chat_history[-12:]:
             self._chat_append(role, text, persist=False)
 
-        self.chat_src = ctk.CTkLabel(self.content, text="", font=(FT, 11), text_color=TEXT2, wraplength=560, justify="left")
-        self.chat_src.pack(anchor="w", pady=(0, 4))
+        self.chat_src = ctk.CTkLabel(self.content, text="", font=(FT, 11), text_color=TEXT2,
+                                    wraplength=640, justify="left")
+        self.chat_src.pack(anchor="w", pady=(2, 6))
 
-        inp = ctk.CTkFrame(self.content, fg_color="transparent"); inp.pack(fill="x", pady=4)
-        self.chat_input = ctk.CTkEntry(inp, placeholder_text="Hỏi về nội dung khóa… (Enter để gửi)", font=(FT, 13), height=36)
+        inp = ctk.CTkFrame(self.content, fg_color=CARD, corner_radius=14,
+                           border_width=1, border_color=BORDER)
+        inp.pack(fill="x", pady=4)
+        ir = ctk.CTkFrame(inp, fg_color="transparent")
+        ir.pack(fill="x", padx=10, pady=10)
+        self.chat_input = ctk.CTkEntry(ir, placeholder_text="Hỏi về nội dung khóa… (Enter để gửi)",
+                                       font=(FT, 13), height=40, corner_radius=10,
+                                       fg_color=CARD2, border_color=BORDER)
         self.chat_input.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self.chat_input.bind("<Return>", lambda e: self.chat_send())
-        btn(inp, "Gửi", self.chat_send, kind="success", width=90, height=36).pack(side="left")
+        btn(ir, "Gửi  →", self.chat_send, kind="accent", width=100, height=40).pack(side="left")
 
-        nav = ctk.CTkFrame(self.content, fg_color="transparent"); nav.pack(fill="x", pady=10)
+        nav = ctk.CTkFrame(self.content, fg_color="transparent"); nav.pack(fill="x", pady=12)
         btn(nav, "←  Dashboard", self.show_dashboard, kind="ghost", width=120).pack(side="left")
-        btn(nav, "Xóa lịch sử chat", self.chat_clear, kind="ghost", width=140).pack(side="right")
+        btn(nav, "Xóa lịch sử", self.chat_clear, kind="secondary", width=120).pack(side="right")
 
     def _chat_append(self, role, text, persist=True):
         if persist:
