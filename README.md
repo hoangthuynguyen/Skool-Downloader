@@ -2,7 +2,8 @@
 
 Công cụ lưu trữ **toàn bộ một khóa học Skool** về máy: cây thư mục theo chương/bài, video (native Skool + Loom + YouTube), mô tả bài, tài liệu (resources) và **phụ đề tiếng Anh (Whisper)** — chạy bằng **một lệnh**, có **kiểm tra môi trường trước khi chạy** và **báo lỗi kèm cách xử lý**.
 
-> Phiên bản hiện tại: **2.12.0** — multi-LLM (Gemini · OpenRouter · GLM · Qwen · Kimi · …) + fallback (`python app/main.py --version`).  
+> Phiên bản hiện tại: **2.13.0** — multi-LLM + **Grok (xAI)** · Gemini · OpenRouter · Qwen · GLM · Kimi · … + fallback.  
+> Hướng dẫn features/workflows: **[docs/HUONG_DAN_FEATURES_WORKFLOWS.md](docs/HUONG_DAN_FEATURES_WORKFLOWS.md)** · `python app/main.py --version`  
 > Đã kiểm chứng trên khóa *AI Automations by Jack* (584 bài, ~170 GB).
 
 ---
@@ -16,22 +17,39 @@ Archiver/
 ├─ SkoolArchiver.cmd             ← ⭐ BẤM PHÁT LÀ CHẠY (lần đầu tự cài → mở giao diện)
 ├─ Nâng cao/                     ← công cụ dòng lệnh (KHÔNG bắt buộc)
 │  ├─ Tai bang dong lenh.cmd     ← chạy pipeline bằng dòng lệnh
-│  ├─ Doctor.cmd                 ← kiểm tra môi trường + BASE
-│  ├─ Web Viewer.cmd             ← duyệt knowledge local
-│  ├─ Health check.cmd           ← quét sức khỏe kho
-│  ├─ Knowledge pack.cmd         ← zip text/resources (không video)
-│  ├─ Smart update.cmd           ← diff-only / smart-update
-│  ├─ Pack backup.cmd            ← backup/restore knowledge pack
-│  ├─ Xuat site tinh.cmd         ← export HTML offline
-│  ├─ Cai / Go transcribe nen.cmd
+│  ├─ Doctor.cmd / Doctor fix.cmd
+│  ├─ LLM Prompt.cmd             ← dịch/cập nhật theo prompt (multi-LLM)
+│  ├─ Web Viewer.cmd · Health check.cmd
+│  ├─ Knowledge pack · Pack backup · Smart update/batch
+│  ├─ Anki · Quiz · Vault · Study plan · Disk report
+│  └─ …
 ├─ extractor.js                  ← dán vào Console trình duyệt để dump
 ├─ README.md
-├─ docs/                         ← tài liệu (.docx)
-├─ logs/                         ← log mỗi lần chạy (tự sinh)
+├─ docs/
+│  ├─ HUONG_DAN_FEATURES_WORKFLOWS.md  ← ⭐ features + workflows + LLM
+│  └─ *.docx                     ← SOP / hướng dẫn Word
+├─ logs/
 └─ app/                          ← mã nguồn (Python + PowerShell)
 ```
 
 → **Bình thường chỉ cần duy nhất `SkoolArchiver.cmd`.** Lần đầu trên máy mới nó **tự cài** (tạo venv + thư viện + ffmpeg), các lần sau **mở giao diện ngay** — không cần chạy setup hay run gì cả. Folder `Nâng cao/` chỉ dùng khi muốn thao tác bằng dòng lệnh.
+
+**Đọc trước khi dùng nâng cao:** [docs/HUONG_DAN_FEATURES_WORKFLOWS.md](docs/HUONG_DAN_FEATURES_WORKFLOWS.md) — workflows A–G, LLM multi-provider (Grok/Claude/Gemini/Qwen…), phím tắt, xử lý sự cố.
+
+---
+
+### LLM multi-provider (tóm tắt)
+
+| Provider | ID CLI | Key env | Models gợi ý |
+|----------|--------|---------|----------------|
+| **Grok (xAI)** | `grok` | `XAI_API_KEY` | `grok-3`, `grok-3-mini` |
+| Claude | `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6` |
+| OpenAI | `openai` | `OPENAI_API_KEY` | `gpt-4o-mini` |
+| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` | `x-ai/grok-3-mini`, … |
+| Gemini | `gemini` | `GEMINI_API_KEY` | `gemini-2.0-flash` |
+| Qwen / GLM / Kimi / DeepSeek | `qwen` `glm` `kimi` `deepseek` | xem guide | catalog trong app |
+
+GUI: **Xuất & Báo cáo** → chọn provider → dán key → **✨ LLM Prompt**. Fallback tự thử provider khác khi lỗi.
 
 ---
 
@@ -67,7 +85,8 @@ Double-click **`SkoolArchiver.cmd`** → mở app cửa sổ. Lần đầu trên
 | **🔄 Cập nhật v2** | Diff chương mới + bài thiếu local + native hết hạn; quét local toàn kho | `updates.py` · `_update_diff.json` |
 | **☁ Cloud** | **R2** · **Google Drive** · **OneDrive**; knowledge mode; sync 1 khóa / tất cả | `python -m cloud.sync --course X` · `--all` · `--test` |
 | **💬 Chat RAG** | TF-IDF vector + keyword; **multi-course**; Claude trả lời kèm nguồn | `python -m rag.chat --course X --ask "..."` · `--multi "A,B"` |
-| **🔍 Tìm kiếm** | Tìm transcript/mô tả toàn kho (không cần Claude); báo cáo tiến độ MD | `python search_lib.py "webhook"` · `--report` |
+| **✨ LLM Prompt** | Dịch / cập nhật theo **prompt bạn chọn**; multi-provider + fallback | `llm_prompt.py` · GUI Xuất & Báo cáo |
+| **🔍 Tìm kiếm** | Tìm transcript/mô tả/**notes** toàn kho; báo cáo tiến độ MD | `python search_lib.py "webhook"` · `--report` |
 | **🌐 Web Viewer** | Duyệt knowledge local (mobile-friendly + PWA manifest) | `python web_viewer.py` |
 | **❤ Health schedule** | Quét kho hàng ngày → `_health.json`; Task / launchd | `python health_check.py --write --notify` |
 | **📄 Site tĩnh** | Export HTML offline (`courses/_site`) + tìm client-side | `python export_site.py --open` |
@@ -228,16 +247,19 @@ python app\notes.py --course "X" --path "01 - C/01 - L" --set "Ghi chu"
 python app\disk_report.py --write
 python app\study_plan.py --all --days 14
 python app\llm_prompt.py --list-presets
-python app\llm_prompt.py --course "X" --source tonghop --preset translate_vi
-python app\llm_prompt.py --course "X" --source tonghop --user-prompt "Dich sang tieng Viet, giong trang trong"
-python app\llm_prompt.py --course "X" --source lesson --lesson "01 - C/01 - L" --preset summary_todo
-python app\llm_prompt.py --check
 python app\llm_prompt.py --list-providers
-python app\llm_prompt.py --set-provider openrouter --set-key openrouter "sk-or-..."
+python app\llm_prompt.py --check
+# Grok (xAI) — console.x.ai
+python app\llm_prompt.py --set-key grok "xai-..." --set-model grok grok-3-mini --set-provider grok
+python app\llm_prompt.py --course "X" --preset translate_vi --provider grok
+# Cac provider khac
+python app\llm_prompt.py --set-key openrouter "sk-or-..."
 python app\llm_prompt.py --set-key gemini "AIza..." --set-model gemini gemini-2.0-flash
 python app\llm_prompt.py --set-key qwen "sk-..." --set-key glm "..." --set-key kimi "..."
-python app\llm_prompt.py --set-fallback "openrouter,gemini,qwen,glm,kimi,deepseek,openai,anthropic"
-python app\llm_prompt.py --course "X" --preset translate_vi --provider qwen
+python app\llm_prompt.py --set-fallback "grok,openrouter,gemini,qwen,glm,kimi,deepseek,openai,anthropic"
+python app\llm_prompt.py --course "X" --source tonghop --preset translate_vi
+python app\llm_prompt.py --course "X" --user-prompt "Dich sang tieng Viet, giong trang trong" --provider grok
+python app\llm_prompt.py --course "X" --source lesson --lesson "01 - C/01 - L" --preset summary_todo --provider qwen
 python app\main.py --course "X" --only transcribe           # phu de chi thieu
 python app\main.py --course "X" --index        # build RAG index sau pipeline
 python app\export.py   --course "X" --docx     # gộp & xuất Word (Nhóm A)

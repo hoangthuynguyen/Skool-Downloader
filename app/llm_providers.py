@@ -18,13 +18,15 @@ Providers (OpenAI-compatible unless noted):
   baichuan   — Baichuan 百川
   minimax    — MiniMax (OpenAI-compat endpoint)
   groq       — Groq
+  grok       — xAI Grok (api.x.ai)  [alias: xai]
   custom     — user base_url + key + model
 
 Settings (.settings.json):
   llm_provider: "openrouter"
-  llm_fallback: ["openrouter","gemini","qwen","glm","deepseek","kimi","openai","anthropic"]
+  llm_fallback: ["openrouter","gemini","grok","qwen","glm","deepseek","kimi","openai","anthropic"]
   llm_providers: {
     "qwen": {"api_key": "...", "model": "qwen-plus", "base_url": "..."},
+    "grok": {"api_key": "...", "model": "grok-3-mini"},
     ...
   }
 """
@@ -74,6 +76,8 @@ PROVIDERS: dict[str, dict[str, Any]] = {
             "openai/gpt-4o",
             "anthropic/claude-3.5-sonnet",
             "google/gemini-2.0-flash-001",
+            "x-ai/grok-3-mini",
+            "x-ai/grok-3",
             "deepseek/deepseek-chat",
             "qwen/qwen-2.5-72b-instruct",
             "meta-llama/llama-3.3-70b-instruct",
@@ -232,6 +236,24 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         ],
         "docs": "console.groq.com",
     },
+    "grok": {
+        "title": "Grok (xAI)",
+        "kind": "openai",
+        "base_url": "https://api.x.ai/v1",
+        "env_key": "XAI_API_KEY",
+        "env_key_alt": "GROK_API_KEY",
+        "default_model": "grok-3-mini",
+        "models": [
+            "grok-3",
+            "grok-3-mini",
+            "grok-3-fast",
+            "grok-3-mini-fast",
+            "grok-2-1212",
+            "grok-2-vision-1212",
+        ],
+        "docs": "console.x.ai",
+        "note": "OpenAI-compatible Chat Completions at api.x.ai/v1",
+    },
     "custom": {
         "title": "Custom OpenAI-compatible",
         "kind": "openai",
@@ -244,10 +266,18 @@ PROVIDERS: dict[str, dict[str, Any]] = {
 }
 
 # alias map
-_ALIASES = {"claude": "anthropic", "kiwi": "kimi", "moonshot": "kimi", "zhipu": "glm", "dashscope": "qwen"}
+_ALIASES = {
+    "claude": "anthropic",
+    "kiwi": "kimi",
+    "moonshot": "kimi",
+    "zhipu": "glm",
+    "dashscope": "qwen",
+    "xai": "grok",
+    "x-ai": "grok",
+}
 
 DEFAULT_FALLBACK = [
-    "openrouter", "gemini", "qwen", "glm", "deepseek", "kimi",
+    "openrouter", "gemini", "grok", "qwen", "glm", "deepseek", "kimi",
     "siliconflow", "openai", "anthropic", "groq",
 ]
 

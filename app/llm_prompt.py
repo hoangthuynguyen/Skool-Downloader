@@ -9,9 +9,9 @@ Sprint LLM — dich / cap nhat noi dung theo PROMPT tu chon (API LLM).
   python llm_prompt.py --save-preset my_vi --prompt "..." --system "..."
 
 Providers (multi + fallback):
-  anthropic, openai, openrouter, gemini, glm, qwen, deepseek, kimi (kiwi),
-  siliconflow, doubao, stepfun, yi, baichuan, minimax, groq, custom
-  See llm_providers.py
+  anthropic, openai, grok (xAI), openrouter, gemini, glm, qwen, deepseek,
+  kimi (kiwi), siliconflow, doubao, stepfun, yi, baichuan, minimax, groq, custom
+  See llm_providers.py · docs/HUONG_DAN_FEATURES_WORKFLOWS.md
 """
 from __future__ import annotations
 

@@ -547,10 +547,13 @@ def test_llm_prompt_module():
     assert "provider" in st and "ready" in st
     # multi-provider catalog
     for need in ("anthropic", "openai", "openrouter", "gemini", "glm", "qwen",
-                 "deepseek", "kimi", "siliconflow", "doubao"):
+                 "deepseek", "kimi", "siliconflow", "doubao", "grok", "groq"):
         assert need in PROV.PROVIDERS
     assert PROV.normalize_provider("kiwi") == "kimi"
     assert PROV.normalize_provider("claude") == "anthropic"
+    assert PROV.normalize_provider("xai") == "grok"
+    gcfg = PROV.get_provider_config("grok")
+    assert "x.ai" in (gcfg.get("base_url") or "")
     chain = PROV.set_fallback_chain("openrouter,gemini,qwen,glm,kimi")
     assert chain[0] == "openrouter" and "qwen" in chain
     cfg = PROV.get_provider_config("qwen")

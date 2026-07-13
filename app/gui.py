@@ -1033,9 +1033,9 @@ class App:
 
         ctk.CTkLabel(
             card,
-            text="Claude · OpenAI · OpenRouter · Gemini · GLM · Qwen · DeepSeek · Kimi(kiwi) · "
-                 "SiliconFlow · Doubao · StepFun · Yi · Baichuan · MiniMax · Groq · Custom. "
-                 "Key chỉ lưu máy (.settings.json).",
+            text="Claude · OpenAI · Grok(xAI) · OpenRouter · Gemini · GLM · Qwen · DeepSeek · "
+                 "Kimi(kiwi) · SiliconFlow · Doubao · StepFun · Yi · Baichuan · MiniMax · Groq · Custom. "
+                 "Key chỉ lưu máy (.settings.json). Hướng dẫn: docs/HUONG_DAN_FEATURES_WORKFLOWS.md",
             font=(FT, 10), text_color=TEXT2, wraplength=560, justify="left",
         ).pack(anchor="w", padx=16, pady=(4, 12))
 
