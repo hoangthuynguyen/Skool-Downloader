@@ -23,7 +23,7 @@ STEPS = {"folders": folders.run, "extras": extras.run, "videos": videos.run,
 NATIVE_HOST = "stream.video.skool.com"
 # Loi CO THE thu lai tu dong (mang chap chon / YouTube chan bot / loi la). Cac loi
 # khac (token het han, video rieng tu...) can nguoi can thiep -> khong loop vo ich.
-RECOVERABLE = {"network", "unknown", "bot"}
+RECOVERABLE = {"network", "unknown", "bot", "rate"}
 
 def run_videos_two_pass():
     """Native (token 24h, de het han) tai truoc, roi Loom/YouTube. Tra ve list fails."""

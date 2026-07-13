@@ -181,6 +181,33 @@ def test_export_site_and_embed():
     print("  PASS  export site + embed module")
 
 
+def test_video_classify_and_lesson_path():
+    import videos as V
+    import config as C
+    code, _, _ = V.classify("HTTP Error 429: Too Many Requests", "https://www.youtube.com/watch?v=x")
+    assert code == "rate"
+    code, _, _ = V.classify("ERROR: Sign in to confirm you're not a bot", "https://www.youtube.com/x")
+    assert code == "bot"
+    assert "rate" in V.RECOVER
+    # lesson_ok path normalize
+    old_root, old_lesson = C.ROOT, C.ONLY_LESSON
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            lesson = root / "01 - Chap" / "02 - Lesson"
+            lesson.mkdir(parents=True)
+            C.ROOT = root
+            C.ONLY_LESSON = "01 - Chap/02 - Lesson"
+            assert V.lesson_ok(lesson) is True
+            C.ONLY_LESSON = "01 - Chap\\02 - Lesson"
+            assert V.lesson_ok(lesson) is True
+            C.ONLY_LESSON = "other"
+            assert V.lesson_ok(lesson) is False
+    finally:
+        C.ROOT, C.ONLY_LESSON = old_root, old_lesson
+    print("  PASS  video classify + lesson path")
+
+
 def test_config_base_and_doctor_requeue():
     import config as C
     info = C.base_info()
@@ -212,13 +239,14 @@ def test_config_base_and_doctor_requeue():
 
 
 def main():
-    print("Phase 1–6 smoke tests")
+    print("Phase 1–7 smoke tests")
     fails = 0
     for fn in (test_progress_badge, test_queue_persist, test_cloud_policy,
                test_updates_diff, test_rag_score, test_tfidf_and_multi,
                test_queue_workers_settings, test_parallel_claim,
                test_search_and_report, test_onedrive_module, test_health_and_web,
-               test_export_site_and_embed, test_config_base_and_doctor_requeue):
+               test_export_site_and_embed, test_config_base_and_doctor_requeue,
+               test_video_classify_and_lesson_path):
         try:
             fn()
         except Exception as e:

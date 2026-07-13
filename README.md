@@ -15,13 +15,16 @@ Archiver/
 ├─ SkoolArchiver.cmd             ← ⭐ BẤM PHÁT LÀ CHẠY (lần đầu tự cài → mở giao diện)
 ├─ Nâng cao/                     ← công cụ dòng lệnh (KHÔNG bắt buộc)
 │  ├─ Tai bang dong lenh.cmd     ← chạy pipeline bằng dòng lệnh
-│  ├─ Cai transcribe nen.cmd     ← bật phụ đề chạy ngầm (Scheduled Task)
-│  └─ Go transcribe nen.cmd      ← tắt phụ đề ngầm
+│  ├─ Doctor.cmd                 ← kiểm tra môi trường + BASE
+│  ├─ Web Viewer.cmd             ← duyệt knowledge local
+│  ├─ Health check.cmd           ← quét sức khỏe kho
+│  ├─ Xuat site tinh.cmd         ← export HTML offline
+│  ├─ Cai / Go transcribe nen.cmd
 ├─ extractor.js                  ← dán vào Console trình duyệt để dump
 ├─ README.md
-├─ docs/                         ← tài liệu (.docx): hướng dẫn, SOP, báo cáo
+├─ docs/                         ← tài liệu (.docx)
 ├─ logs/                         ← log mỗi lần chạy (tự sinh)
-└─ app/                          ← mã nguồn (Python + PowerShell), không cần đụng
+└─ app/                          ← mã nguồn (Python + PowerShell)
 ```
 
 → **Bình thường chỉ cần duy nhất `SkoolArchiver.cmd`.** Lần đầu trên máy mới nó **tự cài** (tạo venv + thư viện + ffmpeg), các lần sau **mở giao diện ngay** — không cần chạy setup hay run gì cả. Folder `Nâng cao/` chỉ dùng khi muốn thao tác bằng dòng lệnh.

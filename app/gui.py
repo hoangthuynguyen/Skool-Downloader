@@ -315,9 +315,31 @@ class App:
         except Exception: return False
 
     def _chromium_ok(self):
-        base = Path(os.environ.get("LOCALAPPDATA", "")) / "ms-playwright"
-        try: return base.exists() and any(base.glob("chromium-*"))
-        except Exception: return False
+        """Tim cache Chromium cua Playwright tren Windows / macOS / Linux."""
+        home = Path.home()
+        candidates = []
+        la = os.environ.get("LOCALAPPDATA")
+        if la:
+            candidates.append(Path(la) / "ms-playwright")
+        candidates += [
+            home / "Library" / "Caches" / "ms-playwright",  # macOS
+            home / ".cache" / "ms-playwright",              # Linux
+            home / "AppData" / "Local" / "ms-playwright",
+        ]
+        for base in candidates:
+            try:
+                if base.exists() and any(base.glob("chromium-*")):
+                    return True
+            except Exception:
+                pass
+        # fallback: goi playwright API (co the cham)
+        try:
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as p:
+                exe = getattr(p.chromium, "executable_path", None)
+                return bool(exe and Path(exe).exists())
+        except Exception:
+            return False
 
     def check_env(self):
         import shutil, importlib.util

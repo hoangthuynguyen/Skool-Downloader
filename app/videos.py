@@ -11,9 +11,17 @@ def chap_ok(ct):
     return (not C.ONLY_CHAPTER) or ct == C.ONLY_CHAPTER
 
 def lesson_ok(folder):
-    if not C.ONLY_LESSON: return True
-    rel = str(folder).replace(str(C.ROOT) + os.sep, "")
-    return rel == C.ONLY_LESSON
+    """So khop duong dan bai — chuan hoa / vs \\ de Windows/macOS giong nhau."""
+    if not C.ONLY_LESSON:
+        return True
+    only = str(C.ONLY_LESSON).replace("\\", "/").strip("/").lower()
+    try:
+        rel = Path(folder).resolve().relative_to(Path(C.ROOT).resolve())
+        got = str(rel).replace("\\", "/").strip("/").lower()
+        return got == only
+    except Exception:
+        rel = str(folder).replace(str(C.ROOT) + os.sep, "").replace(str(C.ROOT) + "/", "")
+        return rel.replace("\\", "/").strip("/").lower() == only
 
 def count_urls(nodes):
     c = 0
@@ -47,7 +55,9 @@ def ytdlp_cmd(url, folder):
     return cmd
 
 # Phan loai loi -> (ma, mo ta, viec can lam).  RECOVER = loi co the retry; con lai dung som.
-RECOVER = {"network", "unknown"}
+RECOVER = {"network", "unknown", "rate"}
+
+
 def classify(text, url):
     t = (text or "").lower()
     host = url.split("/")[2].lower() if "://" in url else ""
@@ -55,6 +65,8 @@ def classify(text, url):
         if "skool" in host:
             return ("token", "Token native Skool het han (403)", "Dump lai vid_*.json roi chay: --only videos")
         return ("forbidden", "Bi tu choi truy cap (403)", "Link can dang nhap (--cookies-file) hoac da het han")
+    if "429" in t or "too many requests" in t or "rate-limit" in t or "rate limit" in t:
+        return ("rate", "Bi gioi han toc do (429)", "Cho 1-5 phut roi chay lai / bat --until-clean")
     if "not a bot" in t or "confirm you" in t or "sign in to confirm" in t:
         return ("bot", "YouTube chan bot (thieu JS runtime)", "Cai Node.js (nodejs.org) -> tu dung --js-runtimes node")
     if "unsupported url" in t or "no video formats" in t or "no media found" in t:
@@ -63,7 +75,8 @@ def classify(text, url):
                             "been removed", "no longer available", "account associated")):
         return ("unavailable", "Video rieng tu / da go / can quyen", "Khong tai duoc - bo qua hoac xin link khac")
     if any(k in t for k in ("getaddrinfo", "timed out", "timeout", "connection",
-                            "unable to download", "temporary failure", "network is unreachable")):
+                            "unable to download", "temporary failure", "network is unreachable",
+                            "connection reset", "broken pipe", "ssl")):
         return ("network", "Loi mang", "Kiem tra ket noi; chay lai se tiep tuc tu cho dang do")
     if "ffmpeg" in t:
         return ("ffmpeg", "Thieu/loi ffmpeg", "Chay setup.ps1 (ffdl install --add-path)")
@@ -102,6 +115,34 @@ def download(url, folder):
             time.sleep(C.RETRY_WAIT)
     return False, last
 
+def _warn_expired_tokens(plan):
+    """Canh bao truoc khi tai neu co native JWT da het han (tranh spam 403)."""
+    try:
+        import progress as P
+        now = time.time()
+        n = 0
+        for chap, lessons, ct in plan:
+            if chap is None:
+                continue
+            for folder, node in lessons:
+                url = node.get("url") or ""
+                if not url or not passes(url) or not lesson_ok(folder):
+                    continue
+                if done_file(folder):
+                    continue
+                if not P.is_native(url):
+                    continue
+                exp = P.native_token_exp(url)
+                if exp is not None and exp < now:
+                    n += 1
+        if n:
+            print(f"!! CANH BAO: {n} bai native co token JWT da het han.")
+            print("   Dump lai chuong (GUI: Cuu bai native / Cap nhat) truoc khi tai se hieu qua hon.\n")
+        return n
+    except Exception:
+        return 0
+
+
 def run():
     print(f"=== TAI VIDEO === (ONLY_HOSTS={C.ONLY_HOSTS or 'TAT CA'})")
     chapters = K.load_best(C.VID_PATTERN, count_urls)
@@ -116,6 +157,7 @@ def run():
     if C.ONLY_CHAPTER or C.ONLY_LESSON:
         print(f"(loc: chuong={C.ONLY_CHAPTER or 'tat ca'} bai={C.ONLY_LESSON or 'tat ca'})")
     print(f"Tong video luot nay: {total}\n")
+    _warn_expired_tokens(plan)
     idx = tai = skip = loi = miss = 0
     fails = []   # (folder, ma, mo ta, fix)
     try:
@@ -156,5 +198,23 @@ def run():
             print(f"     -> Can lam: {fix}")
             for x in folders[:30]: print(f"     - {x}")
             if len(folders) > 30: print(f"     ... va {len(folders)-30} bai nua")
+        # ghi de GUI / lan chay sau doc
+        try:
+            import json
+            out = Path(C.ROOT) / "video_fails.json"
+            payload = [{"folder": f, "code": ma, "message": mo, "fix": fix}
+                       for f, ma, mo, fix in fails]
+            out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(f"\n>> Chi tiet: {out}")
+        except Exception as e:
+            print(f"[warn] khong ghi video_fails.json: {e}")
+    else:
+        # xoa file fails cu neu lan nay sach
+        try:
+            p = Path(C.ROOT) / "video_fails.json"
+            if p.exists():
+                p.unlink()
+        except Exception:
+            pass
     print()
     return fails
