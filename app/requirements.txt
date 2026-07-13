@@ -15,9 +15,12 @@ google-api-python-client  # Google Drive (Phase 2); thieu thi gdrive tat
 google-auth
 google-auth-oauthlib
 msal                   # OneDrive device-code auth (Phase 3); thieu thi onedrive tat
+# Phase 5 (tuy chon):
+# sentence-transformers  # dense RAG embed local (nang); thieu van dung TF-IDF
+# pystray pillow         # tray_app.py system tray
 # Tom tat + To-do bang AI can bien moi truong ANTHROPIC_API_KEY (Claude).
-# RAG: TF-IDF thuan Python (.rag/tfidf.json) + Claude — khong bat buoc torch/numpy.
-# Tim kiem toan kho: python search_lib.py "tu khoa"  |  --report
+# RAG: TF-IDF + optional dense (.rag/) + Claude.
+# Tim kiem: search_lib.py | Site tinh: export_site.py | Web: web_viewer.py | Tray: tray_app.py
 # Ngoai ra can Node.js (https://nodejs.org) lam JS runtime cho yt-dlp/YouTube.
 # Whisper keo theo torch (CPU). Muon GPU NVIDIA: cai torch ban CUDA rieng:
 #   pip install torch --index-url https://download.pytorch.org/whl/cu121

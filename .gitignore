@@ -15,6 +15,8 @@ app/.onedrive_token.json
 **/_cloud_sync.json
 **/_update_diff.json
 **/.rag/
+**/_site/
+courses/_site/
 NOTIFICATIONS.log
 _*.log
 # Word/OS temp & lock files

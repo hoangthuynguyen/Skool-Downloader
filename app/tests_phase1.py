@@ -166,13 +166,29 @@ def test_health_and_web():
     print("  PASS  health + web viewer")
 
 
+def test_export_site_and_embed():
+    import export_site as ES
+    assert ES.slug("Hello World!") == "hello-world"
+    assert "&lt;" in ES.esc("<")
+    from rag.embed_local import available, load_embeddings
+    # available may be False — OK
+    assert available() in (True, False)
+    with tempfile.TemporaryDirectory() as td:
+        out = ES.export_site(out_dir=td + "/site", log=lambda *_: None)
+        assert (out / "index.html").exists()
+        assert (out / "search.html").exists()
+        assert (out / "manifest.webmanifest").exists()
+    print("  PASS  export site + embed module")
+
+
 def main():
-    print("Phase 1–4 smoke tests")
+    print("Phase 1–5 smoke tests")
     fails = 0
     for fn in (test_progress_badge, test_queue_persist, test_cloud_policy,
                test_updates_diff, test_rag_score, test_tfidf_and_multi,
                test_queue_workers_settings, test_parallel_claim,
-               test_search_and_report, test_onedrive_module, test_health_and_web):
+               test_search_and_report, test_onedrive_module, test_health_and_web,
+               test_export_site_and_embed):
         try:
             fn()
         except Exception as e:

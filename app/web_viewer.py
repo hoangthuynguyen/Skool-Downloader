@@ -39,32 +39,42 @@ def _layout(title, body, q=""):
 :root {{ --bg:#f4f4f5; --card:#fff; --text:#18181b; --muted:#71717a; --line:#e4e4e7; --pri:#111114; }}
 * {{ box-sizing:border-box; }}
 body {{ margin:0; font-family: ui-sans-serif, system-ui, Segoe UI, sans-serif;
-  background:var(--bg); color:var(--text); line-height:1.5; }}
-header {{ background:var(--pri); color:#fff; padding:14px 20px; display:flex; gap:16px;
-  align-items:center; flex-wrap:wrap; }}
-header a {{ color:#e4e4e7; text-decoration:none; font-size:14px; }}
+  background:var(--bg); color:var(--text); line-height:1.5; -webkit-text-size-adjust:100%; }}
+header {{ background:var(--pri); color:#fff; padding:12px 16px; display:flex; gap:12px;
+  align-items:center; flex-wrap:wrap; position:sticky; top:0; z-index:20; }}
+header a {{ color:#e4e4e7; text-decoration:none; font-size:14px; padding:4px 0; }}
 header a:hover {{ color:#fff; }}
 header .brand {{ font-weight:700; font-size:16px; margin-right:8px; color:#fff; }}
-main {{ max-width:960px; margin:0 auto; padding:20px 16px 48px; }}
+main {{ max-width:960px; margin:0 auto; padding:16px 14px 48px; }}
 .card {{ background:var(--card); border:1px solid var(--line); border-radius:12px;
   padding:14px 16px; margin:10px 0; }}
 .card h2, .card h3 {{ margin:0 0 6px; font-size:16px; }}
 .muted {{ color:var(--muted); font-size:13px; }}
 .badge {{ display:inline-block; font-size:12px; font-weight:600; padding:2px 8px;
   border-radius:999px; background:#ececee; }}
-.search {{ display:flex; gap:8px; margin:12px 0 4px; }}
+.search {{ display:flex; gap:8px; margin:0 0 0 auto; min-width:min(100%,280px); flex:1; }}
 .search input {{ flex:1; padding:10px 12px; border:1px solid var(--line); border-radius:9px;
-  font-size:14px; }}
+  font-size:16px; min-width:0; }}
 .search button, .btn {{ padding:10px 14px; border:0; border-radius:9px; background:var(--pri);
   color:#fff; font-weight:600; cursor:pointer; font-size:13px; text-decoration:none;
-  display:inline-block; }}
-pre, .body {{ white-space:pre-wrap; font-size:14px; background:#fafafa; padding:12px;
+  display:inline-block; min-height:44px; }}
+pre, .body {{ white-space:pre-wrap; font-size:15px; background:#fafafa; padding:12px;
   border-radius:8px; border:1px solid var(--line); max-height:70vh; overflow:auto; }}
 table {{ width:100%; border-collapse:collapse; font-size:13px; }}
-th, td {{ text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); }}
+th, td {{ text-align:left; padding:10px 6px; border-bottom:1px solid var(--line); }}
 a.link {{ color:var(--pri); font-weight:600; text-decoration:none; }}
 a.link:hover {{ text-decoration:underline; }}
-</style></head><body>
+@media (max-width:640px) {{
+  header {{ padding:10px 12px; }}
+  main {{ padding:12px 10px 40px; }}
+  table {{ font-size:12px; }}
+  .search {{ margin:8px 0 0; width:100%; flex-basis:100%; }}
+}}
+</style>
+<link rel="manifest" href="/manifest.webmanifest"/>
+<meta name="theme-color" content="#111114"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+</head><body>
 <header>
   <a class="brand" href="/">📦 Skool Archiver</a>
   <a href="/">Khóa học</a>
@@ -155,6 +165,15 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/search":
                 q = qs.get("q", [""])[0]
                 return self._json(S.search_all(q, top_k=int(qs.get("top", ["20"])[0] or 20)))
+            if path == "/manifest.webmanifest":
+                return self._send(200, json.dumps({
+                    "name": "Skool Archiver",
+                    "short_name": "Skool",
+                    "start_url": "/",
+                    "display": "standalone",
+                    "background_color": "#f4f4f5",
+                    "theme_color": "#111114",
+                }), "application/manifest+json; charset=utf-8")
             self._send(404, _layout("404", f"<div class='card'><h2>404</h2><p>{_esc(path)}</p></div>"))
         except Exception as e:
             self._send(500, _layout("Lỗi", f"<div class='card'><h2>Lỗi</h2><pre>{_esc(e)}</pre></div>"))

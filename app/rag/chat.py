@@ -106,7 +106,7 @@ def main():
     ap.add_argument("--chapter", help="Gioi han 1 chuong")
     ap.add_argument("--list-chapters", action="store_true")
     ap.add_argument("--multi", help="Chat nhieu khoa (ten cach nhau bang dau phay)")
-    ap.add_argument("--method", default="auto", choices=["auto", "tfidf", "keyword"])
+    ap.add_argument("--method", default="auto", choices=["auto", "dense", "tfidf", "keyword"])
     a = ap.parse_args()
     if a.multi and a.ask:
         roots = []

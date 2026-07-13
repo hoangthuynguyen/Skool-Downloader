@@ -64,12 +64,17 @@ def build_catalog(root, log=print):
     full = _rag_dir(root) / "catalog_full.json"
     full.write_text(json.dumps(cat, ensure_ascii=False), encoding="utf-8")
     log(f">> RAG index: {len(lessons)} bài, {cat['n_chars']} ký tự → {out}")
-    # Phase 2: TF-IDF vector index (best-effort)
+    # Phase 2: TF-IDF · Phase 5: dense embed (neu co sentence-transformers)
     try:
         from rag.vector import build_tfidf
         build_tfidf(root, log=log)
     except Exception as e:
         log(f"[rag vector] skip: {e}")
+    try:
+        from rag.embed_local import build_embeddings
+        build_embeddings(root, log=log)
+    except Exception as e:
+        log(f"[rag embed] skip: {e}")
     return cat
 
 
@@ -131,7 +136,20 @@ def score_lesson(query, lesson):
 
 
 def retrieve(root, query, top_k=4, chapter=None, max_chars=14000, method="auto"):
-    """Lay top-k bai lien quan. method: auto|tfidf|keyword."""
+    """Lay top-k bai. method: auto|dense|tfidf|keyword.
+
+    auto: dense (neu co) -> tfidf -> keyword.
+    """
+    if method in ("auto", "dense"):
+        try:
+            from rag.embed_local import load_embeddings, retrieve_dense
+            if method == "dense" or load_embeddings(root):
+                got = retrieve_dense(root, query, top_k=top_k, chapter=chapter,
+                                     max_chars=max_chars)
+                if got and got.get("sources"):
+                    return got
+        except Exception:
+            pass
     if method in ("auto", "tfidf"):
         try:
             from rag.vector import load_tfidf, retrieve_vector

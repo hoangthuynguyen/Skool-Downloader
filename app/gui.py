@@ -1926,7 +1926,57 @@ class App:
         self.health_lbl = ctk.CTkLabel(hcard, text="", font=(FT, 12), text_color=TEXT2, wraplength=540, justify="left")
         self.health_lbl.pack(anchor="w", padx=14, pady=(0, 12))
 
+        # Static site export (Phase 5)
+        scard = self.card()
+        ctk.CTkLabel(scard, text="📄 Xuất site tĩnh (offline HTML)", font=(FT, 13, "bold"), text_color=TEXT).pack(anchor="w", padx=14, pady=(12, 4))
+        ctk.CTkLabel(scard, text="Tạo thư mục courses/_site với index + tìm kiếm offline — mở bằng trình duyệt, không cần server. Có thể copy sang USB / host tĩnh.",
+                     font=(FT, 12), text_color=TEXT2, wraplength=540, justify="left").pack(anchor="w", padx=14, pady=(0, 8))
+        srow = ctk.CTkFrame(scard, fg_color="transparent"); srow.pack(fill="x", padx=14, pady=(0, 12))
+        btn(srow, "⬇  Xuất site", self.export_static_site, kind="success", width=140).pack(side="left")
+        btn(srow, "Mở thư mục _site", self.open_static_site, kind="secondary", width=150).pack(side="left", padx=8)
+        self.site_lbl = ctk.CTkLabel(scard, text="", font=(FT, 12), text_color=TEXT2)
+        self.site_lbl.pack(anchor="w", padx=14, pady=(0, 12))
+
+        # Embed status
+        ecard = self.card()
+        try:
+            from rag.embed_local import available, model_name
+            emb = available()
+            emb_txt = f"Dense embed: ✓ sentence-transformers ({model_name()})" if emb else "Dense embed: ✗ chưa cài (pip install sentence-transformers) — đang dùng TF-IDF"
+        except Exception:
+            emb_txt = "Dense embed: ?"
+        ctk.CTkLabel(ecard, text="🧠 RAG embeddings", font=(FT, 13, "bold"), text_color=TEXT).pack(anchor="w", padx=14, pady=(12, 4))
+        ctk.CTkLabel(ecard, text=emb_txt, font=(FT, 12), text_color=TEXT2, wraplength=540, justify="left").pack(anchor="w", padx=14, pady=(0, 12))
+
         btn(self.content, "←  Dashboard", self.show_dashboard, kind="ghost", width=120).pack(anchor="w", pady=10)
+
+    def export_static_site(self):
+        self.write("📄 Đang xuất static site…")
+        def work():
+            try:
+                import export_site as ES
+                return str(ES.export_site(log=lambda s: self.ui_q.put(lambda m=s: self.write(m))))
+            except Exception as e:
+                return e
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("Xuất site", str(r)); return
+            if hasattr(self, "site_lbl") and self.site_lbl.winfo_exists():
+                self.site_lbl.configure(text=f"→ {r}")
+            if messagebox.askyesno("Xong", f"Đã xuất:\n{r}\n\nMở index.html?"):
+                try:
+                    import webbrowser
+                    webbrowser.open(Path(r).joinpath("index.html").as_uri())
+                except Exception:
+                    self._open_path(r)
+        self.run_async(work, cb)
+
+    def open_static_site(self):
+        import config as C2
+        p = C2.BASE / "courses" / "_site"
+        if not p.exists():
+            messagebox.showinfo("Chưa có", "Chưa xuất site. Bấm «Xuất site» trước."); return
+        self._open_path(p)
 
     def _web_status_text(self):
         p = getattr(self, "_web_proc", None)
@@ -2085,7 +2135,7 @@ class App:
                         font=(FT, 12), text_color=TEXT, fg_color=PRIMARY, hover_color=PRIMARY_H).pack(side="left")
         ctk.CTkLabel(row2, text="Method:", font=(FT, 11), text_color=TEXT2).pack(side="left", padx=(16, 4))
         self.chat_method = ctk.StringVar(value="auto")
-        ctk.CTkOptionMenu(row2, variable=self.chat_method, values=["auto", "tfidf", "keyword"], width=100,
+        ctk.CTkOptionMenu(row2, variable=self.chat_method, values=["auto", "dense", "tfidf", "keyword"], width=110,
                           fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H,
                           text_color=TEXT).pack(side="left")
 
