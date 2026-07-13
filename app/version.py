@@ -1,6 +1,6 @@
 """Phien ban Skool Archiver (Phase ship)."""
-__version__ = "2.13.0"
-__codename__ = "grok-docs"
+__version__ = "2.14.0"
+__codename__ = "easy-launch"
 
 # Phase milestones (gan dung commit history)
 HISTORY = (
@@ -28,6 +28,7 @@ HISTORY = (
     "2.11.0 LLM custom prompt translate/update (Claude + OpenAI-compat)",
     "2.12.0 multi-LLM: Gemini/OpenRouter/GLM/Qwen/Kimi/… + fallback chain",
     "2.13.0 Grok (xAI) provider + features/workflows user guide",
+    "2.14.0 one-click launchers + Desktop shortcuts (macOS/Win/Linux)",
 )
 
 

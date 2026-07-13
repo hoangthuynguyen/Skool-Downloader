@@ -1,27 +1,34 @@
 # Skool Archiver — Hướng dẫn Features & Workflows
 
-> Phiên bản app: **2.13.0+** · Cập nhật: 2026-07  
-> Launcher chính: `SkoolArchiver.cmd` · CLI: `app/main.py` · LLM: `app/llm_prompt.py`
+> Phiên bản app: **2.14.0+** · Cập nhật: 2026-07  
+> Launcher: `SkoolArchiver.cmd` (Win) · `SkoolArchiver.command` (macOS) · CLI: `app/main.py` · LLM: `app/llm_prompt.py`
 
-Tài liệu này mô tả **tính năng**, **luồng làm việc** và **cách cấu hình LLM** (Claude, OpenAI, Grok, Gemini, OpenRouter, Qwen, GLM, Kimi, …).
+Tài liệu này mô tả **tính năng**, **luồng làm việc** và **cách cấu hình LLM** (Claude, OpenAI, **Grok**, Gemini, OpenRouter, Qwen, GLM, Kimi, …).
 
 ---
 
-## 1. Cài đặt & khởi động
+## 1. Cài đặt & khởi động (dễ nhất)
 
-### 1.1 Windows (khuyến nghị)
+### 1.1 Mở app bằng 1 click
 
-1. Double-click **`SkoolArchiver.cmd`**
-2. Lần đầu: tự tạo venv, cài thư viện, ffmpeg
-3. Các lần sau: mở GUI ngay
+| OS | Bước |
+|----|------|
+| **Windows** | Double-click **`SkoolArchiver.cmd`**. Tạo icon Desktop: chạy **`Nâng cao\Tao shortcut Desktop.cmd`** một lần. |
+| **macOS** | Double-click **`SkoolArchiver.command`**. Tạo icon Desktop + App: double-click **`Tao shortcut.command`** (hoặc `bash app/install_shortcut.sh`). Sau đó mở từ **Desktop → Skool Archiver** hoặc **`~/Applications/Skool Archiver.app`**. |
+| **Linux** | `bash SkoolArchiver.command` hoặc sau `install_shortcut.sh` dùng menu ứng dụng. |
+
+Lần đầu: tự tạo `app/venv` + `pip install -r requirements.txt` (cần mạng).  
+macOS nếu báo “không mở được”: **chuột phải → Open** (lần đầu).
 
 ### 1.2 CLI (Windows / macOS / Linux)
 
 ```bash
 cd app
-python main.py --version
-python doctor.py                 # chẩn đoán môi trường
-python selftest.py --quick
+python3 main.py --version
+python3 doctor.py
+python3 selftest.py --quick
+# hoac mo GUI truc tiep (khi da co venv):
+bash start.sh
 ```
 
 ### 1.3 BASE path (thư mục dữ liệu khóa)

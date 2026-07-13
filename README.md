@@ -2,37 +2,55 @@
 
 Công cụ lưu trữ **toàn bộ một khóa học Skool** về máy: cây thư mục theo chương/bài, video (native Skool + Loom + YouTube), mô tả bài, tài liệu (resources) và **phụ đề tiếng Anh (Whisper)** — chạy bằng **một lệnh**, có **kiểm tra môi trường trước khi chạy** và **báo lỗi kèm cách xử lý**.
 
-> Phiên bản hiện tại: **2.13.0** — multi-LLM + **Grok (xAI)** · Gemini · OpenRouter · Qwen · GLM · Kimi · … + fallback.  
-> Hướng dẫn features/workflows: **[docs/HUONG_DAN_FEATURES_WORKFLOWS.md](docs/HUONG_DAN_FEATURES_WORKFLOWS.md)** · `python app/main.py --version`  
+> Phiên bản hiện tại: **2.14.0** — mở app 1 click (Desktop shortcut) · multi-LLM + Grok · …  
+> Hướng dẫn: **[docs/HUONG_DAN_FEATURES_WORKFLOWS.md](docs/HUONG_DAN_FEATURES_WORKFLOWS.md)** · `python app/main.py --version`  
 > Đã kiểm chứng trên khóa *AI Automations by Jack* (584 bài, ~170 GB).
 
 ---
 
-## 0. Cấu trúc thư mục
+## 0. Mở app (1 click)
+
+| Hệ điều hành | Cách mở |
+|--------------|---------|
+| **Windows** | Double-click **`SkoolArchiver.cmd`** · hoặc shortcut Desktop (chạy `Nâng cao\Tao shortcut Desktop.cmd` một lần) |
+| **macOS** | Double-click **`SkoolArchiver.command`** · hoặc **Desktop → Skool Archiver** · hoặc **`~/Applications/Skool Archiver.app`** |
+| **Linux** | `bash SkoolArchiver.command` hoặc desktop entry sau khi cài shortcut |
+| **Tạo shortcut** | macOS: double-click **`Tao shortcut.command`** · Windows: **`Nâng cao\Tao shortcut Desktop.cmd`** |
+
+Lần đầu có thể cài venv/thư viện (cần mạng). Các lần sau mở GUI ngay.
+
+```bash
+# macOS / Linux — cài shortcut Desktop + Applications
+bash app/install_shortcut.sh
+
+# Windows (PowerShell)
+powershell -ExecutionPolicy Bypass -File app\install_shortcut.ps1
+```
+
+---
+
+## 0b. Cấu trúc thư mục
 
 Chỉ những thứ bạn cần dùng nằm ở ngoài; toàn bộ mã nguồn kỹ thuật gom trong `app/`.
 
 ```
 Archiver/
-├─ SkoolArchiver.cmd             ← ⭐ BẤM PHÁT LÀ CHẠY (lần đầu tự cài → mở giao diện)
-├─ Nâng cao/                     ← công cụ dòng lệnh (KHÔNG bắt buộc)
-│  ├─ Tai bang dong lenh.cmd     ← chạy pipeline bằng dòng lệnh
-│  ├─ Doctor.cmd / Doctor fix.cmd
-│  ├─ LLM Prompt.cmd             ← dịch/cập nhật theo prompt (multi-LLM)
-│  ├─ Web Viewer.cmd · Health check.cmd
-│  ├─ Knowledge pack · Pack backup · Smart update/batch
-│  ├─ Anki · Quiz · Vault · Study plan · Disk report
+├─ SkoolArchiver.cmd             ← ⭐ Windows: BAM PHAT LA CHAY
+├─ SkoolArchiver.command         ← ⭐ macOS: double-click mo app
+├─ Tao shortcut.command          ← macOS: tao shortcut Desktop
+├─ Nâng cao/
+│  ├─ Tao shortcut Desktop.cmd   ← Windows: tao .lnk Desktop + Start Menu
+│  ├─ LLM Prompt.cmd · Doctor.cmd · …
 │  └─ …
-├─ extractor.js                  ← dán vào Console trình duyệt để dump
+├─ extractor.js
 ├─ README.md
-├─ docs/
-│  ├─ HUONG_DAN_FEATURES_WORKFLOWS.md  ← ⭐ features + workflows + LLM
-│  └─ *.docx                     ← SOP / hướng dẫn Word
-├─ logs/
-└─ app/                          ← mã nguồn (Python + PowerShell)
+├─ docs/HUONG_DAN_FEATURES_WORKFLOWS.md
+└─ app/
+   ├─ start.ps1 / start.sh       ← logic tu-cai + mo GUI
+   └─ install_shortcut.ps1 / .sh
 ```
 
-→ **Bình thường chỉ cần duy nhất `SkoolArchiver.cmd`.** Lần đầu trên máy mới nó **tự cài** (tạo venv + thư viện + ffmpeg), các lần sau **mở giao diện ngay** — không cần chạy setup hay run gì cả. Folder `Nâng cao/` chỉ dùng khi muốn thao tác bằng dòng lệnh.
+→ **Windows:** chỉ cần `SkoolArchiver.cmd`. **macOS:** `SkoolArchiver.command` hoặc shortcut Desktop. Folder `Nâng cao/` cho CLI.
 
 **Đọc trước khi dùng nâng cao:** [docs/HUONG_DAN_FEATURES_WORKFLOWS.md](docs/HUONG_DAN_FEATURES_WORKFLOWS.md) — workflows A–G, LLM multi-provider (Grok/Claude/Gemini/Qwen…), phím tắt, xử lý sự cố.
 
