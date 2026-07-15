@@ -1,5 +1,5 @@
 """Phien ban Skool Downloader (Phase ship)."""
-__version__ = "3.2.2"
+__version__ = "3.3.0"
 __codename__ = "course-os-complete"
 
 # Phase milestones (gan dung commit history)
@@ -63,6 +63,7 @@ HISTORY = (
     "3.2.0 OmniVoice TTS (local MPS) · per-lesson on/off · Streamlit UI · video provider omnivoice",
     "3.2.1 OmniVoice playlist HTML · portal audio players · TTS toggle board import",
     "3.2.2 OmniVoice TTS default OFF (opt-in per lesson / enable-all)",
+    "3.3.0 OpenRouter task routing: DeepSeek V4 Flash→MiMo-V2.5 · rankings refresh · cost estimate UI",
 )
 
 

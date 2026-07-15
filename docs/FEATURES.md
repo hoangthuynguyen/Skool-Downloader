@@ -1,6 +1,21 @@
 # Skool Downloader — Danh sách tính năng
 
-> Phiên bản: **3.2.2** (`course-os-complete`) · `python app/main.py --version`  
+> Phiên bản: **3.3.0** (`course-os-complete`) · `python app/main.py --version`  
+
+---
+
+## 0x. OpenRouter LLM hub (3.3.0) — model theo tính năng + cost
+
+| Mục | Chi tiết |
+|-----|----------|
+| Default primary | `deepseek/deepseek-v4-flash` (DeepSeek V4 Flash) |
+| Default fallback | `xiaomi/mimo-v2.5` (MiMo-V2.5) |
+| API | Dán **OpenRouter** key trên **Xuất & Báo cáo** (hoặc provider riêng) |
+| Per-task routing | research · structure · summary · assets · localize · translate · image_gen · video_gen · qa · prompt |
+| Rankings refresh | Nút **↻ Rankings** → `openrouter.ai/api/v1/models` (xem [leaderboard](https://openrouter.ai/rankings#leaderboard-table)) |
+| Cost estimate | Nút **Tính chi phí khóa** → `$` theo model × số bài (lưu `_llm_cost_estimate.md`) |
+
+Catalog ranking (gợi ý): Hy3 free · MiMo-V2.5 · DeepSeek V4 Flash · MiniMax M3 · GLM 5.2 · Nemotron 3 Ultra free · DeepSeek V4 Pro · Claude Opus 4.8/4.7 · Step 3.7 Flash · Sonnet 4.6/5 · Gemini 3 Flash · GPT-5.5 · MiMo-V2.5-Pro · Gemini 2.5 Flash/Lite · Laguna M.1 free · Gemini 3.1 Flash Lite · gpt-oss-120b.
 
 ---
 

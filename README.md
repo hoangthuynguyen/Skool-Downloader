@@ -2,7 +2,7 @@
 
 Công cụ lưu trữ **toàn bộ một khóa học Skool** về máy: cây thư mục theo chương/bài, video (native Skool + Loom + YouTube), mô tả bài, tài liệu (resources) và **transcript plain text (faster-whisper, auto-detect ngôn ngữ)** — chạy bằng **một lệnh** hoặc GUI 1 click.
 
-> **Phiên bản:** **3.2.2** (`course-os-complete`) · `python app/main.py --version`  
+> **Phiên bản:** **3.3.0** (`course-os-complete`) · `python app/main.py --version`  
 > **Danh sách tính năng đầy đủ:** **[docs/FEATURES.md](docs/FEATURES.md)**  
 > **Workflows / LLM / phím tắt:** **[docs/HUONG_DAN_FEATURES_WORKFLOWS.md](docs/HUONG_DAN_FEATURES_WORKFLOWS.md)**
 

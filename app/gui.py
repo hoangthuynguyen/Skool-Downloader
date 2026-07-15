@@ -1185,17 +1185,277 @@ class App:
 
         ctk.CTkLabel(
             card,
-            text="Claude · OpenAI · Grok(xAI) · OpenRouter · Gemini · GLM · Qwen · DeepSeek · "
-                 "Kimi(kiwi) · SiliconFlow · Doubao · StepFun · Yi · Baichuan · MiniMax · Groq · Custom. "
-                 "Key chỉ lưu máy (.settings.json). Hướng dẫn: docs/HUONG_DAN_FEATURES_WORKFLOWS.md",
+            text="Khuyến nghị: dán OpenRouter API key · primary DeepSeek V4 Flash · fallback MiMo-V2.5. "
+                 "Key chỉ lưu máy (.settings.json). Rankings: openrouter.ai/rankings",
             font=(FT, 10), text_color=TEXT2, wraplength=560, justify="left",
-        ).pack(anchor="w", padx=16, pady=(4, 12))
+        ).pack(anchor="w", padx=16, pady=(4, 8))
+
+        # Quick OpenRouter key row (always visible)
+        orow = ctk.CTkFrame(card, fg_color="transparent"); orow.pack(fill="x", padx=14, pady=(0, 4))
+        ctk.CTkLabel(orow, text="OpenRouter", font=(FT, 12), width=90, anchor="w").pack(side="left")
+        self.or_key_var = ctk.StringVar(value="")
+        try:
+            or_cfg = PROV.get_provider_config("openrouter") if PROV else {}
+            ph = "✓ đã lưu — dán key mới để ghi đè" if or_cfg.get("configured") else "sk-or-v1-… dán OpenRouter API key"
+        except Exception:
+            ph = "sk-or-v1-… dán OpenRouter API key"
+        ctk.CTkEntry(orow, textvariable=self.or_key_var, font=("Consolas", 11), show="•",
+                     placeholder_text=ph).pack(side="left", fill="x", expand=True, padx=6)
+        btn(orow, "Lưu OR", self._save_openrouter_key, kind="accent", width=90, height=30).pack(side="left")
+        btn(orow, "↻ Rankings", self._refresh_openrouter_models, kind="secondary", width=100, height=30).pack(
+            side="left", padx=(6, 0)
+        )
 
         # keep legacy attrs so old methods don't break
         self.apikey_var = self.llm_key_var
         self.openai_key_var = self.llm_key_var
         self.openai_base_var = self.llm_base_var
         self.openai_model_var = self.llm_model_var
+
+        # Per-task model routing + cost estimate
+        self._render_task_llm_panel()
+        self._render_llm_cost_panel()
+
+    def _save_openrouter_key(self):
+        try:
+            import llm_providers as PROV
+            key = (self.or_key_var.get() if hasattr(self, "or_key_var") else "").strip()
+            if not key:
+                messagebox.showinfo("OpenRouter", "Dán API key trước.")
+                return
+            PROV.save_provider_config(
+                "openrouter",
+                api_key=key,
+                model=PROV.DEFAULT_PRIMARY_MODEL,
+            )
+            PROV.set_provider("openrouter")
+            # seed task defaults if empty
+            for tid in PROV.list_llm_tasks():
+                cur = PROV.get_task_llm(tid)
+                if cur.get("provider") != "openrouter" or "deepseek-chat" in (cur.get("model") or ""):
+                    PROV.set_task_llm(
+                        tid,
+                        provider="openrouter",
+                        model=PROV.DEFAULT_PRIMARY_MODEL,
+                        fallback="openrouter",
+                        fallback_model=PROV.DEFAULT_FALLBACK_MODEL,
+                    )
+            self.write("✓ OpenRouter key + defaults DeepSeek V4 Flash → MiMo-V2.5")
+            messagebox.showinfo(
+                "OpenRouter",
+                "Đã lưu key.\nPrimary: deepseek/deepseek-v4-flash\n"
+                "Fallback: xiaomi/mimo-v2.5\n\nChọn model từng tính năng ở bảng bên dưới.",
+            )
+            self.show_report()
+        except Exception as e:
+            messagebox.showerror("OpenRouter", str(e))
+
+    def _refresh_openrouter_models(self):
+        def work():
+            try:
+                import llm_providers as PROV
+                return PROV.refresh_openrouter_models(
+                    log=lambda s: self.ui_q.put(lambda m=s: self.write(m))
+                )
+            except Exception as e:
+                return e
+
+        def cb(r):
+            if isinstance(r, Exception):
+                messagebox.showerror("Rankings", str(r))
+                return
+            messagebox.showinfo(
+                "OpenRouter rankings",
+                f"Đã làm mới {len(r.get('ids') or [])} model\n"
+                f"API total: {r.get('total_api_models')}\n"
+                f"Lúc: {r.get('at')}\n\n"
+                f"Nguồn: openrouter.ai/rankings",
+            )
+            self.show_report()
+
+        self.write("↻ Fetch OpenRouter models…")
+        self.run_async(work, cb)
+
+    def _render_task_llm_panel(self):
+        """Bảng chọn primary/fallback model cho từng tính năng LLM."""
+        card = self.card()
+        ctk.CTkLabel(
+            card,
+            text="LLM theo tính năng — Primary + Fallback (OpenRouter ranking models)",
+            font=(FT, 12, "bold"),
+            text_color=TEXT2,
+        ).pack(anchor="w", padx=16, pady=(12, 4))
+        ctk.CTkLabel(
+            card,
+            text="Default: DeepSeek V4 Flash → fallback MiMo-V2.5. "
+                 "Cập nhật list: nút ↻ Rankings (openrouter.ai/rankings).",
+            font=(FT, 10),
+            text_color=TEXT2,
+            wraplength=560,
+            justify="left",
+        ).pack(anchor="w", padx=16, pady=(0, 6))
+
+        try:
+            import llm_providers as PROV
+            labels = PROV.openrouter_model_labels()
+            tasks = PROV.list_llm_tasks()
+        except Exception as e:
+            ctk.CTkLabel(card, text=f"Không load tasks: {e}", text_color=TEXT2).pack(padx=16, pady=8)
+            return
+
+        self._task_llm_vars = {}
+        # header
+        head = ctk.CTkFrame(card, fg_color="transparent")
+        head.pack(fill="x", padx=12, pady=(0, 2))
+        ctk.CTkLabel(head, text="Tính năng", font=(FT, 11, "bold"), width=150, anchor="w").pack(side="left")
+        ctk.CTkLabel(head, text="Primary model", font=(FT, 11, "bold"), width=220, anchor="w").pack(side="left", padx=4)
+        ctk.CTkLabel(head, text="Fallback model", font=(FT, 11, "bold"), width=220, anchor="w").pack(side="left", padx=4)
+
+        for tid in tasks:
+            cfg = PROV.get_task_llm(tid)
+            row = ctk.CTkFrame(card, fg_color="transparent")
+            row.pack(fill="x", padx=12, pady=2)
+            title = (cfg.get("title") or tid)[:22]
+            ctk.CTkLabel(row, text=title, font=(FT, 11), width=150, anchor="w", text_color=TEXT).pack(side="left")
+            p_lab = PROV.label_for_model(cfg.get("model") or PROV.DEFAULT_PRIMARY_MODEL)
+            f_lab = PROV.label_for_model(cfg.get("fallback_model") or PROV.DEFAULT_FALLBACK_MODEL)
+            if p_lab not in labels:
+                labels = [p_lab] + labels
+            if f_lab not in labels:
+                labels = [f_lab] + labels
+            pv = ctk.StringVar(value=p_lab)
+            fv = ctk.StringVar(value=f_lab)
+            ctk.CTkOptionMenu(
+                row, variable=pv, values=labels[:40], width=220,
+                fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H, text_color=TEXT,
+            ).pack(side="left", padx=4)
+            ctk.CTkOptionMenu(
+                row, variable=fv, values=labels[:40], width=220,
+                fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H, text_color=TEXT,
+            ).pack(side="left", padx=4)
+            self._task_llm_vars[tid] = (pv, fv)
+
+        brow = ctk.CTkFrame(card, fg_color="transparent")
+        brow.pack(fill="x", padx=14, pady=(8, 12))
+        btn(brow, "💾 Lưu model từng tính năng", self._save_task_llms, kind="accent", width=220).pack(side="left")
+        btn(brow, "Reset defaults (Flash→MiMo)", self._reset_task_llms, kind="secondary", width=200).pack(
+            side="left", padx=8
+        )
+
+    def _save_task_llms(self):
+        try:
+            import llm_providers as PROV
+            if not getattr(self, "_task_llm_vars", None):
+                return
+            for tid, (pv, fv) in self._task_llm_vars.items():
+                pm = PROV.model_id_from_label(pv.get())
+                fm = PROV.model_id_from_label(fv.get())
+                PROV.set_task_llm(
+                    tid,
+                    provider="openrouter",
+                    model=pm,
+                    fallback="openrouter",
+                    fallback_model=fm,
+                )
+            self.write("✓ Đã lưu LLM routing theo tính năng (OpenRouter)")
+            messagebox.showinfo("LLM tasks", "Đã lưu primary/fallback cho mọi tính năng.")
+        except Exception as e:
+            messagebox.showerror("LLM tasks", str(e))
+
+    def _reset_task_llms(self):
+        try:
+            import llm_providers as PROV
+            for tid in PROV.list_llm_tasks():
+                PROV.set_task_llm(
+                    tid,
+                    provider="openrouter",
+                    model=PROV.DEFAULT_PRIMARY_MODEL,
+                    fallback="openrouter",
+                    fallback_model=PROV.DEFAULT_FALLBACK_MODEL,
+                )
+            self.write("✓ Reset LLM tasks → DeepSeek V4 Flash / MiMo-V2.5")
+            self.show_report()
+        except Exception as e:
+            messagebox.showerror("Reset", str(e))
+
+    def _render_llm_cost_panel(self):
+        """Ước lượng chi phí LLM cho khóa đang chọn."""
+        card = self.card()
+        ctk.CTkLabel(
+            card,
+            text="💰 Ước lượng chi phí LLM (theo model đã chọn × số bài)",
+            font=(FT, 12, "bold"),
+            text_color=TEXT2,
+        ).pack(anchor="w", padx=16, pady=(12, 4))
+        self.llm_cost_box = ctk.CTkTextbox(
+            card, height=160, font=("Consolas", 11),
+            fg_color=CARD2, text_color=TEXT, wrap="word",
+        )
+        self.llm_cost_box.pack(fill="x", padx=14, pady=(4, 6))
+        self.llm_cost_box.insert("1.0", "Chọn khóa → bấm «Tính chi phí khóa»…")
+        self.llm_cost_box.configure(state="disabled")
+        brow = ctk.CTkFrame(card, fg_color="transparent")
+        brow.pack(fill="x", padx=14, pady=(0, 12))
+        btn(brow, "Tính chi phí khóa", self._estimate_llm_cost, kind="accent", width=160).pack(side="left")
+        btn(brow, "Mở rankings web", self._open_or_rankings, kind="secondary", width=150).pack(side="left", padx=8)
+        ctk.CTkLabel(
+            brow,
+            text="Chỉ ước lượng — không gọi API tính tiền thật",
+            font=(FT, 10),
+            text_color=TEXT2,
+        ).pack(side="left", padx=8)
+
+    def _open_or_rankings(self):
+        import webbrowser
+        webbrowser.open("https://openrouter.ai/rankings#leaderboard-table")
+
+    def _estimate_llm_cost(self):
+        course, _ = self._report_args()
+        if not course:
+            return
+        try:
+            import llm_providers as PROV
+            root = Path(self.course_root(course))
+            data = PROV.estimate_course_llm_cost(root)
+        except Exception as e:
+            messagebox.showerror("Cost", str(e))
+            return
+        lines = [
+            f"Khóa: {data.get('course')} · {data.get('lessons')} bài · locales≈{data.get('locales')}",
+            f"TỔNG (primary models): ${data.get('usd_total_primary')} USD",
+            f"TỔNG nếu toàn fallback: ${data.get('usd_total_if_all_fallback')} USD",
+            "",
+            f"{'Tính năng':<28} {'Primary $':>10} {'Fallback $':>11}  Model",
+            "-" * 72,
+        ]
+        for r in data.get("rows") or []:
+            lines.append(
+                f"{(r.get('title') or r.get('task'))[:28]:<28} "
+                f"${r.get('usd_primary'):>8.4f}  ${r.get('usd_if_fallback'):>9.4f}  "
+                f"{(r.get('model') or '')[:36]}"
+            )
+        lines += ["", data.get("note") or "", f"Rankings: {data.get('rankings_url')}"]
+        text = "\n".join(lines)
+        self.llm_cost_box.configure(state="normal")
+        self.llm_cost_box.delete("1.0", "end")
+        self.llm_cost_box.insert("1.0", text)
+        self.llm_cost_box.configure(state="disabled")
+        self.write(
+            f"💰 LLM cost est «{course}»: ${data.get('usd_total_primary')} "
+            f"(fallback ${data.get('usd_total_if_all_fallback')})"
+        )
+        # save report
+        try:
+            root = Path(self.course_root(course))
+            (root / "_llm_cost_estimate.md").write_text(
+                "# LLM cost estimate\n\n```\n" + text + "\n```\n", encoding="utf-8"
+            )
+            import json as _json
+            (root / "_llm_cost_estimate.json").write_text(
+                _json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        except Exception:
+            pass
 
     def _on_llm_provider_change(self):
         try:

@@ -70,20 +70,35 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "kind": "openai",
         "base_url": "https://openrouter.ai/api/v1",
         "env_key": "OPENROUTER_API_KEY",
-        "default_model": "openai/gpt-4o-mini",
+        # Defaults: DeepSeek V4 Flash → MiMo-V2.5 (OpenRouter rankings)
+        "default_model": "deepseek/deepseek-v4-flash",
         "models": [
+            "deepseek/deepseek-v4-flash",
+            "xiaomi/mimo-v2.5",
+            "tencent/hy3:free",
+            "minimax/minimax-m3",
+            "z-ai/glm-5.2",
+            "nvidia/nemotron-3-ultra-550b-a55b:free",
+            "deepseek/deepseek-v4-pro",
+            "anthropic/claude-opus-4.8",
+            "anthropic/claude-opus-4.7",
+            "stepfun/step-3.7-flash",
+            "anthropic/claude-sonnet-4.6",
+            "anthropic/claude-sonnet-5",
+            "google/gemini-3-flash-preview",
+            "openai/gpt-5.5",
+            "xiaomi/mimo-v2.5-pro",
+            "google/gemini-2.5-flash",
+            "google/gemini-2.5-flash-lite",
+            "poolside/laguna-m.1:free",
+            "google/gemini-3.1-flash-lite",
+            "openai/gpt-oss-120b",
             "openai/gpt-4o-mini",
-            "openai/gpt-4o",
-            "anthropic/claude-3.5-sonnet",
             "google/gemini-2.0-flash-001",
-            "x-ai/grok-3-mini",
-            "x-ai/grok-3",
-            "deepseek/deepseek-chat",
-            "qwen/qwen-2.5-72b-instruct",
-            "meta-llama/llama-3.3-70b-instruct",
         ],
-        "docs": "openrouter.ai",
+        "docs": "openrouter.ai/rankings",
         "extra_headers": True,  # HTTP-Referer optional
+        "note": "Primary hub — paste OPENROUTER_API_KEY; pick models per task below",
     },
     "gemini": {
         "title": "Google Gemini",
@@ -325,9 +340,9 @@ def _prov_store() -> dict:
 
 def get_provider() -> str:
     s = load_settings()
-    # Mac dinh deepseek (Lesson Summary / multi-LLM); env / settings ghi de
+    # Mac dinh openrouter (DeepSeek V4 Flash + MiMo fallback per task)
     return normalize_provider(
-        os.environ.get("LLM_PROVIDER") or s.get("llm_provider") or "deepseek"
+        os.environ.get("LLM_PROVIDER") or s.get("llm_provider") or "openrouter"
     )
 
 
@@ -367,56 +382,114 @@ def set_fallback_chain(chain):
     return items
 
 
+# ---- OpenRouter ranked catalog (curated from openrouter.ai/rankings) ----
+# pricing_prompt / pricing_completion = USD per token (OpenRouter API style)
+OPENROUTER_RANKED: list[dict[str, Any]] = [
+    {"id": "tencent/hy3:free", "title": "Hy3 (free)", "vendor": "tencent", "in": 0.0, "out": 0.0},
+    {"id": "xiaomi/mimo-v2.5", "title": "MiMo-V2.5", "vendor": "xiaomi", "in": 0.14e-6, "out": 0.28e-6},
+    {"id": "deepseek/deepseek-v4-flash", "title": "DeepSeek V4 Flash", "vendor": "deepseek", "in": 0.098e-6, "out": 0.196e-6},
+    {"id": "minimax/minimax-m3", "title": "MiniMax M3", "vendor": "minimax", "in": 0.3e-6, "out": 1.2e-6},
+    {"id": "z-ai/glm-5.2", "title": "GLM 5.2", "vendor": "z-ai", "in": 0.875e-6, "out": 2.75e-6},
+    {"id": "nvidia/nemotron-3-ultra-550b-a55b:free", "title": "Nemotron 3 Ultra (free)", "vendor": "nvidia", "in": 0.0, "out": 0.0},
+    {"id": "deepseek/deepseek-v4-pro", "title": "DeepSeek V4 Pro", "vendor": "deepseek", "in": 0.14e-6, "out": 0.28e-6},
+    {"id": "anthropic/claude-opus-4.8", "title": "Claude Opus 4.8", "vendor": "anthropic", "in": 5e-6, "out": 25e-6},
+    {"id": "anthropic/claude-opus-4.7", "title": "Claude Opus 4.7", "vendor": "anthropic", "in": 5e-6, "out": 25e-6},
+    {"id": "stepfun/step-3.7-flash", "title": "Step 3.7 Flash", "vendor": "stepfun", "in": 0.2e-6, "out": 1.15e-6},
+    {"id": "anthropic/claude-sonnet-4.6", "title": "Claude Sonnet 4.6", "vendor": "anthropic", "in": 3e-6, "out": 15e-6},
+    {"id": "anthropic/claude-sonnet-5", "title": "Claude Sonnet 5", "vendor": "anthropic", "in": 2e-6, "out": 10e-6},
+    {"id": "google/gemini-3-flash-preview", "title": "Gemini 3 Flash Preview", "vendor": "google", "in": 0.5e-6, "out": 3e-6},
+    {"id": "openai/gpt-5.5", "title": "GPT-5.5", "vendor": "openai", "in": 5e-6, "out": 30e-6},
+    {"id": "xiaomi/mimo-v2.5-pro", "title": "MiMo-V2.5-Pro", "vendor": "xiaomi", "in": 0.435e-6, "out": 0.87e-6},
+    {"id": "google/gemini-2.5-flash", "title": "Gemini 2.5 Flash", "vendor": "google", "in": 0.3e-6, "out": 2.5e-6},
+    {"id": "google/gemini-2.5-flash-lite", "title": "Gemini 2.5 Flash Lite", "vendor": "google", "in": 0.1e-6, "out": 0.4e-6},
+    {"id": "poolside/laguna-m.1:free", "title": "Laguna M.1 (free)", "vendor": "poolside", "in": 0.0, "out": 0.0},
+    {"id": "google/gemini-3.1-flash-lite", "title": "Gemini 3.1 Flash Lite", "vendor": "google", "in": 0.25e-6, "out": 1.5e-6},
+    {"id": "openai/gpt-oss-120b", "title": "gpt-oss-120b", "vendor": "openai", "in": 0.037e-6, "out": 0.17e-6},
+]
+
+# Default primary / fallback model ids (OpenRouter)
+DEFAULT_PRIMARY_MODEL = "deepseek/deepseek-v4-flash"
+DEFAULT_FALLBACK_MODEL = "xiaomi/mimo-v2.5"
+
 # ---- Per-task LLM routing (Dashboard) ----
-# task id -> defaults
+# Defaults: OpenRouter primary DeepSeek V4 Flash → fallback MiMo-V2.5
+_OR = "openrouter"
+_DM = DEFAULT_PRIMARY_MODEL
+_FM = DEFAULT_FALLBACK_MODEL
+
 LLM_TASKS: dict[str, dict[str, Any]] = {
-    "summary": {
-        "title": "Summary từng bài",
-        "desc": "summary.vi.md — Purpose / takeaways / todo",
-        "provider": "deepseek",
-        "model": "deepseek-chat",
-        "fallback": "gemini",
-        "fallback_model": "gemini-2.0-flash",
-    },
     "research": {
-        "title": "Research / nâng cấp khóa",
-        "desc": "Báo cáo thị trường DOCX + inventory",
-        "provider": "deepseek",
-        "model": "deepseek-chat",
-        "fallback": "gemini",
-        "fallback_model": "gemini-2.0-flash",
+        "title": "Market research",
+        "desc": "Nghiên cứu thị trường / report DOCX",
+        "provider": _OR, "model": _DM, "fallback": _OR, "fallback_model": _FM,
+        "est_in_per_lesson": 0,  # course-level
+        "est_out_per_lesson": 0,
+        "est_in_course": 25000,
+        "est_out_course": 10000,
     },
     "structure": {
         "title": "Cấu trúc khóa mới",
-        "desc": "Sinh outline chương/bài từ report",
-        "provider": "deepseek",
-        "model": "deepseek-chat",
-        "fallback": "gemini",
-        "fallback_model": "gemini-2.0-flash",
+        "desc": "Outline chương/bài từ report",
+        "provider": _OR, "model": _DM, "fallback": _OR, "fallback_model": _FM,
+        "est_in_course": 20000, "est_out_course": 8000,
+        "est_in_per_lesson": 0, "est_out_per_lesson": 0,
+    },
+    "summary": {
+        "title": "Summary từng bài",
+        "desc": "summary.vi.md — Purpose / takeaways / todo",
+        "provider": _OR, "model": _DM, "fallback": _OR, "fallback_model": _FM,
+        "est_in_per_lesson": 4000, "est_out_per_lesson": 1500,
+        "est_in_course": 0, "est_out_course": 0,
     },
     "assets": {
         "title": "Asset pack (script/workshop)",
         "desc": "lesson · talking_script · workshop · quiz",
-        "provider": "deepseek",
-        "model": "deepseek-chat",
-        "fallback": "gemini",
-        "fallback_model": "gemini-2.0-flash",
+        "provider": _OR, "model": _DM, "fallback": _OR, "fallback_model": _FM,
+        "est_in_per_lesson": 6000, "est_out_per_lesson": 4000,
+        "est_in_course": 0, "est_out_course": 0,
     },
     "localize": {
-        "title": "Localize hub",
-        "desc": "Dịch pack sang nhiều ngôn ngữ",
-        "provider": "deepseek",
-        "model": "deepseek-chat",
-        "fallback": "gemini",
-        "fallback_model": "gemini-2.0-flash",
+        "title": "Dịch / địa phương hóa",
+        "desc": "Localize hub — nhiều ngôn ngữ",
+        "provider": _OR, "model": _DM, "fallback": _OR, "fallback_model": _FM,
+        "est_in_per_lesson": 5000, "est_out_per_lesson": 5000,
+        "est_in_course": 0, "est_out_course": 0,
+        "locale_multiplier": 10,  # ~10 locales T1
+    },
+    "translate": {
+        "title": "Dịch nhanh (export)",
+        "desc": "Dịch file tổng hợp / prompt dịch",
+        "provider": _OR, "model": _DM, "fallback": _OR, "fallback_model": _FM,
+        "est_in_course": 15000, "est_out_course": 15000,
+        "est_in_per_lesson": 0, "est_out_per_lesson": 0,
+    },
+    "image_gen": {
+        "title": "Image generation (prompt)",
+        "desc": "Prompt ảnh / thumbnail copy (text LLM)",
+        "provider": _OR, "model": _DM, "fallback": _OR, "fallback_model": _FM,
+        "est_in_per_lesson": 800, "est_out_per_lesson": 600,
+        "est_in_course": 0, "est_out_course": 0,
+    },
+    "video_gen": {
+        "title": "Video generation (script)",
+        "desc": "Talking script / b-roll cues cho AI video",
+        "provider": _OR, "model": _DM, "fallback": _OR, "fallback_model": _FM,
+        "est_in_per_lesson": 3000, "est_out_per_lesson": 2500,
+        "est_in_course": 0, "est_out_course": 0,
+    },
+    "qa": {
+        "title": "QA / fact-check",
+        "desc": "Loc QA · fact-check LLM sample",
+        "provider": _OR, "model": _DM, "fallback": _OR, "fallback_model": _FM,
+        "est_in_per_lesson": 3500, "est_out_per_lesson": 800,
+        "est_in_course": 0, "est_out_course": 0,
     },
     "prompt": {
-        "title": "LLM Prompt / dịch / rewrite",
-        "desc": "Xuất & Báo cáo · prompt tùy chỉnh",
-        "provider": "deepseek",
-        "model": "deepseek-chat",
-        "fallback": "gemini",
-        "fallback_model": "gemini-2.0-flash",
+        "title": "LLM Prompt / rewrite",
+        "desc": "Prompt tùy chỉnh Xuất & Báo cáo",
+        "provider": _OR, "model": _DM, "fallback": _OR, "fallback_model": _FM,
+        "est_in_course": 8000, "est_out_course": 4000,
+        "est_in_per_lesson": 0, "est_out_per_lesson": 0,
     },
 }
 
@@ -434,24 +507,21 @@ def get_task_llm(task: str) -> dict[str, Any]:
     if not isinstance(store, dict):
         store = {}
     cur = store.get(task) or {}
-    # legacy: summary uses lesson_summary_* keys
+    # legacy: summary uses lesson_summary_* keys (then migrate below)
     if task == "summary" and not cur:
         try:
             import config as Cfg
-            leg = Cfg.get_lesson_summary_llm()
+            leg = Cfg.get_lesson_summary_llm() or {}
             if leg:
-                return {
-                    "task": task,
-                    "title": base.get("title"),
-                    "desc": base.get("desc"),
-                    "provider": normalize_provider(leg.get("provider") or base["provider"]),
-                    "model": (leg.get("model") or base["model"]),
-                    "fallback": normalize_provider(
-                        (leg.get("fallback") or [base["fallback"]])[0]
+                cur = {
+                    "provider": leg.get("provider"),
+                    "model": leg.get("model"),
+                    "fallback": (
+                        (leg.get("fallback") or [None])[0]
                         if isinstance(leg.get("fallback"), list)
-                        else (leg.get("fallback") or base["fallback"])
+                        else leg.get("fallback")
                     ),
-                    "fallback_model": leg.get("fallback_model") or base["fallback_model"],
+                    "fallback_model": leg.get("fallback_model"),
                 }
         except Exception:
             pass
@@ -459,6 +529,14 @@ def get_task_llm(task: str) -> dict[str, Any]:
     model = (cur.get("model") or base["model"] or "").strip()
     fb = normalize_provider(cur.get("fallback") or base["fallback"])
     fb_model = (cur.get("fallback_model") or base["fallback_model"] or "").strip()
+    # migrate legacy short names → OpenRouter ranking defaults
+    legacy = {"deepseek-chat", "deepseek-reasoner", "deepseek-chat-v3", "gemini-2.0-flash", "gpt-4o-mini"}
+    if model in legacy or (model and "/" not in model and provider in ("deepseek", "gemini")):
+        provider = "openrouter"
+        model = DEFAULT_PRIMARY_MODEL
+    if fb_model in legacy or (fb_model and "/" not in fb_model and fb in ("deepseek", "gemini")):
+        fb = "openrouter"
+        fb_model = DEFAULT_FALLBACK_MODEL
     # if model empty, use provider default
     if not model:
         model = get_provider_config(provider).get("model") or base["model"]
@@ -523,8 +601,9 @@ def complete_for_task(
     log=print,
 ):
     """
-    Gọi LLM theo cấu hình tác vụ (primary → fallback provider/model).
-    Returns (text, used_provider).
+    Gọi LLM theo cấu hình tác vụ (primary model → fallback model).
+    Hỗ trợ cùng provider (OpenRouter) với 2 model khác nhau.
+    Returns (text, used_label).
     """
     cfg = get_task_llm(task)
     primary = cfg["provider"]
@@ -532,38 +611,295 @@ def complete_for_task(
     fb = cfg["fallback"]
     fb_model = cfg["fallback_model"]
 
-    # temporary chain: primary then fallback then global chain
-    chain = [primary]
-    if fb and fb != primary:
-        chain.append(fb)
+    # attempts: (provider, model_override, label)
+    attempts: list[tuple[str, str | None, str]] = [
+        (primary, model, f"{primary}/{model}"),
+    ]
+    if fb_model and (fb != primary or fb_model != model):
+        attempts.append((fb, fb_model, f"{fb}/{fb_model}"))
     for p in get_fallback_chain():
-        if p not in chain:
-            chain.append(p)
+        if all(p != a[0] or (a[1] or "") == "" for a in attempts):
+            attempts.append((p, None, p))
 
     errors = []
-    for i, pid in enumerate(chain):
+    for pid, m_override, label in attempts:
         pcfg = get_provider_config(pid)
         if not pcfg.get("configured"):
-            errors.append(f"{pid}: no key")
+            errors.append(f"{label}: no key")
             continue
-        m_override = model if pid == primary else (fb_model if pid == fb else None)
         try:
-            log(f"   LLM[{task}] try [{pid}] model={m_override or pcfg.get('model')}…")
+            log(f"   LLM[{task}] try [{label}]…")
             text = call_provider(
                 pid, system, user_text, max_tokens=max_tokens, model_override=m_override
             )
             if text:
-                if pid != primary:
-                    log(f"   ✓ [{task}] fallback OK via {pid}")
-                return text, pid
-            errors.append(f"{pid}: empty")
+                if label != attempts[0][2]:
+                    log(f"   ✓ [{task}] fallback OK via {label}")
+                return text, label
+            errors.append(f"{label}: empty")
         except Exception as e:
-            errors.append(f"{pid}: {e}")
-            log(f"   ✗ [{task}] {pid}: {e}")
+            errors.append(f"{label}: {e}")
+            log(f"   ✗ [{task}] {label}: {e}")
             continue
     raise RuntimeError(
         f"LLM task «{task}» thất bại:\n- " + "\n- ".join(errors[:12])
     )
+
+
+def openrouter_model_choices() -> list[str]:
+    """Danh sách model id cho dropdown (ranked + provider catalog)."""
+    ids = [m["id"] for m in OPENROUTER_RANKED]
+    # merge cache from last refresh
+    s = load_settings()
+    cached = s.get("openrouter_models_cache") or {}
+    for mid in cached.get("ids") or []:
+        if mid not in ids:
+            ids.append(mid)
+    for mid in PROVIDERS.get("openrouter", {}).get("models") or []:
+        if mid not in ids:
+            ids.append(mid)
+    return ids
+
+
+def openrouter_model_labels() -> list[str]:
+    """Nhãn hiển thị: Title (vendor) · id"""
+    labels = []
+    seen = set()
+    for m in OPENROUTER_RANKED:
+        lab = f"{m['title']} · {m['id']}"
+        labels.append(lab)
+        seen.add(m["id"])
+    for mid in openrouter_model_choices():
+        if mid not in seen:
+            labels.append(mid)
+            seen.add(mid)
+    return labels
+
+
+def model_id_from_label(label: str) -> str:
+    lab = (label or "").strip()
+    if " · " in lab:
+        return lab.split(" · ")[-1].strip()
+    return lab
+
+
+def label_for_model(model_id: str) -> str:
+    mid = (model_id or "").strip()
+    for m in OPENROUTER_RANKED:
+        if m["id"] == mid:
+            return f"{m['title']} · {m['id']}"
+    return mid
+
+
+def pricing_for_model(model_id: str) -> tuple[float, float]:
+    """USD per token (prompt, completion)."""
+    mid = (model_id or "").strip()
+    for m in OPENROUTER_RANKED:
+        if m["id"] == mid:
+            return float(m.get("in") or 0), float(m.get("out") or 0)
+    # cache
+    s = load_settings()
+    prices = (s.get("openrouter_models_cache") or {}).get("pricing") or {}
+    if mid in prices:
+        p = prices[mid]
+        return float(p.get("in") or 0), float(p.get("out") or 0)
+    # cheap default guess
+    if ":free" in mid or mid.endswith("/free"):
+        return 0.0, 0.0
+    return 0.5e-6, 1.5e-6
+
+
+def refresh_openrouter_models(log=print) -> dict:
+    """
+    Làm mới danh sách/pricing từ OpenRouter API
+    (https://openrouter.ai/api/v1/models — rankings: openrouter.ai/rankings).
+    """
+    import urllib.request
+
+    url = "https://openrouter.ai/api/v1/models"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "SkoolDownloader/3.3",
+            "Accept": "application/json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = json.loads(r.read().decode("utf-8", errors="replace"))
+    models = data.get("data") or []
+    ids = []
+    pricing = {}
+    # prioritize curated ranked ids first
+    ranked_ids = {m["id"] for m in OPENROUTER_RANKED}
+    for m in models:
+        mid = m.get("id") or ""
+        if not mid:
+            continue
+        p = m.get("pricing") or {}
+        try:
+            pin = float(p.get("prompt") or 0)
+            pout = float(p.get("completion") or 0)
+        except Exception:
+            pin = pout = 0.0
+        pricing[mid] = {"in": pin, "out": pout, "name": m.get("name") or mid}
+        if mid in ranked_ids or any(
+            k in mid
+            for k in (
+                "deepseek-v4",
+                "mimo-v2.5",
+                "minimax-m3",
+                "glm-5",
+                "nemotron-3-ultra",
+                "claude-opus-4",
+                "claude-sonnet-4",
+                "claude-sonnet-5",
+                "gemini-3",
+                "gemini-2.5-flash",
+                "gpt-5.5",
+                "gpt-oss-120b",
+                "hy3",
+                "step-3.7",
+                "laguna-m.1",
+            )
+        ):
+            ids.append(mid)
+    # update OPENROUTER provider models list in settings cache
+    # keep ranked order first
+    ordered = [m["id"] for m in OPENROUTER_RANKED]
+    for mid in ids:
+        if mid not in ordered:
+            ordered.append(mid)
+    cache = {
+        "at": time.strftime("%Y-%m-%d %H:%M"),
+        "source": "https://openrouter.ai/api/v1/models",
+        "rankings_url": "https://openrouter.ai/rankings#leaderboard-table",
+        "ids": ordered[:80],
+        "pricing": pricing,
+        "total_api_models": len(models),
+    }
+    s = load_settings()
+    s["openrouter_models_cache"] = cache
+    # also bump openrouter models list in catalog via settings store default model list
+    store = dict(s.get("llm_providers") or {})
+    or_cfg = dict(store.get("openrouter") or {})
+    if not or_cfg.get("model"):
+        or_cfg["model"] = DEFAULT_PRIMARY_MODEL
+    store["openrouter"] = or_cfg
+    s["llm_providers"] = store
+    SETTINGS.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
+    # live-update PROVIDERS models for this process
+    PROVIDERS["openrouter"]["models"] = ordered[:40]
+    log(f">> OpenRouter models refreshed: {len(ordered)} curated · API total {len(models)}")
+    return cache
+
+
+def estimate_course_llm_cost(
+    root=None,
+    lessons: int | None = None,
+    locales: int | None = None,
+    tasks: list[str] | None = None,
+) -> dict:
+    """
+    Ước lượng USD nếu chạy các task LLM với model đang chọn.
+    Dựa trên token estimate / bài (LLM_TASKS) × số bài × pricing OpenRouter.
+    """
+    from pathlib import Path
+
+    n_lessons = lessons
+    n_locales = locales
+    course_name = ""
+    if root is not None:
+        root = Path(root)
+        course_name = root.name
+        if n_lessons is None:
+            # inventory or upgrade structure
+            inv = root / "_upgrade_inventory.json"
+            st = root / "_upgrade_new_structure.json"
+            if inv.exists():
+                try:
+                    n_lessons = int(
+                        (json.loads(inv.read_text(encoding="utf-8")).get("stats") or {}).get(
+                            "lessons"
+                        )
+                        or 0
+                    )
+                except Exception:
+                    n_lessons = 0
+            if not n_lessons and st.exists():
+                try:
+                    data = json.loads(st.read_text(encoding="utf-8"))
+                    n_lessons = sum(
+                        len(c.get("lessons") or []) for c in (data.get("chapters") or [])
+                    )
+                except Exception:
+                    n_lessons = 0
+            if not n_lessons:
+                # count description.md in dump
+                try:
+                    n_lessons = len(list(root.rglob("description.md")))
+                except Exception:
+                    n_lessons = 0
+        if n_locales is None:
+            try:
+                import config as Cfg
+
+                n_locales = max(1, len(Cfg.get_course_locales() or []))
+            except Exception:
+                n_locales = 10
+    n_lessons = int(n_lessons or 0)
+    n_locales = int(n_locales or 10)
+    task_ids = tasks or list(LLM_TASKS.keys())
+    rows = []
+    total = 0.0
+    for tid in task_ids:
+        meta = LLM_TASKS.get(tid) or {}
+        cfg = get_task_llm(tid)
+        model = cfg.get("model") or DEFAULT_PRIMARY_MODEL
+        pin, pout = pricing_for_model(model)
+        # tokens
+        tin = float(meta.get("est_in_course") or 0)
+        tout = float(meta.get("est_out_course") or 0)
+        tin += float(meta.get("est_in_per_lesson") or 0) * n_lessons
+        tout += float(meta.get("est_out_per_lesson") or 0) * n_lessons
+        mult = float(meta.get("locale_multiplier") or 1)
+        if tid == "localize":
+            mult = float(n_locales)
+        tin *= mult
+        tout *= mult
+        cost = tin * pin + tout * pout
+        # also estimate fallback path if primary fails (50% contingency optional) — show both
+        fmodel = cfg.get("fallback_model") or DEFAULT_FALLBACK_MODEL
+        fpin, fpout = pricing_for_model(fmodel)
+        fcost = tin * fpin + tout * fpout
+        rows.append(
+            {
+                "task": tid,
+                "title": cfg.get("title") or meta.get("title") or tid,
+                "provider": cfg.get("provider"),
+                "model": model,
+                "fallback_model": fmodel,
+                "tokens_in": int(tin),
+                "tokens_out": int(tout),
+                "usd_primary": round(cost, 4),
+                "usd_if_fallback": round(fcost, 4),
+                "lessons": n_lessons,
+                "locales": n_locales if tid == "localize" else 1,
+            }
+        )
+        total += cost
+    return {
+        "course": course_name,
+        "lessons": n_lessons,
+        "locales": n_locales,
+        "rows": rows,
+        "usd_total_primary": round(total, 4),
+        "usd_total_if_all_fallback": round(sum(r["usd_if_fallback"] for r in rows), 4),
+        "note": (
+            "Ước lượng thô theo token/bài × giá OpenRouter (USD/token). "
+            "Thực tế phụ thuộc độ dài transcript, số locale, cache, provider routing."
+        ),
+        "rankings_url": "https://openrouter.ai/rankings#leaderboard-table",
+    }
 
 
 def get_provider_config(pid: str) -> dict:
@@ -604,6 +940,12 @@ def get_provider_config(pid: str) -> dict:
     if not model:
         model = meta.get("default_model") or "gpt-4o-mini"
 
+    models = list(meta.get("models") or [model])
+    if pid == "openrouter":
+        # merge ranked catalog
+        for mid in openrouter_model_choices():
+            if mid not in models:
+                models.append(mid)
     return {
         "id": pid,
         "title": meta.get("title") or pid,
@@ -611,7 +953,7 @@ def get_provider_config(pid: str) -> dict:
         "api_key": api_key,
         "base_url": base_url,
         "model": model,
-        "models": list(meta.get("models") or [model]),
+        "models": models,
         "docs": meta.get("docs") or "",
         "region": meta.get("region") or "",
         "configured": bool(api_key),
