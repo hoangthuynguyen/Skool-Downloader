@@ -2,7 +2,7 @@
 
 Công cụ lưu trữ **toàn bộ một khóa học Skool** về máy: cây thư mục theo chương/bài, video (native Skool + Loom + YouTube), mô tả bài, tài liệu (resources) và **transcript plain text (faster-whisper, auto-detect ngôn ngữ)** — chạy bằng **một lệnh** hoặc GUI 1 click.
 
-> **Phiên bản:** **3.0.0** (`course-os-complete`) · `python app/main.py --version`  
+> **Phiên bản:** **3.2.2** (`course-os-complete`) · `python app/main.py --version`  
 > **Danh sách tính năng đầy đủ:** **[docs/FEATURES.md](docs/FEATURES.md)**  
 > **Workflows / LLM / phím tắt:** **[docs/HUONG_DAN_FEATURES_WORKFLOWS.md](docs/HUONG_DAN_FEATURES_WORKFLOWS.md)**
 
@@ -180,8 +180,11 @@ LLM: cùng DeepSeek (chính) + Gemini (fallback) như summary.
 | **3. Localize** | GUI **🌍 Localize hub** · `--localize --locales "zh-CN,ja,ko,es,pt-BR,id,hi,fr,de,ar"` |
 | | Output: `_upgrade_v2/locales/<code>/…` · catalog ~40 ngôn ngữ: `--list-locales` |
 | **4. Wizard FULL** | Sidebar **Course Studio** · `course_wizard.py --full` |
-| **5. Video lab** | `course_video.py --prepare --run-queue` · ElevenLabs / HeyGen / Synthesia / local |
+| **5. Video lab** | `course_video.py --prepare --run-queue` · ElevenLabs / HeyGen / Synthesia / local / **omnivoice** |
 | | Voice map: `_brand_kit.json` · `--locale es` · GUI **🎥 Video lab** |
+| **5b. OmniVoice TTS** | **Mặc định TẮT** · clone `~/Downloads/ref.wav` (conda `omnivoice`, MPS) |
+| | GUI **🎙️ OmniVoice TTS** · `course_omnivoice.py --enable-all` rồi `--all --limit 3` |
+| | Streamlit: `streamlit run ~/Downloads/omni_app.py` · http://localhost:8501 |
 | **6. Publish** | `course_publish.py --all` → `_publish/` |
 | **7. QA** | `course_qa.py --all` (diff + loc QA + eval + fact-check) |
 | **8. Locale review** | `course_review.py --build` · approve/reject · GUI **👀 Locale review** |
@@ -205,6 +208,24 @@ LLM: cùng DeepSeek (chính) + Gemini (fallback) như summary.
 | **26. Notion + webhook** | `course_notion.py --export` · `COURSE_OS_WEBHOOK` |
 | **27. FINISH ALL** | `course_finish.py --finish` · GUI **🚀 FINISH ALL** |
 | **28. Feature registry** | `course_features.py` · `tests_course_os.py` |
+| **29. OmniVoice TTS (opt-in)** | `course_omnivoice.py` · default **OFF** · board / playlist / portal audio |
+
+### OmniVoice TTS (local Mac M5)
+
+```bash
+# UI Streamlit
+conda activate omnivoice
+export STREAMLIT_SERVER_FILE_WATCHER_TYPE=none
+streamlit run ~/Downloads/omni_app.py
+
+# Course OS — mặc định TẮT; bật tường minh rồi render
+python app/course_omnivoice.py --course "TenKhoa" --status
+python app/course_omnivoice.py --course "TenKhoa" --enable-all   # hoặc --toggle-board
+python app/course_omnivoice.py --course "TenKhoa" --all --limit 3
+python app/course_omnivoice.py --course "TenKhoa" --disable-all
+```
+
+Cần: conda env `omnivoice`, `~/Downloads/ref.wav`. Output: `_upgrade_v2/.../tts_omnivoice.wav`.
 
 ---
 

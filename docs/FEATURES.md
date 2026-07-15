@@ -1,6 +1,6 @@
 # Skool Downloader — Danh sách tính năng
 
-> Phiên bản: **3.2.0** (`course-os-complete`) · `python app/main.py --version`  
+> Phiên bản: **3.2.2** (`course-os-complete`) · `python app/main.py --version`  
 
 ---
 
