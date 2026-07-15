@@ -134,21 +134,72 @@ def _guess_filename(url: str, fallback: str) -> str:
     return _safe_name(fallback)
 
 
+def _want_thumbs() -> bool:
+    try:
+        if hasattr(C, "get_download_thumbnails"):
+            return bool(C.get_download_thumbnails())
+    except Exception:
+        pass
+    return bool(getattr(C, "DOWNLOAD_THUMBNAILS", True))
+
+
+def _want_resource_links() -> bool:
+    try:
+        if hasattr(C, "get_fetch_resource_links"):
+            return bool(C.get_fetch_resource_links())
+    except Exception:
+        pass
+    return bool(getattr(C, "FETCH_RESOURCE_LINKS", True))
+
+
+def _thumb_candidates(node: dict, desc: str, urls: list) -> list[str]:
+    """Thu thap URL anh thumbnail/cover tu node + mo ta + asset links."""
+    out = []
+    for k in (
+        "thumbnail", "thumbnailUrl", "cover", "coverUrl", "cover_image",
+        "image", "imageUrl", "poster", "logo", "logoUrl", "picture",
+    ):
+        v = node.get(k)
+        if isinstance(v, str) and v.startswith("http"):
+            out.append(v)
+        elif isinstance(v, dict):
+            for kk in ("url", "src", "href"):
+                if isinstance(v.get(kk), str) and v[kk].startswith("http"):
+                    out.append(v[kk])
+    # markdown images
+    for m in re.findall(r"!\[[^\]]*\]\((https?://[^)\s]+)\)", desc or ""):
+        out.append(m)
+    # skool CDN images
+    for u in urls or []:
+        low = (u or "").lower()
+        if any(h in low for h in ("assets.skool.com", "cdn.skool.com", "img.skool")):
+            if any(low.split("?")[0].endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                out.append(u)
+    seen, uniq = set(), []
+    for u in out:
+        if u and u not in seen:
+            seen.add(u)
+            uniq.append(u)
+    return uniq
+
+
 def write_lesson_pack(folder: Path, node: dict, log=print) -> dict:
     """Ghi day du noi dung 1 bai vao folder. Tra ve stats dict."""
     stats = {
         "desc": 0, "lesson_json": 0, "links_md": 0,
         "file_dl": 0, "file_skip": 0, "file_fail": 0, "link_n": 0,
-        "image_dl": 0,
+        "image_dl": 0, "thumb_dl": 0,
     }
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
+    want_thumbs = _want_thumbs()
+    want_links = _want_resource_links()
 
     title = (node.get("title") or folder.name).strip()
     desc = (node.get("desc_md") or node.get("desc") or "").strip()
-    resources = parse_resources(node.get("resources"))
+    resources = parse_resources(node.get("resources")) if want_links else []
     # links da rut san tu dump (neu co)
-    extra_links = node.get("links") or []
+    extra_links = (node.get("links") or []) if want_links else []
     video_url = (node.get("url") or node.get("video_url") or "").strip()
     video_id = node.get("video_id") or node.get("videoId")
 
@@ -163,19 +214,20 @@ def write_lesson_pack(folder: Path, node: dict, log=print) -> dict:
             encoding="utf-8",
         )
 
-    # 2) thu thap moi link
+    # 2) thu thap moi link (neu bat FETCH_RESOURCE_LINKS)
     all_urls = []
-    all_urls.extend(extract_urls(desc, json.dumps(resources, ensure_ascii=False)))
-    for u in extra_links:
-        if isinstance(u, str):
-            all_urls.extend(extract_urls(u))
-        elif isinstance(u, dict) and u.get("url"):
-            all_urls.append(u["url"])
-    for r in resources:
-        if r.get("url"):
-            all_urls.append(r["url"])
-        if r.get("link"):
-            all_urls.append(r["link"])
+    if want_links:
+        all_urls.extend(extract_urls(desc, json.dumps(resources, ensure_ascii=False)))
+        for u in extra_links:
+            if isinstance(u, str):
+                all_urls.extend(extract_urls(u))
+            elif isinstance(u, dict) and u.get("url"):
+                all_urls.append(u["url"])
+        for r in resources:
+            if r.get("url"):
+                all_urls.append(r["url"])
+            if r.get("link"):
+                all_urls.append(r["link"])
     # unique keep order
     seen = set()
     uniq_urls = []
@@ -183,6 +235,26 @@ def write_lesson_pack(folder: Path, node: dict, log=print) -> dict:
         if u and u not in seen:
             seen.add(u)
             uniq_urls.append(u)
+
+    # 2b) thumbnail bai (mac dinh bat)
+    if want_thumbs:
+        thumbs = _thumb_candidates(node, desc, uniq_urls)
+        for i, tu in enumerate(thumbs[:5]):
+            ext = Path(urlparse(tu).path).suffix.lower() or ".jpg"
+            if ext not in (".png", ".jpg", ".jpeg", ".gif", ".webp"):
+                ext = ".jpg"
+            fname = "thumbnail" + (ext if i == 0 else f"_{i}{ext}")
+            tgt = folder / fname
+            if tgt.exists() and tgt.stat().st_size > 0:
+                stats["file_skip"] += 1
+                continue
+            try:
+                dl(tu, tgt)
+                stats["thumb_dl"] += 1
+                stats["image_dl"] += 1
+                log(f"   [thumb] {folder.name}/{tgt.name}")
+            except Exception:
+                stats["file_fail"] += 1
 
     # phan loai: file truc tiep vs link
     file_exts = (
@@ -213,7 +285,7 @@ def write_lesson_pack(folder: Path, node: dict, log=print) -> dict:
         link_lines.append(f"- **{kind}:** {u}")
         stats["link_n"] += 1
 
-    if link_lines:
+    if want_links and link_lines:
         (folder / "links.md").write_text(
             f"# Links — {title}\n\n" + "\n".join(link_lines) + "\n",
             encoding="utf-8",
@@ -222,10 +294,13 @@ def write_lesson_pack(folder: Path, node: dict, log=print) -> dict:
 
     # 3) resources/
     rdir = folder / "resources"
-    need_rdir = bool(resources) or any(
-        any(u.lower().split("?")[0].endswith(ext) for ext in file_exts)
-        or any(h in u.lower() for h in asset_hosts)
-        for u in uniq_urls
+    need_rdir = want_links and (
+        bool(resources)
+        or any(
+            any(u.lower().split("?")[0].endswith(ext) for ext in file_exts)
+            or any(h in u.lower() for h in asset_hosts)
+            for u in uniq_urls
+        )
     )
     if need_rdir:
         rdir.mkdir(exist_ok=True)
@@ -269,24 +344,25 @@ def write_lesson_pack(folder: Path, node: dict, log=print) -> dict:
                 log(f"   [LOI file] {fname}: {e}")
 
         # tai anh skool assets nho (thumbnail / illustration trong bai) — bo -md thumb
-        for u in uniq_urls:
-            low = u.lower()
-            if not any(h in low for h in asset_hosts):
-                continue
-            if "-md." in low or "-sm." in low:
-                continue
-            if not any(low.split("?")[0].endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                continue
-            fname = _guess_filename(u, "image.jpg")
-            tgt = rdir / fname
-            if tgt.exists() and tgt.stat().st_size > 0:
-                stats["file_skip"] += 1
-                continue
-            try:
-                dl(u, tgt)
-                stats["image_dl"] += 1
-            except Exception:
-                stats["file_fail"] += 1
+        if want_thumbs:
+            for u in uniq_urls:
+                low = u.lower()
+                if not any(h in low for h in asset_hosts):
+                    continue
+                if "-md." in low or "-sm." in low:
+                    continue
+                if not any(low.split("?")[0].endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                    continue
+                fname = _guess_filename(u, "image.jpg")
+                tgt = rdir / fname
+                if tgt.exists() and tgt.stat().st_size > 0:
+                    stats["file_skip"] += 1
+                    continue
+                try:
+                    dl(u, tgt)
+                    stats["image_dl"] += 1
+                except Exception:
+                    stats["file_fail"] += 1
 
     # 4) lesson.json — toan bo metadata de dump/search sau
     lesson_doc = {

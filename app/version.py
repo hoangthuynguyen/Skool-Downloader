@@ -1,6 +1,6 @@
 """Phien ban Skool Downloader (Phase ship)."""
-__version__ = "2.17.0"
-__codename__ = "discovery-scrape"
+__version__ = "3.2.2"
+__codename__ = "course-os-complete"
 
 # Phase milestones (gan dung commit history)
 HISTORY = (
@@ -41,6 +41,28 @@ HISTORY = (
     "2.16.0 full lesson pack: description/links/resources/lesson.json per folder",
     "2.16.1 chapters sorted 1,2,3 from _chapters.json / folder numbers",
     "2.17.0 Discovery scrape: all pages/languages/topics → SQLite+CSV table",
+    "2.17.1 fix catalog Notes/Cost merge (paid≠Free) + repair-notes + member refresh resume",
+    "2.17.2 free courses Cost = $0 (not '$0 (Free)') for revenue totals",
+    "2.18.0 AUTO_TRANSCRIBE default + all transcript.txt (ordered plain text)",
+    "2.18.1 Whisper auto-detect lang + lesson intro; toggle off; FEATURES+README",
+    "2.19.0 per-lesson VI summary (purpose/summary/todo/quotes/resources)",
+    "2.20.0 Dashboard URL Quick Run + toggles summary/thumbs + DeepSeek/Gemini LLM",
+    "2.21.0 Course upgrade: market research DOCX → new structure (drop obsolete)",
+    "2.21.1 Upgrade questionnaire (on by default) before research/structure",
+    "2.22.0 Course Studio: asset packs + master EN/VI + locale hub",
+    "2.22.1 Dashboard LLM panel: API keys + per-task model routing",
+    "2.23.0 Course OS: wizard, video lab, publish, QA, glossary/TM, diff",
+    "2.24.0 Video run-queue (ElevenLabs/HeyGen/Synthesia/local) · locale review · schedule · board · docs crawl · selective localize",
+    "2.25.0 Pipeline status · slides HTML · ops CLI (glossary/budget) · relocalize rejected · media keys GUI · budget gate · Win schedule",
+    "2.26.0 PPTX · thumbs · side-by-side review · incremental re-upgrade · cost dashboard · golden eval · Skool clipboard · sales HTML · YT helper",
+    "2.27.0 Portfolio · board HTML · student portal · A/B titles · voice preview · approve→render · locale glossary · RTL slides",
+    "2.28.0 Board DnD reorder · competitor scan · Notion export + webhook · wizard auto-status/notify",
+    "3.0.0 Course OS COMPLETE — finish-all · feature registry · expanded status/ship · tests_course_os",
+    "3.1.0 Offline finish: structure_from_dump + bootstrap assets (no LLM) · GUI offline mode",
+    "3.1.1 Fix publish_zip self-include runaway · offline localize skip marker · safe zip limits",
+    "3.2.0 OmniVoice TTS (local MPS) · per-lesson on/off · Streamlit UI · video provider omnivoice",
+    "3.2.1 OmniVoice playlist HTML · portal audio players · TTS toggle board import",
+    "3.2.2 OmniVoice TTS default OFF (opt-in per lesson / enable-all)",
 )
 
 

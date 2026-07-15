@@ -59,6 +59,7 @@ STEPS = ["Chọn khóa", "Lấy khóa", "Tùy chọn", "Tải về"]
 # Nav items: (id, label, method_name)
 NAV_ITEMS = (
     ("dashboard", "⌂   Dashboard", "show_dashboard"),
+    ("studio", "🎬   Course Studio", "show_studio"),
     ("queue", "☰   Hàng đợi", "show_queue"),
     ("discovery", "🔎   Discovery", "show_discovery"),
     ("chat", "💬   Chat RAG", "show_chat"),
@@ -218,6 +219,7 @@ class App:
         self.proc = None; self.sb = None; self.q = queue.Queue(); self.ui_q = queue.Queue()
         self.chapters = []; self.course_name = None; self.mode = None
         self.admin = False; self._dumping = False; self._prog = []; self._lastref = 0.0
+        self._quick_run = None  # Dashboard URL → auto dump + download
         self.step = 1; self.chap_widgets = {}
         self.purpose = "import"          # import | update | rescue (muc dich phien trinh duyet)
         self.known_titles = set()        # ten chuong da luu (de danh dau MOI khi cap nhat)
@@ -986,7 +988,98 @@ class App:
         ctk.CTkLabel(r2, text="Dịch file tổng hợp sang tiếng Việt (nhanh)", font=(FT, 11), text_color=TEXT2).pack(side="left")
         r3 = ctk.CTkFrame(act, fg_color="transparent"); r3.pack(fill="x", padx=14, pady=4)
         btn(r3, "📝  Tóm tắt + To-do (AI)", self.do_summary, kind="secondary", width=210).pack(side="left", padx=(0, 8))
-        ctk.CTkLabel(r3, text="Tóm tắt từng chương + to-do áp dụng", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        ctk.CTkLabel(r3, text="Tóm tắt theo chương (file _TomTat.md cũ)", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r3b = ctk.CTkFrame(act, fg_color="transparent"); r3b.pack(fill="x", padx=14, pady=4)
+        btn(r3b, "📋  Summary từng bài (VI)", self.do_lesson_summaries, kind="accent", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(
+            r3b,
+            text="Purpose · Summary (500–1500 từ) · Takeaways · Todo steps · Quotes · Resources → summary.vi.md",
+            font=(FT, 11), text_color=TEXT2, wraplength=380, justify="left",
+        ).pack(side="left")
+        r3c = ctk.CTkFrame(act, fg_color="transparent"); r3c.pack(fill="x", padx=14, pady=4)
+        btn(r3c, "🔬  Nâng cấp khóa (research)", self.do_course_upgrade, kind="accent", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(
+            r3c,
+            text="Nghiên cứu thị trường → DOCX · loại bài cũ · cấu trúc khóa mới (LLM) đến hôm nay",
+            font=(FT, 11), text_color=TEXT2, wraplength=380, justify="left",
+        ).pack(side="left")
+        r3d = ctk.CTkFrame(act, fg_color="transparent"); r3d.pack(fill="x", padx=14, pady=4)
+        btn(r3d, "🎬  Asset pack (script/workshop)", self.do_course_assets, kind="accent", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(
+            r3d,
+            text="Sinh lesson + talking_script + workshop + use_cases + resources (master VI/EN)",
+            font=(FT, 11), text_color=TEXT2, wraplength=380, justify="left",
+        ).pack(side="left")
+        r3e = ctk.CTkFrame(act, fg_color="transparent"); r3e.pack(fill="x", padx=14, pady=4)
+        btn(r3e, "🌍  Localize hub", self.do_course_localize, kind="secondary", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(
+            r3e,
+            text="Dịch pack sang 10+ ngôn ngữ (zh/ja/ko/es/pt/id/hi/fr/de…)",
+            font=(FT, 11), text_color=TEXT2, wraplength=380, justify="left",
+        ).pack(side="left")
+        r3f = ctk.CTkFrame(act, fg_color="transparent"); r3f.pack(fill="x", padx=14, pady=4)
+        btn(r3f, "🎥  Video lab", self.do_course_video, kind="secondary", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r3f, text="Prepare queue · provider · run-queue (ElevenLabs/HeyGen/local)", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r3g = ctk.CTkFrame(act, fg_color="transparent"); r3g.pack(fill="x", padx=14, pady=4)
+        btn(r3g, "📦  Publish packs", self.do_course_publish, kind="secondary", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r3g, text="Skool / YouTube / email / leads / sales / zip", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r3h = ctk.CTkFrame(act, fg_color="transparent"); r3h.pack(fill="x", padx=14, pady=4)
+        btn(r3h, "✅  QA + diff", self.do_course_qa, kind="secondary", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r3h, text="Loc QA · structure diff · eval · fact-check", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r3i = ctk.CTkFrame(act, fg_color="transparent"); r3i.pack(fill="x", padx=14, pady=4)
+        btn(r3i, "👀  Locale review", self.do_course_review, kind="secondary", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r3i, text="Build queue · export pending TSV · approve/reject", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r3j = ctk.CTkFrame(act, fg_color="transparent"); r3j.pack(fill="x", padx=14, pady=4)
+        btn(r3j, "🗓  Schedule upgrade", self.do_course_schedule, kind="secondary", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r3j, text="launchd/cron re-upgrade daily/weekly/monthly", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r3k = ctk.CTkFrame(act, fg_color="transparent"); r3k.pack(fill="x", padx=14, pady=4)
+        btn(r3k, "📐  Curriculum board", self.do_course_board, kind="secondary", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r3k, text="Show / add chapter+lesson · edit structure JSON", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r3l = ctk.CTkFrame(act, fg_color="transparent"); r3l.pack(fill="x", padx=14, pady=4)
+        btn(r3l, "📊  Pipeline status", self.do_course_status, kind="accent", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r3l, text="Checklist inventory→…→publish · next step gợi ý", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r3m = ctk.CTkFrame(act, fg_color="transparent"); r3m.pack(fill="x", padx=14, pady=4)
+        btn(r3m, "🖼  Slides HTML", self.do_course_slides, kind="secondary", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r3m, text="slide_outline.md → deck HTML (←/→ keys)", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r3n = ctk.CTkFrame(act, fg_color="transparent"); r3n.pack(fill="x", padx=14, pady=4)
+        btn(r3n, "🧰  Ops (glossary/budget)", self.do_course_ops, kind="secondary", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r3n, text="Term-lock · style · LLM $ cap · brand kit", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r3o = ctk.CTkFrame(act, fg_color="transparent"); r3o.pack(fill="x", padx=14, pady=4)
+        btn(r3o, "🔑  Media API keys", self.do_media_keys, kind="secondary", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r3o, text="ElevenLabs / HeyGen / Synthesia keys cho video lab", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r3p = ctk.CTkFrame(act, fg_color="transparent"); r3p.pack(fill="x", padx=14, pady=4)
+        btn(r3p, "📑  PPTX + Thumbs", self.do_course_pptx_thumbs, kind="secondary", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r3p, text="PowerPoint decks + PNG covers 1280×720", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r3q = ctk.CTkFrame(act, fg_color="transparent"); r3q.pack(fill="x", padx=14, pady=4)
+        btn(r3q, "⚡  Incremental upgrade", self.do_course_incremental, kind="accent", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r3q, text="Chỉ bài obsolete / missing assets (rẻ hơn full)", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r3r = ctk.CTkFrame(act, fg_color="transparent"); r3r.pack(fill="x", padx=14, pady=4)
+        btn(r3r, "💰  Cost dashboard", self.do_cost_dashboard, kind="secondary", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r3r, text="LLM spent + video estimate → _cost_dashboard.md", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r3s = ctk.CTkFrame(act, fg_color="transparent"); r3s.pack(fill="x", padx=14, pady=4)
+        btn(r3s, "🗂  Portfolio", self.do_course_portfolio, kind="accent", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r3s, text="Multi-course % complete (tất cả khóa)", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r3t = ctk.CTkFrame(act, fg_color="transparent"); r3t.pack(fill="x", padx=14, pady=4)
+        btn(r3t, "🎓  Student portal", self.do_course_portal, kind="secondary", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r3t, text="Portal tĩnh + quiz + progress localStorage", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r3u = ctk.CTkFrame(act, fg_color="transparent"); r3u.pack(fill="x", padx=14, pady=4)
+        btn(r3u, "🧪  A/B titles", self.do_course_ab, kind="secondary", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r3u, text="Title/hook variants YouTube · Skool · ads", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r3v = ctk.CTkFrame(act, fg_color="transparent"); r3v.pack(fill="x", padx=14, pady=4)
+        btn(r3v, "🔊  Voice preview", self.do_voice_preview, kind="secondary", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r3v, text="Nghe giọng ElevenLabs/local trước full render", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r3w = ctk.CTkFrame(act, fg_color="transparent"); r3w.pack(fill="x", padx=14, pady=4)
+        btn(r3w, "🕵️  Competitor scan", self.do_course_competitor, kind="secondary", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r3w, text="Market / course alternatives → gap report", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r3x = ctk.CTkFrame(act, fg_color="transparent"); r3x.pack(fill="x", padx=14, pady=4)
+        btn(r3x, "📓  Notion + Webhook", self.do_course_notion, kind="secondary", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r3x, text="Export MD pack Notion · POST webhook khi xong", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r3y = ctk.CTkFrame(act, fg_color="transparent"); r3y.pack(fill="x", padx=14, pady=4)
+        btn(r3y, "🚀  FINISH ALL", self.do_course_finish, kind="success", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r3y, text="Tự chạy mọi bước còn thiếu (core + GTM pack)", font=(FT, 11), text_color=TEXT2).pack(side="left")
+        r3z = ctk.CTkFrame(act, fg_color="transparent"); r3z.pack(fill="x", padx=14, pady=4)
+        btn(r3z, "🎙️  OmniVoice TTS", self.do_omnivoice_tts, kind="accent", width=210).pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(r3z, text="Text→Speech local (ref.wav) · bật/tắt từng bài hoặc cả khóa", font=(FT, 11), text_color=TEXT2).pack(side="left")
         r4 = ctk.CTkFrame(act, fg_color="transparent"); r4.pack(fill="x", padx=14, pady=(4, 8))
         btn(r4, "📦  Knowledge pack (zip)", self.do_knowledge_pack, kind="accent", width=210).pack(side="left", padx=(0, 8))
         ctk.CTkLabel(r4, text="Zip text/resources — gửi sếp / USB (không video)", font=(FT, 11), text_color=TEXT2).pack(side="left")
@@ -1225,6 +1318,1362 @@ class App:
                                     "Tóm tắt + To-do cần API key Claude.\nDán API key vào ô bên trên rồi bấm Lưu."); return
         except Exception: pass
         self.start([PY, "ai_tools.py"] + args + ["--summary"], "TÓM TẮT + TO-DO")
+
+    def do_lesson_summaries(self):
+        """Summary từng bài (VI): Purpose, Summary theo độ dài, takeaways, todo, quotes, resources."""
+        course, args = self._report_args()
+        if args is None:
+            return
+        try:
+            import llm_providers as PROV
+            st = PROV.providers_status()
+            if not st.get("ready_count"):
+                messagebox.showinfo(
+                    "Cần LLM API key",
+                    "Summary từng bài cần ít nhất 1 provider (Grok / Claude / OpenAI / Gemini / OpenRouter…).\n"
+                    "Chọn provider, dán key, bấm Lưu ở phần API LLM phía trên.",
+                )
+                return
+        except Exception as e:
+            messagebox.showerror("LLM", str(e))
+            return
+        force = messagebox.askyesno(
+            "Summary từng bài",
+            "Tạo summary.vi.md cho mỗi bài (tiếng Việt).\n\n"
+            "• Yes = ghi đè summary đã có\n"
+            "• No = chỉ bài chưa có summary\n\n"
+            "Cần description.md và/hoặc video.txt. Dùng LLM đã cấu hình + fallback.",
+        )
+        cmd = [PY, "lesson_summary.py"] + args
+        if force:
+            cmd.append("--force")
+        else:
+            cmd.append("--missing-only")
+        self.start(cmd, "SUMMARY TỪNG BÀI (VI)", on_done=self._after_lesson_summaries)
+
+    def _after_lesson_summaries(self):
+        try:
+            course, _ = self._report_args()
+            root = self.course_root(course) if course else None
+            if root and (Path(root) / "_All_Summaries.vi.md").exists():
+                self.write(f"✓ Xem: {root}/_All_Summaries.vi.md và summary.vi.md trong từng bài")
+                if messagebox.askyesno("Xong", f"Đã tạo summary từng bài.\n\nMở thư mục khóa?\n{root}"):
+                    self._open_path(root)
+        except Exception as e:
+            self.write(f"[summary] {e}")
+
+    def do_course_upgrade(self):
+        """Nghiên cứu cập nhật khóa → report DOCX → cấu trúc mới (loại bài cũ)."""
+        course, args = self._report_args()
+        if args is None:
+            return
+        try:
+            import llm_providers as PROV
+            if not PROV.providers_status().get("ready_count"):
+                messagebox.showinfo(
+                    "Cần LLM",
+                    "Nâng cấp khóa cần API key (DeepSeek / Gemini / …).\n"
+                    "Cấu hình ở phần API LLM phía trên.",
+                )
+                return
+        except Exception as e:
+            messagebox.showerror("LLM", str(e))
+            return
+
+        # Questionnaire: mặc định BẬT — user có thể tắt
+        use_q = True
+        try:
+            if hasattr(C, "get_course_upgrade_questionnaire"):
+                use_q = bool(C.get_course_upgrade_questionnaire())
+        except Exception:
+            use_q = True
+        use_q = messagebox.askyesno(
+            "Questionnaire (mặc định BẬT)",
+            "Trước khi research/cấu trúc mới, có muốn trả lời các câu hỏi "
+            "về mong muốn cập nhật khóa không?\n\n"
+            "• Yes = hiện form câu hỏi (khuyến nghị — mặc định)\n"
+            "• No = tắt questionnaire, chạy tiếp không hỏi\n\n"
+            "Thông tin trả lời sẽ được dùng cùng khóa cũ để tạo curriculum cập nhật.",
+        )
+        try:
+            if hasattr(C, "set_course_upgrade_questionnaire"):
+                C.set_course_upgrade_questionnaire(bool(use_q))
+        except Exception:
+            pass
+
+        answers_path = None
+        if use_q:
+            answers_path = self._show_upgrade_questionnaire(course)
+            if answers_path is None:
+                # user đóng form / hủy
+                self.write("⏹ Đã hủy questionnaire — không chạy nâng cấp.")
+                return
+
+        do_research = messagebox.askyesno(
+            "Nâng cấp khóa học",
+            "Bước tiếp — Nghiên cứu thị trường & báo cáo DOCX?\n\n"
+            "• Yes = inventory + web (tuỳ chọn) + LLM report\n"
+            "• No = bỏ research, dùng report đã có → chỉ sinh cấu trúc\n\n"
+            "Ngày cập nhật (as_of) = hôm nay.",
+        )
+        do_web = False
+        if do_research:
+            do_web = messagebox.askyesno(
+                "Web research",
+                "Bật tra cứu web (snippets) cho tool/phần mềm trong khóa?\n\n"
+                "Có thể tắt nếu chỉ muốn LLM phân tích nội dung local.",
+            )
+            try:
+                if hasattr(C, "set_course_upgrade_research"):
+                    C.set_course_upgrade_research(True)
+                if hasattr(C, "set_course_upgrade_web"):
+                    C.set_course_upgrade_web(bool(do_web))
+            except Exception:
+                pass
+
+        do_lessons = messagebox.askyesno(
+            "Sinh nội dung bài mới",
+            "Sau khi có cấu trúc mới, có sinh outline từng bài vào folder _upgrade_v2/ không?\n\n"
+            "• Yes = tốn nhiều token LLM, đầy đủ hơn\n"
+            "• No = chỉ JSON + Markdown cấu trúc + skeleton folder",
+        )
+
+        cmd = [PY, "course_upgrade.py"] + args
+        if use_q and answers_path:
+            cmd += ["--answers-file", str(answers_path)]
+        else:
+            cmd.append("--no-questionnaire")
+        if do_research and do_lessons:
+            cmd.append("--full")
+            if not do_web:
+                cmd.append("--no-web")
+        elif do_research:
+            cmd.append("--research")
+            if not do_web:
+                cmd.append("--no-web")
+            if do_lessons:
+                cmd.append("--generate-lessons")
+        else:
+            cmd.append("--structure-only")
+            if do_lessons:
+                cmd.append("--generate-lessons")
+
+        self.write(
+            f"🔬 Course upgrade: q={use_q} research={do_research} web={do_web} lessons={do_lessons}"
+        )
+        self.start(cmd, "NÂNG CẤP KHÓA (RESEARCH)", on_done=self._after_course_upgrade)
+
+    def _show_upgrade_questionnaire(self, course_name) -> "Path | None":
+        """
+        Form câu hỏi mong muốn cập nhật khóa.
+        Trả Path tới file JSON answers (temp hoặc trong khóa), None nếu hủy.
+        """
+        import course_upgrade as CU
+        from tkinter import BooleanVar
+
+        root_course = Path(self.course_root(course_name))
+        root_course.mkdir(parents=True, exist_ok=True)
+        prev = CU.load_answers(root_course)
+        prev_ans = prev.get("answers") if isinstance(prev.get("answers"), dict) else {}
+
+        win = ctk.CTkToplevel(self.root)
+        win.title("Questionnaire — mong muốn khóa mới")
+        win.geometry("720x640")
+        win.transient(self.root)
+        try:
+            win.grab_set()
+        except Exception:
+            pass
+
+        result = {"ok": False, "path": None}
+
+        ctk.CTkLabel(
+            win,
+            text="Trả lời các câu hỏi (có thể bỏ trống). Thông tin này + khóa cũ → research & cấu trúc mới.",
+            font=(FT, 13),
+            text_color=TEXT,
+            wraplength=680,
+            justify="left",
+        ).pack(anchor="w", padx=16, pady=(14, 6))
+
+        # toggle remember default on
+        q_on = ctk.BooleanVar(value=True)
+        ctk.CTkCheckBox(
+            win,
+            text="Luôn bật questionnaire lần sau (mặc định BẬT — bỏ tick = tắt mặc định)",
+            variable=q_on,
+            font=(FT, 12),
+            text_color=TEXT2,
+            fg_color=ACCENT,
+            hover_color=ACCENT_H,
+            border_color=BORDER,
+        ).pack(anchor="w", padx=16, pady=(0, 8))
+
+        scroll = ctk.CTkScrollableFrame(win, fg_color=CARD, corner_radius=12)
+        scroll.pack(fill="both", expand=True, padx=14, pady=6)
+
+        entries = {}
+        for q in CU.get_questions():
+            qid = q["id"]
+            ctk.CTkLabel(
+                scroll,
+                text=f"• {q['q']}",
+                font=(FT, 12, "bold"),
+                text_color=TEXT,
+                wraplength=640,
+                justify="left",
+            ).pack(anchor="w", padx=10, pady=(10, 2))
+            box = ctk.CTkTextbox(scroll, height=64, font=(FT, 12), fg_color=CARD2, border_color=BORDER, border_width=1)
+            box.pack(fill="x", padx=10, pady=(0, 4))
+            if prev_ans.get(qid):
+                box.insert("1.0", prev_ans[qid])
+            entries[qid] = box
+
+        bar = ctk.CTkFrame(win, fg_color="transparent")
+        bar.pack(fill="x", padx=14, pady=12)
+
+        def on_cancel():
+            result["ok"] = False
+            try:
+                win.grab_release()
+            except Exception:
+                pass
+            win.destroy()
+
+        def on_save():
+            answers = {qid: box.get("1.0", "end").strip() for qid, box in entries.items()}
+            try:
+                if hasattr(C, "set_course_upgrade_questionnaire"):
+                    C.set_course_upgrade_questionnaire(bool(q_on.get()))
+            except Exception:
+                pass
+            CU.save_answers(root_course, answers, log=lambda s: self.write(s))
+            out = root_course / CU.ANSWERS_JSON
+            result["ok"] = True
+            result["path"] = out
+            try:
+                win.grab_release()
+            except Exception:
+                pass
+            win.destroy()
+
+        btn(bar, "Hủy", on_cancel, kind="ghost", width=100).pack(side="left")
+        btn(bar, "Lưu & tiếp tục ▶", on_save, kind="success", width=160).pack(side="right")
+
+        win.protocol("WM_DELETE_WINDOW", on_cancel)
+        self.root.wait_window(win)
+        if not result["ok"]:
+            return None
+        return result["path"]
+
+    def _after_course_upgrade(self):
+        try:
+            course, _ = self._report_args()
+            root = Path(self.course_root(course)) if course else None
+            if not root:
+                return
+            msg = (
+                "Đã chạy nâng cấp khóa.\n\n"
+                "• Questionnaire: _Upgrade_Questionnaire.md / _upgrade_questionnaire.json\n"
+                "• Report: _Upgrade_Research_Report.docx / .md\n"
+                "• Ghi chú: _Upgrade_User_Notes.md\n"
+                "• Cấu trúc mới: _Upgrade_New_Structure.md + JSON\n"
+                "• Khóa scaffold: _upgrade_v2/ (nếu đã chọn sinh bài)\n\n"
+                "Tiếp theo: «Asset pack» → «Localize hub».\n\n"
+                "Mở thư mục khóa?"
+            )
+            self.write(f"✓ Upgrade artifacts trong {root}")
+            if messagebox.askyesno("Nâng cấp xong", msg):
+                self._open_path(root)
+        except Exception as e:
+            self.write(f"[upgrade] {e}")
+
+    def do_course_assets(self):
+        """Sinh Lesson Asset Pack (script, workshop, use cases…) — master VI/EN."""
+        course, args = self._report_args()
+        if args is None:
+            return
+        try:
+            import llm_providers as PROV
+            if not PROV.providers_status().get("ready_count"):
+                messagebox.showinfo("Cần LLM", "Cần API key (DeepSeek/Gemini…) để sinh asset pack.")
+                return
+        except Exception as e:
+            messagebox.showerror("LLM", str(e))
+            return
+
+        # master language
+        cur = "vi"
+        try:
+            cur = C.get_course_master_lang() if hasattr(C, "get_course_master_lang") else "vi"
+        except Exception:
+            pass
+        use_en = messagebox.askyesno(
+            "Master language",
+            f"Ngôn ngữ master hiện tại: {cur.upper()}\n\n"
+            "• Yes = English (EN)\n"
+            "• No = Tiếng Việt (VI)\n\n"
+            "Nội dung lesson/script/workshop sẽ viết bằng ngôn ngữ này.",
+        )
+        lang = "en" if use_en else "vi"
+        try:
+            if hasattr(C, "set_course_master_lang"):
+                C.set_course_master_lang(lang)
+        except Exception:
+            pass
+
+        force = messagebox.askyesno(
+            "Asset pack",
+            "Ghi đè file asset đã có?\n\nYes = force · No = chỉ bài còn thiếu",
+        )
+        cmd = [PY, "course_studio.py"] + args + ["--assets", "--lang", lang]
+        if force:
+            cmd.append("--force")
+        self.write(f"🎬 Asset pack master={lang} force={force}")
+        self.start(cmd, "COURSE STUDIO ASSETS", on_done=self._after_course_assets)
+
+    def _after_course_assets(self):
+        try:
+            course, _ = self._report_args()
+            root = Path(self.course_root(course)) if course else None
+            if not root:
+                return
+            up = root / "_upgrade_v2"
+            self.write(f"✓ Asset packs → {up}")
+            if messagebox.askyesno(
+                "Asset pack xong",
+                f"Đã sinh pack trong:\n{up}\n\n"
+                "Mỗi bài: lesson.md, talking_script.md, workshop.md,\n"
+                "use_cases.md, resources.md, quiz.json…\n\nMở folder?",
+            ):
+                self._open_path(up if up.exists() else root)
+        except Exception as e:
+            self.write(f"[assets] {e}")
+
+    def do_course_localize(self):
+        """Locale hub — dịch asset pack sang nhiều ngôn ngữ."""
+        course, args = self._report_args()
+        if args is None:
+            return
+        try:
+            import llm_providers as PROV
+            if not PROV.providers_status().get("ready_count"):
+                messagebox.showinfo("Cần LLM", "Cần API key để localize.")
+                return
+        except Exception as e:
+            messagebox.showerror("LLM", str(e))
+            return
+
+        root = Path(self.course_root(course))
+        if not (root / "_upgrade_v2").exists():
+            if not messagebox.askyesno(
+                "Chưa có asset pack",
+                "Chưa thấy _upgrade_v2/. Chạy Asset pack trước?\n\nYes = hủy và tự chạy assets trước (thủ công).\nNo = vẫn thử localize.",
+            ):
+                pass
+            else:
+                return
+
+        default_locs = "zh-CN,ja,ko,es,pt-BR,id,hi,fr,de,ar"
+        try:
+            default_locs = ",".join(C.get_course_locales()[:12])
+        except Exception:
+            pass
+        # simple chooser via yes/no tiers
+        use_t1 = messagebox.askyesno(
+            "Locales",
+            f"Dùng bộ T1 commercial?\n\n{default_locs}\n\n"
+            "Yes = bộ này · No = chỉ en,vi,zh-CN,ja,ko,es",
+        )
+        locales = default_locs if use_t1 else "zh-CN,ja,ko,es,pt-BR,id"
+        try:
+            if hasattr(C, "set_course_locales"):
+                C.set_course_locales(locales)
+        except Exception:
+            pass
+        from tkinter import simpledialog
+        only_raw = simpledialog.askstring(
+            "Selective localize",
+            "Chỉ dịch bài khớp (substring, cách nhau bởi dấu phẩy).\n"
+            "Để trống = tất cả bài.\n\nVD: Intro, MCP, Agents",
+            parent=self.root,
+        )
+        force = messagebox.askyesno("Localize", "Ghi đè bản dịch đã có?")
+        cmd = [PY, "course_studio.py"] + args + ["--localize", "--locales", locales]
+        if force:
+            cmd.append("--force")
+        if only_raw and only_raw.strip():
+            for part in only_raw.split(","):
+                part = part.strip()
+                if part:
+                    cmd += ["--only", part]
+        self.write(f"🌍 Localize → {locales}" + (f" · only={only_raw}" if only_raw else ""))
+        self.start(cmd, "COURSE STUDIO LOCALIZE", on_done=self._after_course_localize)
+
+    def _after_course_localize(self):
+        try:
+            course, _ = self._report_args()
+            root = Path(self.course_root(course)) if course else None
+            hub = root / "_upgrade_v2" / "locales" if root else None
+            self.write(f"✓ Locale hub → {hub}")
+            if hub and hub.exists() and messagebox.askyesno("Localize xong", f"Mở locale hub?\n{hub}"):
+                self._open_path(hub)
+        except Exception as e:
+            self.write(f"[localize] {e}")
+
+    def do_course_video(self):
+        course, args = self._report_args()
+        if args is None:
+            return
+        from tkinter import simpledialog
+        provider = simpledialog.askstring(
+            "Video / TTS provider",
+            "Provider: omnivoice | elevenlabs | heygen | synthesia | local\n"
+            "(omnivoice = clone ref.wav local MPS · local = macOS say)",
+            initialvalue="omnivoice",
+            parent=self.root,
+        )
+        if not provider:
+            return
+        provider = provider.strip().lower()
+        if provider not in ("elevenlabs", "heygen", "synthesia", "local", "omnivoice", "omni"):
+            messagebox.showinfo(
+                "Provider",
+                "Dùng: omnivoice / elevenlabs / heygen / synthesia / local",
+            )
+            return
+        locale = simpledialog.askstring(
+            "Locale (tuỳ chọn)",
+            "Locale code để render từ locales/<code>/ (voice map).\n"
+            "Để trống = master scripts trong _upgrade_v2/",
+            parent=self.root,
+        )
+        locale = (locale or "").strip()
+        do_run = messagebox.askyesno(
+            "Video lab",
+            "Yes = prepare + RUN queue (gọi API / local TTS)\n"
+            "No  = chỉ prepare queue + captions/SSML",
+        )
+        limit = 0
+        if do_run:
+            lim_s = simpledialog.askstring(
+                "Limit",
+                "Giới hạn số job render (0 = tất cả). Khuyến nghị test 1–2 trước.",
+                initialvalue="2",
+                parent=self.root,
+            )
+            try:
+                limit = int((lim_s or "0").strip() or "0")
+            except ValueError:
+                limit = 2
+        cmd = [PY, "course_video.py"] + args + ["--prepare", "--provider", provider]
+        if locale:
+            cmd += ["--locale", locale]
+        if do_run:
+            cmd.append("--run-queue")
+            if limit > 0:
+                cmd += ["--limit", str(limit)]
+        self.write(
+            f"🎥 Video lab · {provider}"
+            + (f" · locale={locale}" if locale else "")
+            + (" · RUN" if do_run else " · prepare only")
+        )
+        self.start(
+            cmd,
+            "VIDEO LAB",
+            on_done=lambda: self.write("✓ Xem _upgrade_v2/_video_queue.md (+ audio/video nếu render OK)"),
+        )
+
+    def do_course_review(self):
+        course, args = self._report_args()
+        if args is None:
+            return
+        from tkinter import simpledialog
+        action = simpledialog.askstring(
+            "Locale review",
+            "Hành động:\n"
+            "  build  — quét locales → _locale_review.json\n"
+            "  export — TSV pending\n"
+            "  status — thống kê\n"
+            "  relocalize — force dịch lại rejected\n"
+            "  approve-all — bulk approve pending\n"
+            "  approve LOCALE|LESSON\n"
+            "  reject LOCALE|LESSON",
+            initialvalue="build",
+            parent=self.root,
+        )
+        if not action:
+            return
+        action = action.strip()
+        low = action.lower()
+        cmd = [PY, "course_review.py"] + args
+        if low in ("build", "b", ""):
+            cmd.append("--build")
+        elif low in ("export", "e", "export-pending"):
+            cmd.append("--export-pending")
+        elif low in ("status", "s"):
+            cmd.append("--status")
+        elif low in ("relocalize", "relocalize-rejected", "re"):
+            cmd.append("--relocalize-rejected")
+        elif low in ("approve-all", "approve-all-pending"):
+            cmd.append("--approve-all-pending")
+        elif low in ("side", "side-by-side", "sbs", "html"):
+            cmd += ["--side-by-side", "--filter", "pending"]
+        elif low in ("render", "render-approved"):
+            from tkinter import simpledialog
+            loc = simpledialog.askstring(
+                "Render approved",
+                "Locale đã approve (bắt buộc, VD: es):",
+                parent=self.root,
+            ) or ""
+            prov = simpledialog.askstring(
+                "Provider",
+                "elevenlabs | local | heygen",
+                initialvalue="local",
+                parent=self.root,
+            ) or "local"
+            cmd += ["--render-approved", "--locale", loc.strip(), "--provider", prov.strip(), "--limit", "2"]
+        elif low.startswith("approve ") or low.startswith("reject "):
+            parts = action.split(None, 1)
+            verb = parts[0].lower()
+            rest = (parts[1] if len(parts) > 1 else "").strip()
+            if "|" in rest:
+                loc, les = rest.split("|", 1)
+            else:
+                bits = rest.split(None, 1)
+                loc = bits[0] if bits else ""
+                les = bits[1] if len(bits) > 1 else ""
+            note = simpledialog.askstring("Note", "Ghi chú (tuỳ chọn):", parent=self.root) or ""
+            cmd += [f"--{verb}", loc.strip(), les.strip()]
+            if note:
+                cmd += ["--note", note]
+        else:
+            cmd.append("--build")
+        self.write(f"👀 Locale review · {action}")
+        def _after_rev():
+            self.write("✓ Xem _upgrade_v2/_locale_review.md / side_by_side.html")
+            if "--side-by-side" in cmd:
+                try:
+                    course, _ = self._report_args()
+                    p = Path(self.course_root(course)) / "_upgrade_v2" / "_locale_review_side_by_side.html"
+                    if p.exists() and messagebox.askyesno("Review", f"Mở side-by-side?\n{p}"):
+                        self._open_path(p)
+                except Exception as e:
+                    self.write(f"[review] {e}")
+        self.start(cmd, "LOCALE REVIEW", on_done=_after_rev)
+
+    def do_course_pptx_thumbs(self):
+        course, args = self._report_args()
+        if args is None:
+            return
+        both = messagebox.askyesno(
+            "PPTX + Thumbs",
+            "Yes = PPTX + thumbnails\nNo = chỉ PPTX",
+        )
+        self.write("📑 PPTX export…")
+        def chain():
+            if both:
+                self.start(
+                    [PY, "course_thumbs.py"] + args,
+                    "THUMBNAILS",
+                    on_done=lambda: self.write("✓ _pptx/ + _thumbnails/"),
+                )
+            else:
+                self.write("✓ _pptx/")
+        self.start([PY, "course_pptx.py"] + args, "PPTX PACK", on_done=chain)
+
+    def do_course_incremental(self):
+        course, args = self._report_args()
+        if args is None:
+            return
+        do_run = messagebox.askyesno(
+            "Incremental",
+            "Yes = SCAN + RUN (research quick nếu cần + regen assets thiếu)\n"
+            "No  = chỉ SCAN plan",
+        )
+        cmd = [PY, "course_incremental.py"] + args
+        if do_run:
+            cmd += ["--run", "--research-quick"]
+        else:
+            cmd.append("--scan")
+        self.write("⚡ Incremental…")
+        self.start(
+            cmd,
+            "INCREMENTAL",
+            on_done=lambda: self.write("✓ Xem _incremental_plan.md"),
+        )
+
+    def do_cost_dashboard(self):
+        course, args = self._report_args()
+        if args is None:
+            return
+        self.start(
+            [PY, "course_ops.py"] + args + ["--cost-dashboard"],
+            "COST DASHBOARD",
+            on_done=self._after_cost_dashboard,
+        )
+
+    def _after_cost_dashboard(self):
+        try:
+            course, _ = self._report_args()
+            p = Path(self.course_root(course)) / "_cost_dashboard.md"
+            if p.exists():
+                self.write(p.read_text(encoding="utf-8", errors="replace")[:2000])
+                if messagebox.askyesno("Cost", f"Mở dashboard?\n{p}"):
+                    self._open_path(p)
+        except Exception as e:
+            self.write(f"[cost] {e}")
+
+    def do_course_schedule(self):
+        course, args = self._report_args()
+        if args is None:
+            return
+        from tkinter import simpledialog
+        # course name from args
+        cname = course or ""
+        act = simpledialog.askstring(
+            "Schedule re-upgrade",
+            "install | uninstall | list | run-now\n\n"
+            "install = launchd (macOS) / cron (khác)",
+            initialvalue="install",
+            parent=self.root,
+        )
+        if not act:
+            return
+        act = act.strip().lower()
+        cmd = [PY, "course_schedule.py"]
+        if act == "list":
+            cmd.append("--list")
+        elif act == "uninstall":
+            cmd += ["--course", cname, "--uninstall"]
+        elif act == "run-now":
+            cmd += ["--course", cname, "--run-now"]
+        else:
+            interval = simpledialog.askstring(
+                "Interval",
+                "daily | weekly | monthly",
+                initialvalue="weekly",
+                parent=self.root,
+            ) or "weekly"
+            cmd += ["--course", cname, "--install", "--interval", interval.strip()]
+        self.write(f"🗓 Schedule · {act} · {cname}")
+        self.start(cmd, "SCHEDULE UPGRADE")
+
+    def do_course_board(self):
+        course, args = self._report_args()
+        if args is None:
+            return
+        from tkinter import simpledialog
+        act = simpledialog.askstring(
+            "Curriculum board",
+            "html | show | add-chapter TITLE | add-lesson CH|TITLE | export-md\n\n"
+            "VD:\n  html  (khuyến nghị — mở board trong browser)\n  show\n  add-chapter AI Agents 2026",
+            initialvalue="html",
+            parent=self.root,
+        )
+        if not act:
+            return
+        act = act.strip()
+        low = act.lower()
+        cmd = [PY, "course_board.py"] + args
+        if low in ("html", "h", "board"):
+            cmd.append("--html")
+        elif low in ("show", "s", ""):
+            cmd.append("--show")
+        elif low in ("export-md", "export", "md"):
+            cmd.append("--export-md")
+        elif low.startswith("add-chapter ") or low.startswith("chapter "):
+            title = act.split(None, 1)[1].strip()
+            goal = simpledialog.askstring("Goal", "Mục tiêu chương (tuỳ chọn):", parent=self.root) or ""
+            cmd += ["--add-chapter", title]
+            if goal:
+                cmd += ["--goal", goal]
+        elif low.startswith("add-lesson ") or low.startswith("lesson "):
+            rest = act.split(None, 1)[1].strip()
+            if "|" in rest:
+                ch, title = rest.split("|", 1)
+            else:
+                bits = rest.split(None, 1)
+                ch = bits[0]
+                title = bits[1] if len(bits) > 1 else "New lesson"
+            purpose = simpledialog.askstring("Purpose", "Purpose (tuỳ chọn):", parent=self.root) or ""
+            cmd += ["--add-lesson", ch.strip(), title.strip()]
+            if purpose:
+                cmd += ["--purpose", purpose]
+        else:
+            cmd.append("--html")
+        self.write(f"📐 Board · {act}")
+        def _after_board():
+            if "--html" in cmd:
+                try:
+                    course, _ = self._report_args()
+                    p = Path(self.course_root(course)) / "_curriculum_board.html"
+                    if p.exists() and messagebox.askyesno("Board", f"Mở board HTML?\n{p}"):
+                        self._open_path(p)
+                except Exception as e:
+                    self.write(f"[board] {e}")
+        self.start(cmd, "CURRICULUM BOARD", on_done=_after_board)
+
+    def do_course_portfolio(self):
+        self.write("🗂 Portfolio multi-course…")
+        self.start(
+            [PY, "course_portfolio.py", "--html"],
+            "PORTFOLIO",
+            on_done=self._after_portfolio,
+        )
+
+    def _after_portfolio(self):
+        try:
+            p = Path(C.BASE) / "_course_portfolio.html"
+            if p.exists() and messagebox.askyesno("Portfolio", f"Mở portfolio?\n{p}"):
+                self._open_path(p)
+        except Exception as e:
+            self.write(f"[portfolio] {e}")
+
+    def do_course_portal(self):
+        course, args = self._report_args()
+        if args is None:
+            return
+        self.write("🎓 Student portal…")
+        self.start(
+            [PY, "course_portal.py"] + args,
+            "STUDENT PORTAL",
+            on_done=self._after_portal,
+        )
+
+    def _after_portal(self):
+        try:
+            course, _ = self._report_args()
+            p = Path(self.course_root(course)) / "_student_portal" / "index.html"
+            if p.exists() and messagebox.askyesno("Portal", f"Mở student portal?\n{p}"):
+                self._open_path(p)
+        except Exception as e:
+            self.write(f"[portal] {e}")
+
+    def do_course_ab(self):
+        course, args = self._report_args()
+        if args is None:
+            return
+        use_llm = messagebox.askyesno(
+            "A/B titles",
+            "Dùng LLM để viết variants? (tốn token)\nNo = rule-based nhanh",
+        )
+        cmd = [PY, "course_ab.py"] + args
+        if use_llm:
+            cmd.append("--llm")
+        self.write("🧪 A/B titles…")
+        self.start(cmd, "AB TITLES", on_done=lambda: self.write("✓ _ab_titles/"))
+
+    def do_voice_preview(self):
+        course, args = self._report_args()
+        if args is None:
+            return
+        from tkinter import simpledialog
+        provider = simpledialog.askstring(
+            "Voice preview",
+            "Provider: elevenlabs | local",
+            initialvalue="local",
+            parent=self.root,
+        ) or "local"
+        locale = simpledialog.askstring(
+            "Locale",
+            "Locale code (trống = master):",
+            parent=self.root,
+        ) or ""
+        cmd = [PY, "course_video.py"] + args + ["--preview-voice", "--provider", provider.strip()]
+        if locale.strip():
+            cmd += ["--locale", locale.strip()]
+        self.write(f"🔊 Voice preview · {provider}")
+        self.start(
+            cmd,
+            "VOICE PREVIEW",
+            on_done=lambda: self.write("✓ _upgrade_v2/_voice_previews/"),
+        )
+
+    def do_course_competitor(self):
+        course, args = self._report_args()
+        if args is None:
+            return
+        use_llm = messagebox.askyesno(
+            "Competitor scan",
+            "Chạy LLM gap analysis sau khi crawl web?\n"
+            "Yes = tốn token · No = chỉ danh sách kết quả web",
+        )
+        cmd = [PY, "course_competitor.py"] + args
+        if use_llm:
+            cmd.append("--llm")
+        self.write("🕵️ Competitor scan…")
+        self.start(
+            cmd,
+            "COMPETITOR SCAN",
+            on_done=self._after_competitor,
+        )
+
+    def _after_competitor(self):
+        try:
+            course, _ = self._report_args()
+            p = Path(self.course_root(course)) / "_Competitor_Scan.md"
+            if p.exists() and messagebox.askyesno("Competitor", f"Mở report?\n{p}"):
+                self._open_path(p)
+        except Exception as e:
+            self.write(f"[competitor] {e}")
+
+    def do_course_notion(self):
+        course, args = self._report_args()
+        if args is None:
+            return
+        from tkinter import simpledialog
+        do_export = messagebox.askyesno(
+            "Notion",
+            "Export Notion-ready markdown pack?\nYes = export · No = chỉ webhook",
+        )
+        cmd = [PY, "course_notion.py"] + args
+        if do_export:
+            cmd.append("--export")
+        wh = simpledialog.askstring(
+            "Webhook (tuỳ chọn)",
+            "Webhook URL (Slack/Discord/Make/n8n).\n"
+            "Để trống = dùng COURSE_OS_WEBHOOK / settings nếu có.",
+            parent=self.root,
+        )
+        if wh and wh.strip():
+            cmd += ["--webhook", wh.strip()]
+        elif not do_export:
+            # try settings-only webhook
+            cmd.append("--export")
+        self.write("📓 Notion / webhook…")
+        self.start(
+            cmd,
+            "NOTION EXPORT",
+            on_done=self._after_notion,
+        )
+
+    def _after_notion(self):
+        try:
+            course, _ = self._report_args()
+            p = Path(self.course_root(course)) / "_notion_export"
+            if p.exists() and messagebox.askyesno("Notion", f"Mở pack?\n{p}"):
+                self._open_path(p)
+        except Exception as e:
+            self.write(f"[notion] {e}")
+
+    def do_omnivoice_tts(self):
+        """TTS OmniVoice: bật/tắt + render 1 bài / cả khóa + mở Streamlit."""
+        course, args = self._report_args()
+        if args is None:
+            return
+        from tkinter import simpledialog
+        act = simpledialog.askstring(
+            "OmniVoice TTS",
+            "Hành động:\n"
+            "  ui          — mở Streamlit OmniVoice\n"
+            "  board       — HTML bật/tắt từng bài\n"
+            "  playlist    — HTML nghe các WAV đã TTS\n"
+            "  status      — thống kê bật/tắt + wav\n"
+            "  on-all      — bật TTS mọi bài\n"
+            "  off-all     — tắt TTS mọi bài\n"
+            "  one LESSON  — TTS 1 bài (substring)\n"
+            "  all         — TTS cả khóa (chỉ bài đang bật)\n"
+            "  all-limit N — TTS tối đa N bài",
+            initialvalue="board",
+            parent=self.root,
+        )
+        if not act:
+            return
+        act = act.strip()
+        low = act.lower()
+        cmd = [PY, "course_omnivoice.py"] + args
+        if low in ("ui", "streamlit", "app"):
+            cmd = [PY, "course_omnivoice.py", "--streamlit"]
+            self.write("🎙️ Mở Streamlit OmniVoice…")
+            self.start(cmd, "OMNIVOICE UI")
+            return
+        if low in ("board", "toggle", "html"):
+            cmd.append("--toggle-board")
+            self.write("🎙️ TTS toggle board…")
+            self.start(cmd, "OMNIVOICE BOARD", on_done=self._after_tts_board)
+            return
+        if low in ("playlist", "pl", "listen"):
+            cmd.append("--playlist")
+            self.write("🎙️ TTS playlist…")
+            self.start(cmd, "OMNIVOICE PLAYLIST", on_done=self._after_tts_playlist)
+            return
+        if low in ("status", "s"):
+            cmd.append("--status")
+        elif low in ("on-all", "enable-all", "on"):
+            cmd.append("--enable-all")
+        elif low in ("off-all", "disable-all", "off"):
+            cmd.append("--disable-all")
+        elif low.startswith("one ") or low.startswith("lesson "):
+            les = act.split(None, 1)[1].strip()
+            cmd += ["--lesson", les, "--force"]
+        elif low.startswith("all-limit"):
+            parts = act.split()
+            lim = parts[-1] if len(parts) > 1 else "3"
+            cmd += ["--all", "--limit", lim, "--force"]
+        elif low in ("all", "run", "course"):
+            lim = simpledialog.askstring(
+                "Limit",
+                "Số bài tối đa (0 = tất cả). Khuyến nghị test 1–3 trước.",
+                initialvalue="2",
+                parent=self.root,
+            ) or "2"
+            cmd += ["--all", "--force"]
+            if lim.strip() and lim.strip() != "0":
+                cmd += ["--limit", lim.strip()]
+        else:
+            cmd.append("--status")
+        self.write(f"🎙️ OmniVoice · {act}")
+        self.start(
+            cmd,
+            "OMNIVOICE TTS",
+            on_done=lambda: self.write("✓ WAV trong _upgrade_v2/.../tts_omnivoice.wav"),
+        )
+
+    def _after_tts_board(self):
+        try:
+            course, _ = self._report_args()
+            p = Path(self.course_root(course)) / "_upgrade_v2" / "_tts_toggle_board.html"
+            if p.exists() and messagebox.askyesno("TTS board", f"Mở board bật/tắt?\n{p}"):
+                self._open_path(p)
+        except Exception as e:
+            self.write(f"[tts board] {e}")
+
+    def _after_tts_playlist(self):
+        try:
+            course, _ = self._report_args()
+            p = Path(self.course_root(course)) / "_upgrade_v2" / "_tts_playlist" / "index.html"
+            if p.exists() and messagebox.askyesno("Playlist", f"Mở playlist?\n{p}"):
+                self._open_path(p)
+        except Exception as e:
+            self.write(f"[tts playlist] {e}")
+
+    def do_course_finish(self):
+        course, args = self._report_args()
+        if args is None:
+            return
+        mode = messagebox.askyesno(
+            "FINISH ALL",
+            "Yes = OFFLINE (không cần LLM — bootstrap từ dump)\n"
+            "No  = Full (cần API key research/assets/localize)",
+        )
+        offline = bool(mode)
+        dry = messagebox.askyesno(
+            "Plan",
+            "Yes = DRY-RUN (chỉ xem plan)\nNo = CHẠY THẬT",
+        )
+        cmd = [PY, "course_finish.py"] + args
+        if dry:
+            cmd.append("--dry-run")
+            if offline:
+                cmd.append("--offline")
+        elif offline:
+            cmd.append("--offline")
+            cmd += ["--provider", "local"]
+        else:
+            cmd.append("--finish")
+            cmd += ["--provider", "local"]
+            skip_loc = messagebox.askyesno(
+                "Localize",
+                "Bỏ qua localize (nhiều token)?\nYes = skip · No = chạy localize",
+            )
+            if skip_loc:
+                cmd.append("--skip-localize")
+        self.write("🚀 Course FINISH…" + (" offline" if offline else ""))
+        self.start(cmd, "COURSE FINISH ALL", on_done=self._after_finish)
+
+    def _after_finish(self):
+        try:
+            course, _ = self._report_args()
+            root = Path(self.course_root(course)) if course else None
+            md = root / "_course_finish.md" if root else None
+            if md and md.exists():
+                self.write(md.read_text(encoding="utf-8", errors="replace")[:2500])
+            if root and messagebox.askyesno("Finish", f"Mở thư mục khóa?\n{root}"):
+                self._open_path(root)
+        except Exception as e:
+            self.write(f"[finish] {e}")
+
+    def do_course_status(self):
+        course, args = self._report_args()
+        if args is None:
+            return
+        self.write("📊 Pipeline status…")
+        self.start(
+            [PY, "course_status.py"] + args + ["--md"],
+            "COURSE STATUS",
+            on_done=self._after_course_status,
+        )
+
+    def _after_course_status(self):
+        try:
+            course, _ = self._report_args()
+            root = Path(self.course_root(course)) if course else None
+            md = root / "_course_status.md" if root else None
+            if md and md.exists():
+                self.write(md.read_text(encoding="utf-8", errors="replace")[:2500])
+                if messagebox.askyesno("Status", f"Mở _course_status.md?\n{md}"):
+                    self._open_path(md)
+        except Exception as e:
+            self.write(f"[status] {e}")
+
+    def do_course_slides(self):
+        course, args = self._report_args()
+        if args is None:
+            return
+        self.write("🖼 Export slides HTML…")
+        self.start(
+            [PY, "course_slides.py"] + args,
+            "SLIDES PACK",
+            on_done=self._after_course_slides,
+        )
+
+    def _after_course_slides(self):
+        try:
+            course, _ = self._report_args()
+            root = Path(self.course_root(course)) if course else None
+            hub = root / "_slides" if root else None
+            if hub and hub.exists() and messagebox.askyesno("Slides", f"Mở _slides?\n{hub}"):
+                self._open_path(hub)
+        except Exception as e:
+            self.write(f"[slides] {e}")
+
+    def do_course_ops(self):
+        course, args = self._report_args()
+        if args is None:
+            return
+        from tkinter import simpledialog
+        act = simpledialog.askstring(
+            "Course ops",
+            "init | glossary | budget | budget-cap N | glossary-add TERM | version-bump\n\n"
+            "VD:\n  init\n  budget\n  budget-cap 40\n  glossary-add n8n",
+            initialvalue="init",
+            parent=self.root,
+        )
+        if not act:
+            return
+        act = act.strip()
+        low = act.lower()
+        cmd = [PY, "course_ops.py"] + args
+        if low in ("init", "i"):
+            cmd.append("--init")
+        elif low in ("glossary", "g", "glossary-show"):
+            cmd.append("--glossary-show")
+        elif low in ("budget", "b", "budget-show"):
+            cmd.append("--budget-show")
+        elif low.startswith("budget-cap "):
+            try:
+                cap = float(act.split(None, 1)[1])
+            except Exception:
+                messagebox.showerror("Ops", "budget-cap cần số, VD: budget-cap 40")
+                return
+            cmd += ["--budget-cap", str(cap)]
+        elif low.startswith("glossary-add "):
+            term = act.split(None, 1)[1].strip()
+            cmd += ["--glossary-add", term]
+        elif low in ("version-bump", "version", "v"):
+            cmd += ["--version-bump", "manual"]
+        elif low in ("budget-reset", "reset"):
+            cmd.append("--budget-reset")
+        else:
+            cmd.append("--init")
+        self.write(f"🧰 Ops · {act}")
+        self.start(cmd, "COURSE OPS")
+
+    def do_media_keys(self):
+        """Lưu ElevenLabs / HeyGen / Synthesia API keys vào .settings.json."""
+        from tkinter import simpledialog
+        provider = simpledialog.askstring(
+            "Media provider",
+            "elevenlabs | heygen | synthesia",
+            initialvalue="elevenlabs",
+            parent=self.root,
+        )
+        if not provider:
+            return
+        provider = provider.strip().lower()
+        if provider not in ("elevenlabs", "heygen", "synthesia"):
+            messagebox.showinfo("Media", "Chọn: elevenlabs / heygen / synthesia")
+            return
+        # show masked current
+        try:
+            import course_video as CV
+            cur = CV.media_key(provider)
+            mask = (cur[:8] + "…" + cur[-4:]) if cur and len(cur) > 14 else ("(đã có)" if cur else "(trống)")
+        except Exception:
+            mask = "?"
+        key = simpledialog.askstring(
+            f"API key — {provider}",
+            f"Key hiện tại: {mask}\n\nDán key mới (hoặc để trống để giữ nguyên):",
+            parent=self.root,
+            show="*",
+        )
+        if key is None:
+            return
+        if not key.strip():
+            messagebox.showinfo("Media", "Không đổi key.")
+            return
+        try:
+            import course_video as CV
+            CV.save_media_key(provider, key.strip())
+            self.write(f"🔑 Saved media key · {provider}")
+            messagebox.showinfo("Media", f"Đã lưu key {provider}.\nChạy Video lab → prepare + run-queue.")
+        except Exception as e:
+            messagebox.showerror("Media", str(e))
+
+    def do_course_publish(self):
+        course, args = self._report_args()
+        if args is None:
+            return
+        self.start([PY, "course_publish.py"] + args + ["--all"], "PUBLISH PACKS",
+                   on_done=self._after_course_publish)
+
+    def _after_course_publish(self):
+        try:
+            course, _ = self._report_args()
+            root = Path(self.course_root(course)) if course else None
+            pub = root / "_publish" if root else None
+            if pub and pub.exists() and messagebox.askyesno("Publish", f"Mở _publish?\n{pub}"):
+                self._open_path(pub)
+        except Exception as e:
+            self.write(f"[publish] {e}")
+
+    def do_course_qa(self):
+        course, args = self._report_args()
+        if args is None:
+            return
+        do_fc = messagebox.askyesno(
+            "QA",
+            "Chạy fact-check LLM (tốn token) cho vài bài?\n\n"
+            "Yes = loc-qa + diff + eval + fact-check(5)\n"
+            "No = chỉ loc-qa + diff + eval",
+        )
+        cmd = [PY, "course_qa.py"] + args + ["--all"]
+        if do_fc:
+            cmd += ["--fact-check", "--limit", "5"]
+        self.start(cmd, "COURSE QA", on_done=lambda: self.write("✓ QA reports trong khóa / _upgrade_v2/"))
+
+    def show_studio(self):
+        """Course Studio — wizard 1 pipeline + các bước lẻ."""
+        self.set_nav("studio")
+        self.clear()
+        self.head(
+            "Course Studio",
+            "Wizard: inventory → research → structure → assets → video → localize → publish. "
+            "Cần LLM API trên Dashboard.",
+        )
+        items = self.existing_courses()
+        card = self.card()
+        if items:
+            ctk.CTkLabel(card, text="Chọn khóa", font=(FT, 12, "bold"), text_color=TEXT2).pack(
+                anchor="w", padx=16, pady=(12, 4)
+            )
+            self.studio_var = ctk.StringVar(value=items[0])
+            for it in items:
+                ctk.CTkRadioButton(
+                    card, text=it, variable=self.studio_var, value=it, font=(FT, 13),
+                    text_color=TEXT, fg_color=ACCENT, hover_color=ACCENT_H, border_color=BORDER,
+                ).pack(anchor="w", padx=18, pady=3)
+            ctk.CTkFrame(card, height=8, fg_color="transparent").pack()
+        else:
+            ctk.CTkLabel(card, text="Chưa có khóa — tải/dump trước.", font=(FT, 12), text_color=TEXT2).pack(
+                padx=16, pady=16
+            )
+            self.studio_var = ctk.StringVar(value="")
+
+        # options
+        opt = self.card()
+        ctk.CTkLabel(opt, text="Tuỳ chọn wizard", font=(FT, 12, "bold"), text_color=TEXT2).pack(
+            anchor="w", padx=16, pady=(12, 6)
+        )
+        self.st_depth = ctk.StringVar(value="standard")
+        drow = ctk.CTkFrame(opt, fg_color="transparent")
+        drow.pack(fill="x", padx=14, pady=4)
+        ctk.CTkLabel(drow, text="Research depth", font=(FT, 12), width=120, anchor="w").pack(side="left")
+        ctk.CTkOptionMenu(
+            drow, variable=self.st_depth, values=["quick", "standard", "deep"], width=140,
+            fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H, text_color=TEXT,
+        ).pack(side="left")
+        self.st_lang = ctk.StringVar(value="vi")
+        try:
+            self.st_lang.set(C.get_course_master_lang() if hasattr(C, "get_course_master_lang") else "vi")
+        except Exception:
+            pass
+        lrow = ctk.CTkFrame(opt, fg_color="transparent")
+        lrow.pack(fill="x", padx=14, pady=4)
+        ctk.CTkLabel(lrow, text="Master lang", font=(FT, 12), width=120, anchor="w").pack(side="left")
+        ctk.CTkOptionMenu(
+            lrow, variable=self.st_lang, values=["vi", "en"], width=100,
+            fg_color=CARD2, button_color=PRIMARY, button_hover_color=PRIMARY_H, text_color=TEXT,
+        ).pack(side="left")
+        self.st_skip_loc = ctk.BooleanVar(value=False)
+        self.st_skip_vid = ctk.BooleanVar(value=False)
+        self.st_skip_pub = ctk.BooleanVar(value=False)
+        self.st_require_appr = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(opt, text="Bỏ localize", variable=self.st_skip_loc, font=(FT, 12), text_color=TEXT,
+                        fg_color=ACCENT, hover_color=ACCENT_H, border_color=BORDER).pack(anchor="w", padx=16, pady=2)
+        ctk.CTkCheckBox(opt, text="Bỏ video prepare", variable=self.st_skip_vid, font=(FT, 12), text_color=TEXT,
+                        fg_color=ACCENT, hover_color=ACCENT_H, border_color=BORDER).pack(anchor="w", padx=16, pady=2)
+        ctk.CTkCheckBox(opt, text="Bỏ publish packs", variable=self.st_skip_pub, font=(FT, 12), text_color=TEXT,
+                        fg_color=ACCENT, hover_color=ACCENT_H, border_color=BORDER).pack(anchor="w", padx=16, pady=2)
+        ctk.CTkCheckBox(
+            opt, text="Bắt buộc approve research trước structure",
+            variable=self.st_require_appr, font=(FT, 12), text_color=TEXT,
+            fg_color=ACCENT, hover_color=ACCENT_H, border_color=BORDER,
+        ).pack(anchor="w", padx=16, pady=(2, 12))
+
+        act = self.card()
+        ctk.CTkLabel(act, text="Chạy", font=(FT, 12, "bold"), text_color=TEXT2).pack(
+            anchor="w", padx=16, pady=(12, 8)
+        )
+        r1 = ctk.CTkFrame(act, fg_color="transparent")
+        r1.pack(fill="x", padx=14, pady=4)
+        btn(r1, "▶  Wizard FULL", self.studio_run_full, kind="success", width=180).pack(side="left", padx=(0, 8))
+        btn(r1, "🚀 FINISH ALL", self.do_course_finish, kind="accent", width=140).pack(side="left", padx=4)
+        btn(r1, "✓ Approve research", self.studio_approve, kind="secondary", width=150).pack(side="left", padx=4)
+        btn(r1, "Δ Diff structure", self.studio_diff, kind="secondary", width=130).pack(side="left", padx=4)
+        r2 = ctk.CTkFrame(act, fg_color="transparent")
+        r2.pack(fill="x", padx=14, pady=(4, 8))
+        btn(r2, "Assets only", lambda: self.studio_partial("assets"), kind="secondary", width=120).pack(side="left", padx=(0, 4))
+        btn(r2, "Video only", lambda: self.studio_partial("video"), kind="secondary", width=120).pack(side="left", padx=4)
+        btn(r2, "Localize only", lambda: self.studio_partial("localize"), kind="secondary", width=120).pack(side="left", padx=4)
+        btn(r2, "Publish only", lambda: self.studio_partial("publish"), kind="secondary", width=120).pack(side="left", padx=4)
+        btn(r2, "QA", lambda: self.studio_partial("qa"), kind="secondary", width=80).pack(side="left", padx=4)
+        r3 = ctk.CTkFrame(act, fg_color="transparent")
+        r3.pack(fill="x", padx=14, pady=(0, 12))
+        btn(r3, "Locale review", lambda: self.studio_partial("review"), kind="secondary", width=120).pack(side="left", padx=(0, 4))
+        btn(r3, "Schedule", lambda: self.studio_partial("schedule"), kind="secondary", width=100).pack(side="left", padx=4)
+        btn(r3, "Board", lambda: self.studio_partial("board"), kind="secondary", width=90).pack(side="left", padx=4)
+        btn(r3, "Status", lambda: self.studio_partial("status"), kind="accent", width=90).pack(side="left", padx=4)
+        btn(r3, "Slides", lambda: self.studio_partial("slides"), kind="secondary", width=90).pack(side="left", padx=4)
+        btn(r3, "Ops", lambda: self.studio_partial("ops"), kind="secondary", width=70).pack(side="left", padx=4)
+
+        nav = ctk.CTkFrame(self.content, fg_color="transparent")
+        nav.pack(fill="x", pady=12)
+        btn(nav, "←  Dashboard", self.show_dashboard, kind="ghost", width=120).pack(side="left")
+        btn(nav, "LLM API", self.show_dashboard, kind="secondary", width=100).pack(side="right")
+
+    def _studio_course_args(self):
+        v = (self.studio_var.get() if hasattr(self, "studio_var") else "").strip()
+        if not v:
+            # fallback report var
+            v = (self.rep_var.get() if hasattr(self, "rep_var") else "").strip()
+        if not v:
+            messagebox.showinfo("Chưa chọn", "Chọn một khóa.")
+            return None
+        course = self.item_course(v) if hasattr(self, "item_course") else v
+        return course, (["--course", course] if course else [])
+
+    def studio_run_full(self):
+        r = self._studio_course_args()
+        if not r:
+            return
+        course, args = r
+        # questionnaire first (reuse upgrade flow lightly)
+        use_q = messagebox.askyesno(
+            "Questionnaire",
+            "Chạy questionnaire mong muốn khóa mới? (mặc định khuyến nghị Yes)",
+        )
+        answers_path = None
+        if use_q:
+            answers_path = self._show_upgrade_questionnaire(course)
+            if answers_path is None:
+                return
+        cmd = [PY, "course_wizard.py"] + args + ["--full", "--depth", self.st_depth.get(), "--lang", self.st_lang.get()]
+        if self.st_skip_loc.get():
+            cmd.append("--skip-localize")
+        if self.st_skip_vid.get():
+            cmd.append("--skip-video")
+        if self.st_skip_pub.get():
+            cmd.append("--skip-publish")
+        if self.st_require_appr.get():
+            cmd.append("--require-approve")
+        if answers_path:
+            cmd += ["--answers-file", str(answers_path)]
+        try:
+            if hasattr(C, "set_course_master_lang"):
+                C.set_course_master_lang(self.st_lang.get())
+        except Exception:
+            pass
+        self.write(f"🎬 Wizard FULL · {course} · depth={self.st_depth.get()} · lang={self.st_lang.get()}")
+        self.start(cmd, "COURSE WIZARD FULL", on_done=self._after_wizard)
+
+    def studio_approve(self):
+        r = self._studio_course_args()
+        if not r:
+            return
+        _, args = r
+        self.start([PY, "course_wizard.py"] + args + ["--approve-research"], "APPROVE RESEARCH")
+
+    def studio_diff(self):
+        r = self._studio_course_args()
+        if not r:
+            return
+        _, args = r
+        self.start([PY, "course_qa.py"] + args + ["--diff-structure"], "STRUCTURE DIFF")
+
+    def studio_partial(self, kind: str):
+        r = self._studio_course_args()
+        if not r:
+            return
+        course, args = r
+        if kind == "assets":
+            self.rep_var = getattr(self, "studio_var", None) or self.rep_var
+            self.do_course_assets()
+            return
+        if kind == "video":
+            self.rep_var = getattr(self, "studio_var", None) or self.rep_var
+            self.do_course_video()
+            return
+        if kind == "localize":
+            self.rep_var = getattr(self, "studio_var", None) or self.rep_var
+            self.do_course_localize()
+            return
+        if kind == "publish":
+            self.rep_var = getattr(self, "studio_var", None) or self.rep_var
+            self.do_course_publish()
+            return
+        if kind == "qa":
+            self.rep_var = getattr(self, "studio_var", None) or self.rep_var
+            self.do_course_qa()
+            return
+        if kind == "review":
+            self.rep_var = getattr(self, "studio_var", None) or self.rep_var
+            self.do_course_review()
+            return
+        if kind == "schedule":
+            self.rep_var = getattr(self, "studio_var", None) or self.rep_var
+            self.do_course_schedule()
+            return
+        if kind == "board":
+            self.rep_var = getattr(self, "studio_var", None) or self.rep_var
+            self.do_course_board()
+            return
+        if kind == "status":
+            self.rep_var = getattr(self, "studio_var", None) or self.rep_var
+            self.do_course_status()
+            return
+        if kind == "slides":
+            self.rep_var = getattr(self, "studio_var", None) or self.rep_var
+            self.do_course_slides()
+            return
+        if kind == "ops":
+            self.rep_var = getattr(self, "studio_var", None) or self.rep_var
+            self.do_course_ops()
+            return
+
+    def _after_wizard(self):
+        try:
+            r = self._studio_course_args()
+            if not r:
+                return
+            course, _ = r
+            root = Path(self.course_root(course))
+            self.write(f"✓ Wizard xong — xem {root}/_wizard_state.json · _upgrade_v2/ · _publish/")
+            if messagebox.askyesno("Wizard", f"Mở thư mục khóa?\n{root}"):
+                self._open_path(root)
+        except Exception as e:
+            self.write(f"[wizard] {e}")
 
     def do_knowledge_pack(self):
         v = self.rep_var.get().strip() if hasattr(self, "rep_var") else ""
@@ -1599,10 +3048,19 @@ class App:
     def show_dashboard(self):
         self.set_nav("dashboard")
         self.set_step(1); self.clear(); self.purpose = "import"
-        self.head("Dashboard", "Tổng quan kho khóa — tiến độ, dung lượng, cảnh báo. Chọn khóa để tải tiếp, xếp hàng đợi, chat hoặc đồng bộ cloud.")
+        self.head(
+            "Dashboard",
+            "URL khóa → Chạy · cấu hình LLM API + model theo tác vụ · quản lý khóa đã tải.",
+        )
 
         # --- Chọn folder lưu (BASE) ---
         self._build_output_folder_card(self.content)
+
+        # --- Quick Run: URL khóa ---
+        self._build_quick_run_card(self.content)
+
+        # --- LLM API + model theo tác vụ (trung tâm) ---
+        self._build_dashboard_llm_panel(self.content)
 
         try:
             miss = self.env_missing()
@@ -2511,6 +3969,495 @@ class App:
 
     def go_import(self): self.mode = "new"; self.purpose = "import"; self.show_step2()
 
+    # ---------- Dashboard Quick Run (URL khóa) ----------
+    def _build_quick_run_card(self, parent):
+        """O nhap URL khoa + tuy chon + nut Chay."""
+        card = ctk.CTkFrame(parent, fg_color=CARD, corner_radius=16,
+                            border_width=1, border_color=BORDER)
+        card.pack(fill="x", pady=(0, 10))
+        ctk.CTkLabel(
+            card, text="🚀  Chạy nhanh từ URL khóa Skool",
+            font=(FT, 14, "bold"), text_color=TEXT,
+        ).pack(anchor="w", padx=16, pady=(14, 4))
+        ctk.CTkLabel(
+            card,
+            text="Dán link community/classroom → Chạy. App mở browser (login nếu cần) → dump toàn bộ chương → tải video + transcript + (tuỳ chọn) summary.",
+            font=(FT, 11), text_color=TEXT2, wraplength=620, justify="left",
+        ).pack(anchor="w", padx=16, pady=(0, 8))
+
+        row = ctk.CTkFrame(card, fg_color="transparent")
+        row.pack(fill="x", padx=14, pady=(0, 6))
+        self.dash_url_var = ctk.StringVar(value="")
+        ent = ctk.CTkEntry(
+            row, textvariable=self.dash_url_var,
+            placeholder_text="https://www.skool.com/ten-khoa/classroom",
+            font=(FT, 13), height=40, corner_radius=10,
+            border_color=BORDER, fg_color=CARD2,
+        )
+        ent.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ent.bind("<Return>", lambda e: self.dash_quick_run())
+        self.b_quick_run = btn(row, "▶  Chạy", self.dash_quick_run, kind="success", width=110, height=40)
+        self.b_quick_run.pack(side="left")
+
+        # Toggles
+        opts = ctk.CTkFrame(card, fg_color="transparent")
+        opts.pack(fill="x", padx=14, pady=(4, 4))
+        try:
+            ts = bool(C.get_auto_transcribe()) if hasattr(C, "get_auto_transcribe") else True
+        except Exception:
+            ts = True
+        try:
+            sm = bool(C.get_auto_lesson_summary()) if hasattr(C, "get_auto_lesson_summary") else True
+        except Exception:
+            sm = True
+        try:
+            th = bool(C.get_download_thumbnails()) if hasattr(C, "get_download_thumbnails") else True
+        except Exception:
+            th = True
+        try:
+            rl = bool(C.get_fetch_resource_links()) if hasattr(C, "get_fetch_resource_links") else True
+        except Exception:
+            rl = True
+
+        self.opt_quick_transcribe = ctk.BooleanVar(value=ts)
+        self.opt_quick_summary = ctk.BooleanVar(value=sm)
+        self.opt_quick_thumbs = ctk.BooleanVar(value=th)
+        self.opt_quick_resources = ctk.BooleanVar(value=rl)
+
+        ctk.CTkCheckBox(
+            opts, text="Transcript (auto-detect ngôn ngữ)",
+            variable=self.opt_quick_transcribe, font=(FT, 12), text_color=TEXT,
+            fg_color=ACCENT, hover_color=ACCENT_H, border_color=BORDER,
+            command=self._save_quick_opts,
+        ).pack(anchor="w", pady=2)
+        ctk.CTkCheckBox(
+            opts, text="Summary từng bài (VI) — mặc định BẬT · có thể tắt",
+            variable=self.opt_quick_summary, font=(FT, 12), text_color=TEXT,
+            fg_color=ACCENT, hover_color=ACCENT_H, border_color=BORDER,
+            command=self._save_quick_opts,
+        ).pack(anchor="w", pady=2)
+        ctk.CTkCheckBox(
+            opts, text="Thumbnail ảnh bài / khóa (mặc định BẬT)",
+            variable=self.opt_quick_thumbs, font=(FT, 12), text_color=TEXT,
+            fg_color=ACCENT, hover_color=ACCENT_H, border_color=BORDER,
+            command=self._save_quick_opts,
+        ).pack(anchor="w", pady=2)
+        ctk.CTkCheckBox(
+            opts, text="Link & resources tham chiếu từng bài (mặc định BẬT)",
+            variable=self.opt_quick_resources, font=(FT, 12), text_color=TEXT,
+            fg_color=ACCENT, hover_color=ACCENT_H, border_color=BORDER,
+            command=self._save_quick_opts,
+        ).pack(anchor="w", pady=2)
+
+        # LLM gọn — cấu hình chi tiết ở panel bên dưới
+        try:
+            import llm_providers as PROV
+            ready_n = PROV.providers_status().get("ready_count", 0)
+            sm = PROV.get_task_llm("summary") if hasattr(PROV, "get_task_llm") else {}
+            llm_hint = (
+                f"LLM sẵn sàng: {ready_n} key · Summary: {sm.get('provider','?')}/{sm.get('model','?')} "
+                f"→ {sm.get('fallback','?')}  (cấu hình chi tiết ở panel «LLM API» bên dưới)"
+            )
+        except Exception:
+            llm_hint = "Cấu hình LLM API + model theo tác vụ ở panel bên dưới Dashboard."
+        ctk.CTkLabel(
+            card, text=llm_hint, font=(FT, 11), text_color=TEXT2, wraplength=620, justify="left",
+        ).pack(anchor="w", padx=16, pady=(6, 4))
+
+        self.dash_quick_status = ctk.CTkLabel(
+            card, text="", font=(FT, 12), text_color=ACCENT, wraplength=620, justify="left",
+        )
+        self.dash_quick_status.pack(anchor="w", padx=16, pady=(0, 12))
+
+    def _save_quick_opts(self):
+        try:
+            if hasattr(C, "set_auto_transcribe"):
+                C.set_auto_transcribe(bool(self.opt_quick_transcribe.get()))
+            if hasattr(C, "set_auto_lesson_summary"):
+                C.set_auto_lesson_summary(bool(self.opt_quick_summary.get()))
+            if hasattr(C, "set_download_thumbnails"):
+                C.set_download_thumbnails(bool(self.opt_quick_thumbs.get()))
+            if hasattr(C, "set_fetch_resource_links"):
+                C.set_fetch_resource_links(bool(self.opt_quick_resources.get()))
+        except Exception as e:
+            self.write(f"[settings] {e}")
+
+    def _on_dash_llm_change(self):
+        try:
+            import llm_providers as PROV
+            p = self.dash_llm_primary.get()
+            models = list(PROV.provider_meta(p).get("models") or [])
+            if models and hasattr(self, "dash_llm_model_menu"):
+                self.dash_llm_model_menu.configure(values=models)
+                self.dash_llm_model.set(models[0])
+        except Exception:
+            pass
+
+    def _on_dash_llm_fb_change(self):
+        try:
+            import llm_providers as PROV
+            p = self.dash_llm_fallback.get()
+            models = list(PROV.provider_meta(p).get("models") or [])
+            if models and hasattr(self, "dash_llm_fb_model_menu"):
+                self.dash_llm_fb_model_menu.configure(values=models)
+                self.dash_llm_fb_model.set(models[0])
+        except Exception:
+            pass
+
+    def _save_dash_llm(self):
+        """Legacy: đồng bộ summary task nếu còn widget cũ."""
+        try:
+            if not (hasattr(self, "dash_llm_primary") and self.dash_llm_primary):
+                return
+            p = self.dash_llm_primary.get()
+            m = self.dash_llm_model.get()
+            fb = self.dash_llm_fallback.get()
+            fm = self.dash_llm_fb_model.get()
+            import llm_providers as PROV
+            if hasattr(PROV, "set_task_llm"):
+                PROV.set_task_llm("summary", provider=p, model=m, fallback=fb, fallback_model=fm)
+            if hasattr(C, "set_lesson_summary_llm"):
+                C.set_lesson_summary_llm(provider=p, model=m, fallback=[fb], fallback_model=fm)
+            PROV.set_provider(p)
+            PROV.set_fallback_chain([p, fb])
+            PROV.save_provider_config(p, model=m)
+            PROV.save_provider_config(fb, model=fm)
+            self.write(f"✓ LLM summary: {p}/{m} → {fb}/{fm}")
+        except Exception as e:
+            self.write(f"[llm] {e}")
+
+    # ---------- Dashboard LLM panel (API keys + per-task models) ----------
+    def _build_dashboard_llm_panel(self, parent):
+        """Panel trung tâm: dán API key + chọn provider/model theo từng tác vụ chính."""
+        card = ctk.CTkFrame(parent, fg_color=CARD, corner_radius=16,
+                            border_width=1, border_color=BORDER)
+        card.pack(fill="x", pady=(0, 10))
+
+        head = ctk.CTkFrame(card, fg_color="transparent")
+        head.pack(fill="x", padx=16, pady=(14, 4))
+        ctk.CTkLabel(
+            head, text="🤖  LLM API & model theo tác vụ",
+            font=(FT, 14, "bold"), text_color=TEXT,
+        ).pack(side="left")
+        try:
+            import llm_providers as PROV
+            ready_n = PROV.providers_status().get("ready_count", 0)
+        except Exception:
+            ready_n = 0
+        self.dash_llm_status = ctk.CTkLabel(
+            head, text=f"{ready_n} key đã lưu", font=(FT, 11), text_color=SUCCESS if ready_n else WARNING,
+        )
+        self.dash_llm_status.pack(side="right")
+
+        ctk.CTkLabel(
+            card,
+            text="Key chỉ lưu trên máy (.settings.json). Chọn provider + model riêng cho Summary / Research / Structure / Assets / Localize / Prompt.",
+            font=(FT, 11), text_color=TEXT2, wraplength=640, justify="left",
+        ).pack(anchor="w", padx=16, pady=(0, 8))
+
+        # --- API keys (main providers) ---
+        key_box = ctk.CTkFrame(card, fg_color=CARD2, corner_radius=12)
+        key_box.pack(fill="x", padx=14, pady=(0, 8))
+        ctk.CTkLabel(
+            key_box, text="API keys (dán & Lưu từng dòng)",
+            font=(FT, 12, "bold"), text_color=TEXT2,
+        ).pack(anchor="w", padx=12, pady=(10, 4))
+
+        self._dash_key_vars = {}
+        key_providers = [
+            ("deepseek", "DeepSeek"),
+            ("gemini", "Gemini"),
+            ("anthropic", "Claude"),
+            ("openai", "OpenAI"),
+            ("grok", "Grok (xAI)"),
+            ("openrouter", "OpenRouter"),
+        ]
+        try:
+            import llm_providers as PROV
+        except Exception:
+            PROV = None
+
+        for pid, label in key_providers:
+            row = ctk.CTkFrame(key_box, fg_color="transparent")
+            row.pack(fill="x", padx=10, pady=3)
+            ctk.CTkLabel(row, text=label, font=(FT, 12), width=100, anchor="w").pack(side="left")
+            configured = False
+            placeholder = "dán API key…"
+            if PROV:
+                try:
+                    cfg = PROV.get_provider_config(pid)
+                    configured = bool(cfg.get("configured"))
+                    if configured:
+                        placeholder = "✓ đã lưu — dán key mới để ghi đè"
+                except Exception:
+                    pass
+            var = ctk.StringVar(value="")
+            self._dash_key_vars[pid] = var
+            ctk.CTkEntry(
+                row, textvariable=var, show="•", font=("Consolas", 11),
+                placeholder_text=placeholder, height=32,
+            ).pack(side="left", fill="x", expand=True, padx=6)
+            btn(
+                row, "Lưu",
+                lambda p=pid: self._dash_save_one_key(p),
+                kind="secondary", width=64, height=30,
+            ).pack(side="left")
+
+        ctk.CTkFrame(key_box, height=8, fg_color="transparent").pack()
+
+        # --- Per-task routing ---
+        task_box = ctk.CTkFrame(card, fg_color=CARD2, corner_radius=12)
+        task_box.pack(fill="x", padx=14, pady=(0, 8))
+        ctk.CTkLabel(
+            task_box, text="Model theo tác vụ (chính → fallback)",
+            font=(FT, 12, "bold"), text_color=TEXT2,
+        ).pack(anchor="w", padx=12, pady=(10, 6))
+
+        # header
+        hdr = ctk.CTkFrame(task_box, fg_color="transparent")
+        hdr.pack(fill="x", padx=10, pady=(0, 2))
+        for txt, w in (("Tác vụ", 150), ("Provider", 110), ("Model", 150), ("Fallback", 100), ("FB model", 140)):
+            ctk.CTkLabel(hdr, text=txt, font=(FT, 10, "bold"), text_color=TEXT2, width=w, anchor="w").pack(side="left", padx=2)
+
+        self._dash_task_widgets = {}
+        prov_ids = list(PROV.PROVIDERS.keys()) if PROV else ["deepseek", "gemini", "anthropic", "openai", "grok"]
+        tasks = list(PROV.LLM_TASKS.items()) if PROV and hasattr(PROV, "LLM_TASKS") else [
+            ("summary", {"title": "Summary"}),
+            ("research", {"title": "Research"}),
+            ("structure", {"title": "Structure"}),
+            ("assets", {"title": "Assets"}),
+            ("localize", {"title": "Localize"}),
+            ("prompt", {"title": "Prompt"}),
+        ]
+
+        for task_id, meta in tasks:
+            row = ctk.CTkFrame(task_box, fg_color="transparent")
+            row.pack(fill="x", padx=10, pady=3)
+            title = (meta or {}).get("title") or task_id
+            ctk.CTkLabel(row, text=title, font=(FT, 11), width=150, anchor="w", text_color=TEXT).pack(side="left", padx=2)
+
+            cfg = PROV.get_task_llm(task_id) if PROV and hasattr(PROV, "get_task_llm") else {
+                "provider": "deepseek", "model": "deepseek-chat",
+                "fallback": "gemini", "fallback_model": "gemini-2.0-flash",
+            }
+            p_var = ctk.StringVar(value=cfg.get("provider") or "deepseek")
+            m_var = ctk.StringVar(value=cfg.get("model") or "deepseek-chat")
+            f_var = ctk.StringVar(value=cfg.get("fallback") or "gemini")
+            fm_var = ctk.StringVar(value=cfg.get("fallback_model") or "gemini-2.0-flash")
+
+            p_menu = ctk.CTkOptionMenu(
+                row, variable=p_var, values=prov_ids, width=110,
+                fg_color=CARD, button_color=PRIMARY, button_hover_color=PRIMARY_H, text_color=TEXT,
+                command=lambda _=None, t=task_id: self._dash_task_provider_changed(t),
+            )
+            p_menu.pack(side="left", padx=2)
+
+            try:
+                p_models = list(PROV.get_provider_config(p_var.get()).get("models") or [m_var.get()])
+            except Exception:
+                p_models = [m_var.get()]
+            if m_var.get() not in p_models:
+                p_models = [m_var.get()] + p_models
+            m_menu = ctk.CTkOptionMenu(
+                row, variable=m_var, values=p_models, width=150,
+                fg_color=CARD, button_color=PRIMARY, button_hover_color=PRIMARY_H, text_color=TEXT,
+            )
+            m_menu.pack(side="left", padx=2)
+
+            f_menu = ctk.CTkOptionMenu(
+                row, variable=f_var, values=prov_ids, width=100,
+                fg_color=CARD, button_color=PRIMARY, button_hover_color=PRIMARY_H, text_color=TEXT,
+                command=lambda _=None, t=task_id: self._dash_task_fallback_changed(t),
+            )
+            f_menu.pack(side="left", padx=2)
+
+            try:
+                f_models = list(PROV.get_provider_config(f_var.get()).get("models") or [fm_var.get()])
+            except Exception:
+                f_models = [fm_var.get()]
+            if fm_var.get() not in f_models:
+                f_models = [fm_var.get()] + f_models
+            fm_menu = ctk.CTkOptionMenu(
+                row, variable=fm_var, values=f_models, width=140,
+                fg_color=CARD, button_color=PRIMARY, button_hover_color=PRIMARY_H, text_color=TEXT,
+            )
+            fm_menu.pack(side="left", padx=2)
+
+            self._dash_task_widgets[task_id] = {
+                "provider": p_var, "model": m_var, "fallback": f_var, "fallback_model": fm_var,
+                "model_menu": m_menu, "fb_model_menu": fm_menu,
+            }
+
+        ctk.CTkFrame(task_box, height=6, fg_color="transparent").pack()
+
+        # actions
+        act = ctk.CTkFrame(card, fg_color="transparent")
+        act.pack(fill="x", padx=14, pady=(4, 14))
+        btn(act, "💾  Lưu tất cả tác vụ", self._dash_save_all_tasks, kind="success", width=180, height=36).pack(side="left")
+        btn(act, "Áp DeepSeek→Gemini cho mọi tác vụ", self._dash_apply_default_routing, kind="secondary", width=240, height=36).pack(side="left", padx=8)
+        btn(act, "Xuất & Báo cáo", self.show_report, kind="ghost", width=130, height=36).pack(side="right")
+
+    def _dash_save_one_key(self, pid: str):
+        try:
+            import llm_providers as PROV
+            var = (self._dash_key_vars or {}).get(pid)
+            key = (var.get() if var else "").strip()
+            if not key:
+                messagebox.showinfo("API key", f"Dán key cho {pid} trước khi Lưu.")
+                return
+            PROV.save_provider_config(pid, api_key=key)
+            if var:
+                var.set("")
+            ready = PROV.providers_status().get("ready_count", 0)
+            if hasattr(self, "dash_llm_status") and self.dash_llm_status.winfo_exists():
+                self.dash_llm_status.configure(
+                    text=f"{ready} key đã lưu", text_color=SUCCESS if ready else WARNING,
+                )
+            self.write(f"✓ Đã lưu API key [{pid}]")
+            messagebox.showinfo("API key", f"Đã lưu key {pid}.")
+        except Exception as e:
+            messagebox.showerror("API key", str(e))
+
+    def _dash_task_provider_changed(self, task_id: str):
+        try:
+            import llm_providers as PROV
+            w = (self._dash_task_widgets or {}).get(task_id) or {}
+            pid = w["provider"].get()
+            models = list(PROV.get_provider_config(pid).get("models") or [])
+            if not models:
+                models = [PROV.get_provider_config(pid).get("model") or "model"]
+            menu = w.get("model_menu")
+            if menu and menu.winfo_exists():
+                menu.configure(values=models)
+                w["model"].set(models[0])
+        except Exception:
+            pass
+
+    def _dash_task_fallback_changed(self, task_id: str):
+        try:
+            import llm_providers as PROV
+            w = (self._dash_task_widgets or {}).get(task_id) or {}
+            pid = w["fallback"].get()
+            models = list(PROV.get_provider_config(pid).get("models") or [])
+            if not models:
+                models = [PROV.get_provider_config(pid).get("model") or "model"]
+            menu = w.get("fb_model_menu")
+            if menu and menu.winfo_exists():
+                menu.configure(values=models)
+                w["fallback_model"].set(models[0])
+        except Exception:
+            pass
+
+    def _dash_save_all_tasks(self, silent: bool = False):
+        try:
+            import llm_providers as PROV
+            n = 0
+            for task_id, w in (self._dash_task_widgets or {}).items():
+                PROV.set_task_llm(
+                    task_id,
+                    provider=w["provider"].get(),
+                    model=w["model"].get(),
+                    fallback=w["fallback"].get(),
+                    fallback_model=w["fallback_model"].get(),
+                )
+                n += 1
+            # global default = summary/research primary
+            sm = PROV.get_task_llm("summary")
+            PROV.set_provider(sm.get("provider") or "deepseek")
+            PROV.set_fallback_chain([
+                sm.get("provider") or "deepseek",
+                sm.get("fallback") or "gemini",
+            ])
+            self.write(f"✓ Đã lưu routing {n} tác vụ LLM")
+            if hasattr(self, "dash_quick_status") and self.dash_quick_status.winfo_exists():
+                self.dash_quick_status.configure(
+                    text=f"Đã lưu model theo tác vụ ({n}). Summary: {sm.get('provider')}/{sm.get('model')}"
+                )
+            if not silent:
+                messagebox.showinfo("LLM", f"Đã lưu cấu hình {n} tác vụ.\nKey vẫn lưu riêng từng provider.")
+        except Exception as e:
+            if not silent:
+                messagebox.showerror("LLM", str(e))
+            else:
+                self.write(f"[llm] {e}")
+
+    def _dash_apply_default_routing(self):
+        """One-click: mọi task DeepSeek → Gemini Flash."""
+        try:
+            import llm_providers as PROV
+            for task_id in (self._dash_task_widgets or {}):
+                w = self._dash_task_widgets[task_id]
+                w["provider"].set("deepseek")
+                self._dash_task_provider_changed(task_id)
+                # prefer deepseek-chat
+                models = list(PROV.get_provider_config("deepseek").get("models") or ["deepseek-chat"])
+                w["model"].set("deepseek-chat" if "deepseek-chat" in models else models[0])
+                w["fallback"].set("gemini")
+                self._dash_task_fallback_changed(task_id)
+                fmodels = list(PROV.get_provider_config("gemini").get("models") or ["gemini-2.0-flash"])
+                prefer = "gemini-2.0-flash" if "gemini-2.0-flash" in fmodels else fmodels[0]
+                w["fallback_model"].set(prefer)
+            self._dash_save_all_tasks(silent=False)
+        except Exception as e:
+            messagebox.showerror("LLM", str(e))
+
+    def dash_quick_run(self):
+        """Chay tu URL: open classroom → dump all → download pipeline."""
+        url = (self.dash_url_var.get() if hasattr(self, "dash_url_var") else "").strip()
+        info = C.parse_skool_course_url(url) if hasattr(C, "parse_skool_course_url") else {"ok": False, "error": "no parser"}
+        if not info.get("ok"):
+            messagebox.showinfo("URL", info.get("error") or "URL không hợp lệ.\nVD: https://www.skool.com/ten-khoa/classroom")
+            return
+        self._save_quick_opts()
+        # lưu task routing nếu panel đang hiện (silent)
+        try:
+            if getattr(self, "_dash_task_widgets", None):
+                self._dash_save_all_tasks(silent=True)
+        except Exception:
+            pass
+        slug = info["slug"]
+        classroom = info["classroom_url"]
+        self.course_name = slug
+        self.mode = "new"
+        self.purpose = "import"
+        self._quick_run = {
+            "slug": slug,
+            "url": classroom,
+            "transcribe": bool(self.opt_quick_transcribe.get()),
+            "summary": bool(self.opt_quick_summary.get()),
+            "thumbs": bool(self.opt_quick_thumbs.get()),
+            "resources": bool(self.opt_quick_resources.get()),
+        }
+        if hasattr(self, "dash_quick_status") and self.dash_quick_status.winfo_exists():
+            self.dash_quick_status.configure(
+                text=f"⏳ Đang mở {classroom} — login trong Chrome nếu cần…",
+                text_color=WARNING,
+            )
+        self.write(f"🚀 Quick Run: {slug} → {classroom}")
+        self.write(
+            f"  opts: transcript={self._quick_run['transcribe']} "
+            f"summary={self._quick_run['summary']} "
+            f"thumbs={self._quick_run['thumbs']} resources={self._quick_run['resources']}"
+        )
+        # Mo man step2 de nhin browser status + chapters
+        self.show_step2()
+        if hasattr(self, "dash_quick_status"):
+            pass  # step2 replaces UI
+        # start browser (neu da co sb -> open_course ngay; neu moi tao -> ready event se open_course)
+        try:
+            if self.sb is None:
+                from skool_browser import SkoolBrowser
+                self.sb = SkoolBrowser()
+                # open_course se goi khi event ready (xem on_browser_event)
+            else:
+                self.sb.open_course(classroom)
+            if hasattr(self, "b_list") and self.b_list.winfo_exists():
+                self.b_list.configure(state="normal")
+        except Exception as e:
+            self._quick_run = None
+            messagebox.showerror("Trình duyệt", f"Không mở được: {e}")
+            return
+
     # ---------- B3: kiem tra cap nhat khoa ----------
     def _saved_titles(self, root):
         """Ten chuong da luu (tu _chapters.json) -> de danh dau chuong MOI khi cap nhat."""
@@ -2788,7 +4735,10 @@ class App:
     def show_step3(self):
         self.set_step(3); self.clear(); self.purpose = "import"
         nm = self.course_name or "SkoolCourse (khóa hiện tại)"
-        self.head(f"Tải khóa: {nm}", "Chỉ tải phần còn thiếu. Có thể bật phụ đề tiếng Anh chạy ngầm sau khi tải.")
+        self.head(
+            f"Tải khóa: {nm}",
+            "Chỉ tải phần còn thiếu. Transcript: auto-detect ngôn ngữ + giới thiệu bài → video.txt + all transcript.txt.",
+        )
         sumcard = self.card()
         self.sum_lbl = ctk.CTkLabel(sumcard, text="⏳  Đang kiểm tra tiến độ…", font=(FT, 13),
                                     text_color=TEXT2, justify="left", wraplength=560)
@@ -2796,10 +4746,38 @@ class App:
         self.native_banner = ctk.CTkFrame(self.content, fg_color="transparent")
         self.native_banner.pack(fill="x")
         card = self.card()
-        self.opt_sub = ctk.BooleanVar(value=True)
-        ctk.CTkCheckBox(card, text="Tạo phụ đề tiếng Anh (chạy ngầm sau khi tải xong)",
-                        variable=self.opt_sub, font=(FT, 13), text_color=TEXT,
-                        fg_color=ACCENT, hover_color=ACCENT_H, border_color=BORDER).pack(anchor="w", padx=16, pady=(14, 6))
+        try:
+            auto_ts = bool(C.get_auto_transcribe()) if hasattr(C, "get_auto_transcribe") else True
+        except Exception:
+            auto_ts = True
+        self.opt_sub = ctk.BooleanVar(value=auto_ts)
+        ctk.CTkCheckBox(
+            card,
+            text="Tự lấy transcript (faster-whisper, auto-detect ngôn ngữ + giới thiệu bài). Bỏ tick = tắt.",
+            variable=self.opt_sub,
+            font=(FT, 13),
+            text_color=TEXT,
+            fg_color=ACCENT,
+            hover_color=ACCENT_H,
+            border_color=BORDER,
+            command=self._on_auto_transcribe_toggle,
+        ).pack(anchor="w", padx=16, pady=(14, 6))
+        try:
+            auto_sum = bool(C.get_auto_lesson_summary()) if hasattr(C, "get_auto_lesson_summary") else True
+        except Exception:
+            auto_sum = True
+        self.opt_lesson_sum = ctk.BooleanVar(value=auto_sum)
+        ctk.CTkCheckBox(
+            card,
+            text="Summary từng bài (VI) — Purpose / Summary / Todo… (mặc định BẬT · LLM DeepSeek→Gemini). Bỏ tick = tắt.",
+            variable=self.opt_lesson_sum,
+            font=(FT, 13),
+            text_color=TEXT,
+            fg_color=ACCENT,
+            hover_color=ACCENT_H,
+            border_color=BORDER,
+            command=self._on_auto_lesson_summary_toggle,
+        ).pack(anchor="w", padx=16, pady=(0, 6))
         self.opt_clean = ctk.BooleanVar(value=True)
         ctk.CTkCheckBox(card, text="🔁 Tự thử lại đến khi tải đủ (chờ nếu bị giới hạn)",
                         variable=self.opt_clean, font=(FT, 13), text_color=TEXT,
@@ -2958,7 +4936,7 @@ class App:
         for w in self.done_row.winfo_children(): w.destroy()
         self.refresh4()
         if hasattr(self, "run_lbl"): self.run_lbl.configure(text="✓  Hoàn tất", text_color=SUCCESS)
-        if getattr(self, "opt_sub", None) and self.opt_sub.get(): self.write("Bật phụ đề chạy ngầm..."); self.run_sub_on()
+        # Transcript da chay trong pipeline neu bat auto (khong can task Windows rieng)
         self._maybe_cloud_after(self.course_name)
         # auto index (Sprint A) — nen, khong block
         self._maybe_auto_index()
@@ -3451,6 +5429,8 @@ class App:
         if self.proc: messagebox.showinfo("Đang bận", "Đang tải — bấm Dừng trước đã."); return
         args = self._course_args() + self._worker_args()
         if getattr(self, "opt_clean", None) and self.opt_clean.get(): args.append("--until-clean")
+        args += self._auto_transcribe_args()
+        args += self._auto_lesson_summary_args()
         self.mgr_busy = "toàn bộ khóa"; self._mgr_busy_status()
         self.start([PY, "main.py"] + args, "TẢI TOÀN BỘ", on_done=self._mgr_after_dl)
 
@@ -3458,12 +5438,16 @@ class App:
         if self.proc: messagebox.showinfo("Đang bận", "Đang tải — bấm Dừng trước đã."); return
         args = self._course_args() + ["--only", "videos", "--chapter", title] + self._worker_args()
         if getattr(self, "opt_clean", None) and self.opt_clean.get(): args.append("--until-clean")
+        args += self._auto_transcribe_args()
+        args += self._auto_lesson_summary_args()
         self.mgr_busy = f"chương “{name}”"; self._mgr_busy_status()
         self.start([PY, "main.py"] + args, f"TẢI CHƯƠNG: {name}", on_done=self._mgr_after_dl)
 
     def dl_lesson(self, rel, title):
         if self.proc: messagebox.showinfo("Đang bận", "Đang tải — bấm Dừng trước đã."); return
         args = self._course_args() + ["--only", "videos", "--lesson", rel] + self._worker_args()
+        args += self._auto_transcribe_args()
+        args += self._auto_lesson_summary_args()
         self.mgr_busy = f"bài “{title}”"; self._mgr_busy_status()
         self.start([PY, "main.py"] + args, f"TẢI BÀI: {title}", on_done=self._mgr_after_dl)
 
@@ -3593,8 +5577,11 @@ class App:
     def show_transcribe(self):
         self.clear(); self.purpose = "import"
         nm = self.course_name or "SkoolCourse"
-        self.head(f"Tạo phụ đề: {nm}",
-                  "Sprint H: chỉ bóc bài còn thiếu .txt/.srt. Task ngầm sống qua reboot.")
+        self.head(
+            f"Tạo phụ đề: {nm}",
+            "Mặc định sau tải: auto-detect ngôn ngữ + giới thiệu bài → video.txt + "
+            "«all transcript.txt». Màn này: chạy lại bài còn thiếu. Tắt auto: bỏ tick lúc tải.",
+        )
         card = self.card()
         self.trans_lbl = ctk.CTkLabel(card, text="⏳  Đang kiểm tra…", font=(FT, 13), text_color=TEXT2)
         self.trans_lbl.pack(anchor="w", padx=16, pady=(14, 6))
@@ -3606,7 +5593,12 @@ class App:
         r = ctk.CTkFrame(act, fg_color="transparent"); r.pack(fill="x", padx=14, pady=14)
         btn(r, "▶  Phụ đề chỉ thiếu (ngầm)", self.start_transcribe, kind="accent", width=230).pack(side="left")
         btn(r, "▶  Chạy 1 lần (CLI)", self.run_transcribe_once, kind="secondary", width=150).pack(side="left", padx=8)
-        ctk.CTkLabel(r, text="Bỏ qua bài đã có phụ đề.", font=(FT, 11), text_color=TEXT2).pack(side="left", padx=6)
+        ctk.CTkLabel(
+            r,
+            text="Bỏ qua bài đã có video.txt · file tổng: all transcript.txt",
+            font=(FT, 11),
+            text_color=TEXT2,
+        ).pack(side="left", padx=6)
         nav = ctk.CTkFrame(self.content, fg_color="transparent"); nav.pack(fill="x", pady=12)
         btn(nav, "←  Về trình tải", self.show_manager, kind="ghost", width=140).pack(side="left")
         btn(nav, "Dịch tiếng Việt  →", self.show_translate, kind="secondary", width=170).pack(side="right")
@@ -3680,11 +5672,61 @@ class App:
             self.tl_lbl.configure(text="✓  Xong — xem Transcript_VI.md + PhuDe_SongNgu.srt trong thư mục khóa.")
 
     # ---------- tien trinh ----------
+    def _on_auto_transcribe_toggle(self):
+        """Luu tick/bo tick transcript vao settings."""
+        try:
+            on = bool(self.opt_sub.get()) if getattr(self, "opt_sub", None) else True
+            if hasattr(C, "set_auto_transcribe"):
+                C.set_auto_transcribe(on)
+            self.write(f"Tự lấy transcript: {'BẬT' if on else 'TẮT'}")
+        except Exception as e:
+            self.write(f"[settings] auto_transcribe: {e}")
+
+    def _on_auto_lesson_summary_toggle(self):
+        try:
+            on = bool(self.opt_lesson_sum.get()) if getattr(self, "opt_lesson_sum", None) else True
+            if hasattr(C, "set_auto_lesson_summary"):
+                C.set_auto_lesson_summary(on)
+            self.write(f"Summary từng bài: {'BẬT' if on else 'TẮT'}")
+        except Exception as e:
+            self.write(f"[settings] auto_lesson_summary: {e}")
+
+    def _auto_transcribe_args(self):
+        """Them --no-transcribe neu user tat; cap nhat settings."""
+        try:
+            if getattr(self, "opt_sub", None) is not None:
+                on = bool(self.opt_sub.get())
+            elif hasattr(C, "get_auto_transcribe"):
+                on = bool(C.get_auto_transcribe())
+            else:
+                on = True
+            if hasattr(C, "set_auto_transcribe"):
+                C.set_auto_transcribe(on)
+            return [] if on else ["--no-transcribe"]
+        except Exception:
+            return []
+
+    def _auto_lesson_summary_args(self):
+        try:
+            if getattr(self, "opt_lesson_sum", None) is not None:
+                on = bool(self.opt_lesson_sum.get())
+            elif hasattr(C, "get_auto_lesson_summary"):
+                on = bool(C.get_auto_lesson_summary())
+            else:
+                on = True
+            if hasattr(C, "set_auto_lesson_summary"):
+                C.set_auto_lesson_summary(on)
+            return ["--lesson-summary"] if on else ["--no-lesson-summary"]
+        except Exception:
+            return []
+
     def start_download(self):
         args = ([] if not self.course_name else ["--course", self.course_name])
         test = bool(getattr(self, "opt_test", None) and self.opt_test.get())
         if test: args.append("--dry-run")
         if not test and getattr(self, "opt_clean", None) and self.opt_clean.get(): args.append("--until-clean")
+        args += self._auto_transcribe_args()
+        args += self._auto_lesson_summary_args()
         self.show_step4()
         if test and hasattr(self, "run_lbl"): self.run_lbl.configure(text="🔧  CHẾ ĐỘ TEST — chỉ kiểm tra, không tải thật", text_color="#9A6700")
         self.start([PY, "main.py"] + args, "TẢI KHÓA" + (" (TEST)" if test else ""), on_done=self.show_done)
@@ -3953,7 +5995,11 @@ class App:
         if t == "ready":
             self.write("Trình duyệt sẵn sàng.")
             if self.sb:
-                self.sb.open()
+                qr = getattr(self, "_quick_run", None)
+                if qr and qr.get("url"):
+                    self.sb.open_course(qr["url"])
+                else:
+                    self.sb.open()
         elif t == "opened":
             self.write(
                 "✓ Chrome đã mở (không tự đóng). "
@@ -4002,6 +6048,7 @@ class App:
             )
             if not chs:
                 messagebox.showinfo("Trống", "Không có chương nào trong danh sách.")
+                self._quick_run = None
                 return
             # dam bao o chuong hien ra
             try:
@@ -4017,6 +6064,22 @@ class App:
                 self.content._parent_canvas.yview_moveto(0.35)  # type: ignore
             except Exception:
                 pass
+            # Quick Run: tu dong dump TẤT CẢ chương
+            if getattr(self, "_quick_run", None) and self.purpose == "import":
+                self.write(f"🚀 Quick Run: tự dump {len(chs)} chương…")
+                try:
+                    if hasattr(self, "chapters"):
+                        for c in self.chapters:
+                            if c.get("var"):
+                                c["var"].set(True)
+                    # dat ten khoa = slug
+                    slug = self._quick_run.get("slug") or e.get("group") or self.course_name
+                    if hasattr(self, "name_var") and self.name_var:
+                        self.name_var.set(slug)
+                    self.course_name = slug
+                    self.root.after(400, self.do_dump)
+                except Exception as ex:
+                    self.write(f"[quick-run dump] {ex}")
         elif t == "dump_progress":
             self.write(f"[{e['i']}/{e['n']}] {e['title']}")
             if (hasattr(self, "dump_status") and self.dump_status.winfo_exists()
@@ -4052,6 +6115,29 @@ class App:
                 self.write("Token mới đã sẵn sàng — bắt đầu tải lại native…"); self.start_native_download(); return
             if self.purpose == "update":
                 messagebox.showinfo("Xong", f"Đã cập nhật {e['ok']}/{e['total']} chương.\nChọn chương/bài để tải phần mới."); self.show_manager(); return
+            # Quick Run → tu dong pipeline tai
+            if getattr(self, "_quick_run", None):
+                qr = self._quick_run
+                self.write("🚀 Quick Run: bắt đầu tải video + transcript + summary…")
+                args = ["--course", self.course_name or qr.get("slug"), "--until-clean", "--skip-preflight"]
+                if not qr.get("transcribe"):
+                    args.append("--no-transcribe")
+                if not qr.get("summary"):
+                    args.append("--no-lesson-summary")
+                else:
+                    args.append("--lesson-summary")
+                self._quick_run = None
+                self.show_step4()
+                if hasattr(self, "run_lbl") and self.run_lbl.winfo_exists():
+                    try:
+                        self.run_lbl.configure(
+                            text="🚀 Quick Run — đang tải khóa + transcript + summary…",
+                            text_color=ACCENT,
+                        )
+                    except Exception:
+                        pass
+                self.start([PY, "main.py"] + args, "QUICK RUN TẢI KHÓA", on_done=self.show_done)
+                return
             messagebox.showinfo(
                 "Xong",
                 f"Đã lấy {e['ok']}/{e['total']} chương.\n\n"

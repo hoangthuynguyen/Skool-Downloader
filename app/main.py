@@ -3,8 +3,10 @@
 Skool Downloader - pipeline luu tru khoa hoc Skool bang 1 lenh.
 
   python main.py --course "AI Automations by Jack"            # folders->extras->video->audit
-  python main.py --course "AI Automations by Jack" --transcribe   # + Whisper o cuoi
-  python main.py --course "X" --only videos                   # chay 1 buoc: folders|extras|videos|transcribe|audit
+  python main.py --course "AI Automations by Jack"            # folders->extras->video->transcribe(auto)->audit
+  python main.py --course "X" --no-transcribe                 # tat Whisper (mac dinh AUTO_TRANSCRIBE=True)
+  python main.py --course "X" --only videos                   # tai video (+ auto transcript neu bat)
+  python main.py --course "X" --only transcribe               # chi Whisper + all transcript.txt
   python main.py --course "X" --dry-run                       # video chi liet ke, khong tai
   python main.py --list-courses                               # liet ke cac khoa duoi BASE/courses
 
@@ -77,7 +79,26 @@ def main():
     ap.add_argument("--course", help="Ten khoa duoi BASE/courses/. Bo trong = dung BASE/SkoolCourse (cu).")
     ap.add_argument("--root", help="Override truc tiep thu muc lam viec (thay cho --course).")
     ap.add_argument("--only", choices=list(STEPS), help="Chi chay 1 buoc.")
-    ap.add_argument("--transcribe", action="store_true", help="Chay Whisper transcribe o cuoi.")
+    ap.add_argument(
+        "--transcribe",
+        action="store_true",
+        help="Ep chay Whisper (mac dinh da AUTO_TRANSCRIBE=True).",
+    )
+    ap.add_argument(
+        "--no-transcribe",
+        action="store_true",
+        help="Tat Whisper / all transcript.txt (override AUTO_TRANSCRIBE).",
+    )
+    ap.add_argument(
+        "--lesson-summary",
+        action="store_true",
+        help="Ep chay summary.vi.md tung bai (LLM VI) sau pipeline.",
+    )
+    ap.add_argument(
+        "--no-lesson-summary",
+        action="store_true",
+        help="Tat auto lesson summary (override AUTO_LESSON_SUMMARY).",
+    )
     ap.add_argument("--dry-run", action="store_true", help="Video chi liet ke, khong tai.")
     ap.add_argument("--list-courses", action="store_true", help="Liet ke cac khoa roi thoat.")
     ap.add_argument("--skip-preflight", action="store_true", help="Bo qua kiem tra moi truong dau.")
@@ -218,6 +239,29 @@ def main():
         C.ADAPTIVE_WORKERS = False
     do_index = bool(a.index) or (getattr(C, "AUTO_INDEX", True) and not a.no_index and not a.only)
     do_notify = bool(a.notify) or (getattr(C, "NOTIFY_ON_DONE", True) and not a.no_notify)
+    # Mac dinh tu dong plain-text transcript (faster-whisper, auto-detect ngon ngu)
+    # Settings auto_transcribe > config AUTO_TRANSCRIBE; --no-transcribe / --transcribe override
+    if hasattr(C, "get_auto_transcribe"):
+        auto_ts = bool(C.get_auto_transcribe())
+    else:
+        auto_ts = bool(getattr(C, "AUTO_TRANSCRIBE", True))
+    if a.no_transcribe:
+        do_transcribe = False
+    elif a.transcribe:
+        do_transcribe = True
+    else:
+        do_transcribe = auto_ts
+
+    if hasattr(C, "get_auto_lesson_summary"):
+        auto_sum = bool(C.get_auto_lesson_summary())
+    else:
+        auto_sum = bool(getattr(C, "AUTO_LESSON_SUMMARY", True))
+    if a.no_lesson_summary:
+        do_lesson_summary = False
+    elif a.lesson_summary:
+        do_lesson_summary = True
+    else:
+        do_lesson_summary = auto_sum
 
     # ghi last_course (Sprint G)
     try:
@@ -234,6 +278,16 @@ def main():
             if a.chapter or a.chapters or a.lesson or a.retry_failed or a.missing_only or a.smart_update:
                 folders.run()   # bao dam co folder truoc khi tai chon loc
             video_fails = run_videos(until_clean=a.until_clean, rounds=a.rounds, wait=a.round_wait)
+            # Mac dinh: transcript plain text ngay sau khi tai (va ghep all transcript.txt)
+            if do_transcribe and not a.dry_run:
+                print("\n(auto) TRANSCRIBE sau videos…")
+                transcribe.run()
+            if do_lesson_summary and not a.dry_run:
+                _maybe_lesson_summary()
+        elif a.only == "transcribe":
+            STEPS["transcribe"]()
+            if do_lesson_summary and not a.dry_run:
+                _maybe_lesson_summary()
         else:
             STEPS[a.only]()
         # --only: chi index khi user goi --index (AUTO_INDEX chi full pipeline)
@@ -251,7 +305,11 @@ def main():
     folders.run()
     extras.run()                 # resource het han 8h -> lam som
     video_fails = run_videos(until_clean=a.until_clean, rounds=a.rounds, wait=a.round_wait)
-    if a.transcribe: transcribe.run()
+    if do_transcribe and not a.dry_run:
+        print("\n(auto) TRANSCRIBE (plain text + all transcript.txt)…")
+        transcribe.run()
+    if do_lesson_summary and not a.dry_run:
+        _maybe_lesson_summary()
     audit.run()
     if do_index or a.index:
         _maybe_index()
@@ -268,6 +326,16 @@ def _maybe_index():
         build_catalog(C.ROOT)
     except Exception as e:
         print(f"[index] bo qua: {e}")
+
+
+def _maybe_lesson_summary():
+    """Summary.vi.md tung bai (LLM VI) — mac dinh DeepSeek, fallback Gemini."""
+    try:
+        import lesson_summary as LS
+        print("\n(auto) LESSON SUMMARY (VI)…")
+        LS.run(C.ROOT, force=False, missing_only=True, combine=True)
+    except Exception as e:
+        print(f"[lesson-summary] bo qua: {e}")
 
 
 def _maybe_notify(fails):

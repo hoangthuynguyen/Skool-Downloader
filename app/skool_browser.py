@@ -222,6 +222,10 @@ class SkoolBrowser:
     def open(self):
         self.send(type="open")
 
+    def open_course(self, url: str):
+        """Mo trinh duyet va di toi URL Classroom cua khoa (hoac URL Skool bat ky)."""
+        self.send(type="open_course", url=(url or "").strip())
+
     def list_chapters(self):
         self.send(type="list")
 
@@ -490,6 +494,8 @@ class SkoolBrowser:
         t = cmd["type"]
         if t == "open":
             self._do_open()
+        elif t == "open_course":
+            self._do_open_course(cmd.get("url") or "")
         elif t == "list":
             self._do_list()
         elif t == "dump":
@@ -527,6 +533,68 @@ class SkoolBrowser:
             alive=True,
             hint="Chrome dang mo — KHONG dong. Vao Classroom cua khoa, roi bam nut 2.",
         )
+
+    def _do_open_course(self, url: str):
+        """Mo Chrome, toi Classroom URL (user login neu can), tu-list chuong."""
+        self._auto_list_done = False
+        self._last_status_url = ""
+        page = self._get_page()
+        target = (url or "").strip()
+        if not target:
+            target = "https://www.skool.com/"
+        # chuan hoa ve /classroom neu chi co slug
+        m = re.search(r"skool\.com/([^/?#]+)", target)
+        if m and "/classroom" not in target:
+            target = f"https://www.skool.com/{m.group(1)}/classroom"
+        self.emit(
+            type="log",
+            msg=(
+                f"✓ Mo khoa: {target}\n"
+                "Neu chua login: dang nhap trong cua so Chrome (giu mo).\n"
+                "App se tu doc danh sach chuong khi vao Classroom."
+            ),
+        )
+        page = self._goto(page, target, timeout=90000)
+        try:
+            page.wait_for_load_state("domcontentloaded", timeout=20000)
+        except Exception:
+            pass
+        time.sleep(1.2)
+        try:
+            page.bring_to_front()
+        except Exception:
+            pass
+        self._save_state()
+        self.emit(type="opened")
+        try:
+            cur = page.url if self._page_ok(page) else target
+        except Exception:
+            cur = target
+        on_class = bool(re.search(r"skool\.com/[^/]+/classroom", cur or ""))
+        self.emit(
+            type="browser_status",
+            url=cur,
+            on_classroom=on_class,
+            alive=True,
+            hint=(
+                "✓ Classroom — dang lay danh sach chuong…"
+                if on_class
+                else "Dang nhap Skool trong Chrome neu can, roi doi / bam nut 2."
+            ),
+        )
+        # thu list ngay
+        if on_class or m:
+            try:
+                if not on_class and m:
+                    page = self._goto(
+                        page, f"https://www.skool.com/{m.group(1)}/classroom", timeout=90000
+                    )
+                    time.sleep(1.0)
+                self._do_list(from_auto=True)
+                self._auto_list_done = True
+            except Exception as e:
+                self._auto_list_done = False
+                self.emit(type="log", msg=f"Chua lay duoc chuong (login?): {e}")
 
     def _do_list(self, from_auto=False):
         page = self._get_page()

@@ -166,10 +166,70 @@ def parse_cost_display(meta: dict) -> Tuple[float, str]:
 
 def normalize_cost_raw(s) -> float:
     s = str(s or "")
-    if "Free" in s or s in ("$0", "", "None", "0"):
+    # "$0 (Free)" / "Free" → 0; keep real dollar amounts
+    if s.strip() in ("$0", "$0 (Free)", "", "None", "0", "0.0", "Free"):
+        return 0.0
+    if re.fullmatch(r"(?i)free", s.strip()):
         return 0.0
     m = re.search(r"\$([\d,]+(?:\.\d+)?)", s)
-    return float(m.group(1).replace(",", "")) if m else 0.0
+    if m:
+        return float(m.group(1).replace(",", ""))
+    # bare number
+    m2 = re.search(r"([\d]+(?:\.\d+)?)", s.replace(",", ""))
+    if m2 and "free" not in s.lower():
+        try:
+            return float(m2.group(1))
+        except ValueError:
+            return 0.0
+    return 0.0
+
+
+def normalize_notes(cost: float, notes: Any) -> str:
+    """
+    Chuẩn hoá Notes cho khớp Cost:
+      - cost > 0 → không được ghi 'Free'
+      - cost <= 0 + không có ghi chú đặc biệt → 'Free'
+      - giữ Yearly / One-time / Missing on Skool / not in latest scrape
+    """
+    try:
+        c = float(cost or 0)
+    except (TypeError, ValueError):
+        c = 0.0
+    n = str(notes or "").strip()
+    n = re.sub(r"\s*\|\s*", " | ", n)
+    n = re.sub(r"\s+", " ", n).strip(" |")
+
+    # Tách flag stale (nếu có) rồi gắn lại sau
+    stale = False
+    if "not in latest scrape" in n.lower():
+        stale = True
+        n = re.sub(r"(?i)\s*\|\s*not in latest scrape", "", n)
+        n = re.sub(r"(?i)not in latest scrape\s*\|\s*", "", n)
+        n = re.sub(r"(?i)not in latest scrape", "", n).strip(" |")
+
+    special_keep = (
+        n.startswith("Yearly")
+        or n.startswith("One-time")
+        or n.startswith("Missing")
+        or n.lower().startswith("paid")
+    )
+
+    if c > 0:
+        # Paid: bỏ nhãn Free sai; giữ Yearly/One-time nếu có
+        if n.lower() in ("free", "free trial", "freemium", ""):
+            n = ""
+        elif "free" == n.lower().split("|")[0].strip():
+            n = ""
+    else:
+        # Free / one-time (cost 0): nếu notes rỗng → Free (trừ special)
+        if not n and not special_keep:
+            n = "Free"
+        elif n.lower() in ("",):
+            n = "Free"
+
+    if stale:
+        n = (n + " | not in latest scrape").strip(" |")
+    return n
 
 
 def parse_group(entry: dict, lang_tag: Optional[str] = None, cat_name: str = "") -> Optional[dict]:
@@ -189,6 +249,7 @@ def parse_group(entry: dict, lang_tag: Optional[str] = None, cat_name: str = "")
     except (TypeError, ValueError):
         members = 0
     cost, notes = parse_cost_display(meta)
+    notes = normalize_notes(cost, notes)
     if lang_tag:
         lang = LANG_MAP.get(lang_tag.lower(), lang_tag.capitalize())
     else:
@@ -200,7 +261,7 @@ def parse_group(entry: dict, lang_tag: Optional[str] = None, cat_name: str = "")
         "tagline": tagline,
         "members": members,
         "cost": cost,
-        "notes": notes or ("Free" if cost <= 0 else ""),
+        "notes": notes,
         "lang": lang,
         "category": cat,
         "url": f"https://www.skool.com/{slug}/about",
@@ -253,13 +314,15 @@ def load_existing(path: Path) -> Dict[str, dict]:
         tagline = d.get("Tagline")
         if tagline is None:
             tagline = d.get("Make more money, help more people.") or ""
+        cost = normalize_cost_raw(d.get("Cost / Month"))
+        notes = normalize_notes(cost, d.get("Notes"))
         seen[slug] = {
             "slug": slug,
             "name": name,
             "tagline": str(tagline or ""),
             "members": members,
-            "cost": normalize_cost_raw(d.get("Cost / Month")),
-            "notes": str(d.get("Notes") or ""),
+            "cost": cost,
+            "notes": notes,
             "lang": str(d.get("Language") or "English"),
             "category": str(d.get("Category") or ""),
             "url": url or f"https://www.skool.com/{slug}/about",
@@ -275,14 +338,53 @@ def merge_item(store: Dict[str, dict], item: dict) -> str:
     slug = item["slug"]
     old = store.get(slug)
     if not old:
+        item = dict(item)
+        item["notes"] = normalize_notes(item.get("cost") or 0, item.get("notes"))
         store[slug] = item
         return "new"
     # update live fields
     changed = False
-    for k in ("name", "tagline", "members", "cost", "notes", "url"):
-        if item.get(k) not in (None, "") and item.get(k) != old.get(k):
-            old[k] = item[k]
+    # Text fields: only overwrite when new value non-empty
+    for k in ("name", "tagline", "url"):
+        v = item.get(k)
+        if v not in (None, "") and v != old.get(k):
+            old[k] = v
             changed = True
+    # Members: take newer positive/zero always when provided
+    if item.get("members") is not None:
+        try:
+            m = int(item["members"])
+            if m != int(old.get("members") or 0):
+                old["members"] = m
+                changed = True
+        except (TypeError, ValueError):
+            pass
+    # Cost + notes always move together (empty notes for paid must clear stale "Free")
+    cost_in = item.get("cost")
+    if cost_in is not None:
+        try:
+            new_cost = float(cost_in)
+        except (TypeError, ValueError):
+            new_cost = float(old.get("cost") or 0)
+        old_cost = float(old.get("cost") or 0)
+        # Prefer scraped notes when key present (incl. ""), else keep old notes
+        raw_notes = item["notes"] if "notes" in item else old.get("notes")
+        new_notes = normalize_notes(new_cost, raw_notes)
+        if abs(new_cost - old_cost) > 1e-9 or new_notes != (old.get("notes") or ""):
+            old["cost"] = new_cost
+            old["notes"] = new_notes
+            changed = True
+    elif "notes" in item:
+        fixed = normalize_notes(old.get("cost") or 0, item.get("notes"))
+        if fixed != (old.get("notes") or ""):
+            old["notes"] = fixed
+            changed = True
+    else:
+        sanitized = normalize_notes(old.get("cost") or 0, old.get("notes"))
+        if sanitized != (old.get("notes") or ""):
+            old["notes"] = sanitized
+            changed = True
+
     if item.get("lang"):
         if old.get("lang") != item["lang"]:
             old["lang"] = item["lang"]
@@ -320,19 +422,26 @@ def save_excel(data: List[dict], path: Path, sheet_date: str) -> None:
         ws.row_dimensions[1].height = 32
         for i, row in enumerate(rows, 1):
             r = i + 1
-            cost = float(row.get("cost") or 0)
-            members = int(row.get("members") or 0)
+            try:
+                cost = float(row.get("cost") or 0)
+            except (TypeError, ValueError):
+                cost = 0.0
+            try:
+                members = int(row.get("members") or 0)
+            except (TypeError, ValueError):
+                members = 0
             total = int(members * cost) if cost > 0 else 0
-            notes = row.get("notes") or ("Free" if cost <= 0 else "")
-            if not row.get("refreshed"):
+            notes = normalize_notes(cost, row.get("notes"))
+            if not row.get("refreshed") and "not in latest scrape" not in notes.lower():
                 notes = (notes + " | not in latest scrape").strip(" |")
             vals = [
                 i,
                 row.get("name") or "",
                 row.get("tagline") or "",
                 members,
-                f"${cost:,.2f}" if cost > 0 else "$0 (Free)",
-                f"${total:,}" if total > 0 else "$0",
+                # Free = $0 (số $0 rõ ràng để tính tổng doanh thu = 0)
+                f"${cost:,.2f}" if cost > 0 else "$0",
+                f"${total:,.2f}" if total > 0 else "$0",
                 row.get("lang") or "",
                 row.get("category") or "",
                 notes,
@@ -685,6 +794,32 @@ def run_update(
     return out
 
 
+def repair_notes_excel(src: Path, out: Optional[Path] = None) -> Path:
+    """Sửa Notes/Cost không khớp trên file Excel sẵn có (không cào mạng)."""
+    out = out or src
+    store = load_existing(src)
+    if not store:
+        raise SystemExit(f"Không load được dữ liệu từ {src}")
+    fixed = 0
+    for row in store.values():
+        # Rows loaded as refreshed=False; repair doesn't mean "stale"
+        row["refreshed"] = True
+        before = str(row.get("notes") or "")
+        after = normalize_notes(row.get("cost") or 0, before)
+        # strip accidental stale flags when doing pure repair
+        after = re.sub(r"(?i)\s*\|\s*not in latest scrape", "", after).strip(" |")
+        after = normalize_notes(row.get("cost") or 0, after)
+        if after != before:
+            row["notes"] = after
+            fixed += 1
+        else:
+            row["notes"] = after
+    sheet_date = datetime.now().strftime("%Y-%m")
+    save_excel(list(store.values()), out, sheet_date=sheet_date)
+    log(f"🔧 Repaired notes on {fixed:,}/{len(store):,} rows → {out}")
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description="Update Skool communities Excel")
     ap.add_argument(
@@ -703,11 +838,22 @@ def main():
         action="store_true",
         help="Chỉ cào language + category (nhanh hơn, coverage thấp hơn)",
     )
+    ap.add_argument(
+        "--repair-notes",
+        action="store_true",
+        help="Chỉ sửa Notes/Cost không khớp trên Excel (không cào Discovery)",
+    )
     args = ap.parse_args()
     src = Path(args.src).expanduser()
     out = Path(args.out).expanduser() if args.out else (
         Path.home() / "Downloads" / f"Skool {datetime.now().strftime('%d-%m-%Y')}.xlsx"
     )
+    if args.repair_notes:
+        # default: ghi đè file nguồn
+        target = Path(args.out).expanduser() if args.out else src
+        path = repair_notes_excel(src, target)
+        log(f"\nDone → {path}")
+        return
     path = run_update(src, out, delay=args.delay, quick=args.quick)
     log(f"\nDone → {path}")
 

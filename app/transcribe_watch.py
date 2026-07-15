@@ -109,6 +109,24 @@ def main():
     except KeyboardInterrupt:
         print("\n[Dung boi nguoi dung] - chay lai se tiep tuc.\n")
 
+    # Ghep all transcript.txt theo tung goc khoa da quet
+    try:
+        roots = set()
+        if a.all:
+            roots.add(C.BASE / "SkoolCourse")
+            courses = C.BASE / "courses"
+            if courses.is_dir():
+                for d in courses.iterdir():
+                    if d.is_dir():
+                        roots.add(d)
+        else:
+            roots.add(C.ROOT)
+        for r in sorted(roots, key=lambda p: str(p).lower()):
+            if r.exists() and r.is_dir():
+                T.write_all_transcript(r)
+    except Exception as e:
+        print(f"[all transcript] {e}", flush=True)
+
     msg = f"Transcribe xong: {total_done} video"
     if total_skip: msg += f", {total_skip} bo qua (khong audio/hong)"
     if total_retry: msg += f", {total_retry} loi tam"

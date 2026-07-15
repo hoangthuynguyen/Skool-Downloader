@@ -94,12 +94,14 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "default_model": "gemini-2.0-flash",
         "models": [
             "gemini-2.0-flash",
-            "gemini-2.0-flash-lite",
-            "gemini-1.5-pro",
-            "gemini-1.5-flash",
+            "gemini-2.5-flash",
             "gemini-2.5-flash-preview-05-20",
+            "gemini-2.0-flash-lite",
+            "gemini-1.5-flash",
+            "gemini-1.5-pro",
         ],
         "docs": "aistudio.google.com",
+        "note": "Mặc định fallback Lesson Summary (Flash)",
     },
     "glm": {
         "title": "智谱 GLM (Zhipu)",
@@ -131,10 +133,16 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "kind": "openai",
         "base_url": "https://api.deepseek.com",
         "env_key": "DEEPSEEK_API_KEY",
+        # deepseek-chat = model chat mới (V3/V3.2 family trên platform)
         "default_model": "deepseek-chat",
-        "models": ["deepseek-chat", "deepseek-reasoner"],
+        "models": [
+            "deepseek-chat",
+            "deepseek-reasoner",
+            "deepseek-chat-v3",  # alias/gợi ý nếu provider hỗ trợ
+        ],
         "docs": "platform.deepseek.com",
         "region": "cn",
+        "note": "Mặc định primary cho Lesson Summary (VI)",
     },
     "kimi": {
         "title": "Kimi / Moonshot (月之暗面)",
@@ -276,8 +284,9 @@ _ALIASES = {
     "x-ai": "grok",
 }
 
+# Mac dinh: DeepSeek chinh, Gemini Flash phu (co the doi trong GUI / settings)
 DEFAULT_FALLBACK = [
-    "openrouter", "gemini", "grok", "qwen", "glm", "deepseek", "kimi",
+    "deepseek", "gemini", "openrouter", "grok", "qwen", "glm", "kimi",
     "siliconflow", "openai", "anthropic", "groq",
 ]
 
@@ -316,7 +325,10 @@ def _prov_store() -> dict:
 
 def get_provider() -> str:
     s = load_settings()
-    return normalize_provider(os.environ.get("LLM_PROVIDER") or s.get("llm_provider") or "anthropic")
+    # Mac dinh deepseek (Lesson Summary / multi-LLM); env / settings ghi de
+    return normalize_provider(
+        os.environ.get("LLM_PROVIDER") or s.get("llm_provider") or "deepseek"
+    )
 
 
 def set_provider(pid: str):
@@ -353,6 +365,205 @@ def set_fallback_chain(chain):
     items = [normalize_provider(x) for x in items]
     save_setting("llm_fallback", items)
     return items
+
+
+# ---- Per-task LLM routing (Dashboard) ----
+# task id -> defaults
+LLM_TASKS: dict[str, dict[str, Any]] = {
+    "summary": {
+        "title": "Summary từng bài",
+        "desc": "summary.vi.md — Purpose / takeaways / todo",
+        "provider": "deepseek",
+        "model": "deepseek-chat",
+        "fallback": "gemini",
+        "fallback_model": "gemini-2.0-flash",
+    },
+    "research": {
+        "title": "Research / nâng cấp khóa",
+        "desc": "Báo cáo thị trường DOCX + inventory",
+        "provider": "deepseek",
+        "model": "deepseek-chat",
+        "fallback": "gemini",
+        "fallback_model": "gemini-2.0-flash",
+    },
+    "structure": {
+        "title": "Cấu trúc khóa mới",
+        "desc": "Sinh outline chương/bài từ report",
+        "provider": "deepseek",
+        "model": "deepseek-chat",
+        "fallback": "gemini",
+        "fallback_model": "gemini-2.0-flash",
+    },
+    "assets": {
+        "title": "Asset pack (script/workshop)",
+        "desc": "lesson · talking_script · workshop · quiz",
+        "provider": "deepseek",
+        "model": "deepseek-chat",
+        "fallback": "gemini",
+        "fallback_model": "gemini-2.0-flash",
+    },
+    "localize": {
+        "title": "Localize hub",
+        "desc": "Dịch pack sang nhiều ngôn ngữ",
+        "provider": "deepseek",
+        "model": "deepseek-chat",
+        "fallback": "gemini",
+        "fallback_model": "gemini-2.0-flash",
+    },
+    "prompt": {
+        "title": "LLM Prompt / dịch / rewrite",
+        "desc": "Xuất & Báo cáo · prompt tùy chỉnh",
+        "provider": "deepseek",
+        "model": "deepseek-chat",
+        "fallback": "gemini",
+        "fallback_model": "gemini-2.0-flash",
+    },
+}
+
+
+def list_llm_tasks() -> list[str]:
+    return list(LLM_TASKS.keys())
+
+
+def get_task_llm(task: str) -> dict[str, Any]:
+    """Lấy provider/model/fallback cho 1 tác vụ (settings > defaults)."""
+    task = (task or "prompt").strip().lower()
+    base = dict(LLM_TASKS.get(task) or LLM_TASKS["prompt"])
+    s = load_settings()
+    store = s.get("llm_tasks") or {}
+    if not isinstance(store, dict):
+        store = {}
+    cur = store.get(task) or {}
+    # legacy: summary uses lesson_summary_* keys
+    if task == "summary" and not cur:
+        try:
+            import config as Cfg
+            leg = Cfg.get_lesson_summary_llm()
+            if leg:
+                return {
+                    "task": task,
+                    "title": base.get("title"),
+                    "desc": base.get("desc"),
+                    "provider": normalize_provider(leg.get("provider") or base["provider"]),
+                    "model": (leg.get("model") or base["model"]),
+                    "fallback": normalize_provider(
+                        (leg.get("fallback") or [base["fallback"]])[0]
+                        if isinstance(leg.get("fallback"), list)
+                        else (leg.get("fallback") or base["fallback"])
+                    ),
+                    "fallback_model": leg.get("fallback_model") or base["fallback_model"],
+                }
+        except Exception:
+            pass
+    provider = normalize_provider(cur.get("provider") or base["provider"])
+    model = (cur.get("model") or base["model"] or "").strip()
+    fb = normalize_provider(cur.get("fallback") or base["fallback"])
+    fb_model = (cur.get("fallback_model") or base["fallback_model"] or "").strip()
+    # if model empty, use provider default
+    if not model:
+        model = get_provider_config(provider).get("model") or base["model"]
+    if not fb_model:
+        fb_model = get_provider_config(fb).get("model") or base["fallback_model"]
+    return {
+        "task": task,
+        "title": base.get("title") or task,
+        "desc": base.get("desc") or "",
+        "provider": provider,
+        "model": model,
+        "fallback": fb,
+        "fallback_model": fb_model,
+    }
+
+
+def set_task_llm(
+    task: str,
+    provider=None,
+    model=None,
+    fallback=None,
+    fallback_model=None,
+) -> dict:
+    task = (task or "").strip().lower()
+    if task not in LLM_TASKS:
+        task = "prompt"
+    s = load_settings()
+    store = dict(s.get("llm_tasks") or {})
+    cur = dict(store.get(task) or {})
+    if provider is not None:
+        cur["provider"] = normalize_provider(provider)
+    if model is not None:
+        cur["model"] = str(model).strip()
+    if fallback is not None:
+        cur["fallback"] = normalize_provider(fallback)
+    if fallback_model is not None:
+        cur["fallback_model"] = str(fallback_model).strip()
+    store[task] = cur
+    s["llm_tasks"] = store
+    # keep legacy summary keys in sync
+    if task == "summary":
+        if "provider" in cur:
+            s["lesson_summary_provider"] = cur["provider"]
+        if "model" in cur:
+            s["lesson_summary_model"] = cur["model"]
+        if "fallback" in cur:
+            s["lesson_summary_fallback"] = [cur["fallback"]]
+        if "fallback_model" in cur:
+            s["lesson_summary_fallback_model"] = cur["fallback_model"]
+    try:
+        SETTINGS.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        save_setting("llm_tasks", store)
+    return get_task_llm(task)
+
+
+def complete_for_task(
+    task: str,
+    system: str,
+    user_text: str,
+    max_tokens: int = 8000,
+    log=print,
+):
+    """
+    Gọi LLM theo cấu hình tác vụ (primary → fallback provider/model).
+    Returns (text, used_provider).
+    """
+    cfg = get_task_llm(task)
+    primary = cfg["provider"]
+    model = cfg["model"]
+    fb = cfg["fallback"]
+    fb_model = cfg["fallback_model"]
+
+    # temporary chain: primary then fallback then global chain
+    chain = [primary]
+    if fb and fb != primary:
+        chain.append(fb)
+    for p in get_fallback_chain():
+        if p not in chain:
+            chain.append(p)
+
+    errors = []
+    for i, pid in enumerate(chain):
+        pcfg = get_provider_config(pid)
+        if not pcfg.get("configured"):
+            errors.append(f"{pid}: no key")
+            continue
+        m_override = model if pid == primary else (fb_model if pid == fb else None)
+        try:
+            log(f"   LLM[{task}] try [{pid}] model={m_override or pcfg.get('model')}…")
+            text = call_provider(
+                pid, system, user_text, max_tokens=max_tokens, model_override=m_override
+            )
+            if text:
+                if pid != primary:
+                    log(f"   ✓ [{task}] fallback OK via {pid}")
+                return text, pid
+            errors.append(f"{pid}: empty")
+        except Exception as e:
+            errors.append(f"{pid}: {e}")
+            log(f"   ✗ [{task}] {pid}: {e}")
+            continue
+    raise RuntimeError(
+        f"LLM task «{task}» thất bại:\n- " + "\n- ".join(errors[:12])
+    )
 
 
 def get_provider_config(pid: str) -> dict:

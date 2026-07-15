@@ -35,8 +35,26 @@ def main():
         p = subprocess.run([sys.executable, str(HERE / "tests_phase1.py")], cwd=str(HERE))
         if p.returncode != 0:
             rc = 1
+        print("----- Course OS features + smoke -----")
+        p2 = subprocess.run(
+            [sys.executable, str(HERE / "course_features.py")], cwd=str(HERE)
+        )
+        if p2.returncode != 0:
+            rc = 1
+        p3 = subprocess.run(
+            [sys.executable, str(HERE / "tests_course_os.py")], cwd=str(HERE)
+        )
+        if p3.returncode != 0:
+            rc = 1
     else:
         print("(skip unit tests — --quick)")
+        # still verify Course OS feature registry on quick
+        print("----- Course OS feature registry -----")
+        p2 = subprocess.run(
+            [sys.executable, str(HERE / "course_features.py")], cwd=str(HERE)
+        )
+        if p2.returncode != 0:
+            rc = 1
 
     print("=" * 50)
     print("SELFTEST", "FAIL" if rc else "OK", f"— {V.__version__}")

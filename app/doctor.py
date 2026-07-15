@@ -107,6 +107,12 @@ def run_doctor(fix_base=None):
         "progress_live", "learn_playlist", "content_diff", "vault_export",
         "tools_fix", "notes", "disk_report", "study_plan", "cloud.pack_backup",
         "llm_prompt", "llm_providers",
+        # Course OS
+        "course_status", "course_studio", "course_upgrade", "course_wizard",
+        "course_video", "course_publish", "course_portfolio", "course_notion",
+        "course_competitor", "course_incremental", "course_board",
+        "course_finish", "course_features", "course_slides", "course_pptx",
+        "course_thumbs", "course_portal", "course_ab", "course_review", "course_qa",
     ):
         try:
             __import__(mod)
